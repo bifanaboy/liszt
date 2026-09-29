@@ -15,6 +15,11 @@ Description=Liszt release catalogue
 Documentation=https://github.com/bifanaboy/liszt
 After=network-online.target
 Wants=network-online.target
+# Start limit lives in [Unit], not [Service]: systemd ignores it there, so
+# putting it in [Service] silently reverts to the 5-in-10s default.
+# Give up only after repeated hard failures, not on a slow first sync.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -31,9 +36,6 @@ ExecStart=/usr/local/bin/node src/app.ts
 
 Restart=always
 RestartSec=5
-# Give up only after repeated hard failures, not on a slow first sync.
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # Graceful shutdown: the app closes the store on SIGTERM, so SQLite is never
 # killed mid-transaction.
