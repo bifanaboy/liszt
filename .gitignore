@@ -7,6 +7,9 @@ dist/
 build/
 *.log
 
+# The SQLite catalogue is runtime state, never committed.
+data/
+
 # Environment files
 .env
 .env.local
