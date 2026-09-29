@@ -6,9 +6,15 @@ const input = document.querySelector("#password");
 const button = document.querySelector("button");
 const error = document.querySelector(".error");
 
+// The `.error` node is rendered by the server's inline splash. Guard anyway: a
+// missing node must not throw *after* preventDefault, or submitting goes silent.
+const setError = (message) => {
+  if (error) error.textContent = message;
+};
+
 form?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  error.textContent = "";
+  setError("");
   button.disabled = true;
   try {
     const response = await fetch("/login", {
@@ -22,15 +28,15 @@ form?.addEventListener("submit", async (event) => {
     }
     if (response.status === 429) {
       const retry = response.headers.get("retry-after");
-      error.textContent = retry ? `Too many attempts. Try again in ${retry}s.` : "Too many attempts.";
+      setError(retry ? `Too many attempts. Try again in ${retry}s.` : "Too many attempts.");
     } else if (response.ok) {
       window.location.href = "/";
       return;
     } else {
-      error.textContent = "Invalid credentials.";
+      setError("Invalid credentials.");
     }
   } catch {
-    error.textContent = "Unable to reach the server.";
+    setError("Unable to reach the server.");
   }
   button.disabled = false;
   input.select();

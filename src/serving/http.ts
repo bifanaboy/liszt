@@ -139,7 +139,8 @@ function loginPage(res: ServerResponse): void {
 <main class="login"><h1>Liszt</h1>
 <form method="post" action="/login"><label for="password">Password</label>
 <input id="password" name="password" type="password" autocomplete="current-password" autofocus>
-<button type="submit">Enter</button></form></main>
+<button type="submit">Enter</button></form>
+<p class="error" role="alert"></p></main>
 <script src="/login.js"></script></body></html>\n`,
   );
 }
