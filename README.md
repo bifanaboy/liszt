@@ -50,10 +50,13 @@ ships, `app.js` being the sole `<script>` tag in `index.html` with
 `source-health.js` imported from it — so a syntax error in either is caught
 before it can white-screen the dashboard. Those files run with `no-undef` off,
 since the browser globals they use are not defined in Node and there is no
-`globals` dependency to name them; the cost is that a misspelled global name
-goes unchecked. `public/index.html` and `public/styles.css` are still read by no
-tool: not JavaScript, and not reformatable without rewriting vendored UI.
-`public/` remains a verbatim port, not hand-maintained code.
+`globals` dependency to name them; the rule cannot tell browser globals from
+other undeclared identifiers, so what that costs is any `no-undef` check at all
+over the two files — a misspelled global, and equally a renamed local helper or
+a binding deleted at its call site. `public/index.html` and `public/styles.css`
+are still read by no tool: not JavaScript, and not reformatable without
+rewriting vendored UI. `public/` remains a verbatim port, not hand-maintained
+code.
 
 `format:check` also covers Markdown and YAML — `README.md`, `render.yaml` and
 the workflow file are all in scope. Since Render will not deploy while a

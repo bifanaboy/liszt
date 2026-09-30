@@ -10,9 +10,10 @@ test/fixtures/
 # NOTE: Prettier and ESLint now split the directory rather than agree to both
 # skip it. The two .js files stay unread by Prettier, because reformatting
 # ported UI is the rewrite above, but eslint.config.js does parse them - a
-# syntax error in app.js or source-health.js would serve a dead dashboard.
-# index.html and styles.css remain read by neither tool: not JavaScript, and
-# not reformatable without rewriting vendored UI.
+# syntax error in app.js or source-health.js would serve a dead dashboard. That
+# parse runs with `no-undef` off, which is a parse gate and not a lint of the
+# ported UI. index.html and styles.css remain read by neither tool: not
+# JavaScript, and not reformatable without rewriting vendored UI.
 public/
 
 # Written by npm, not by hand.
