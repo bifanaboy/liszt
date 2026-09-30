@@ -204,7 +204,12 @@ async function main(): Promise<void> {
           log.error("shutdown gave up on an in-flight cycle; leaving the store open", {
             signal,
           });
-          server.close();
+          // No `server.close()` here, and that is deliberate. This process is
+          // being abandoned: a cycle is still writing, so the store stays open
+          // and the exit is reported as a failure. Calling `server.close()`
+          // first would look like it was draining in-flight requests, but
+          // `process.exit` on the next line kills the process before any
+          // connection could finish - a no-op that misrepresents what happened.
           clearTimeout(hardExit);
           process.exit(1);
           return;

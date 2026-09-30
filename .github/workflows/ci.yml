@@ -26,7 +26,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
 
-      # `format:check` is deliberately NOT here. It fails on 58 files at
+      # `format:check` is deliberately NOT here. It fails on 53 files at
       # `a39abc1` - it has never passed - because the repo has no `.prettierrc`
       # and the code is hand-written to ~100 columns while Prettier defaults to
       # 80. Including it would leave this check permanently red, and Render does
@@ -38,12 +38,30 @@ jobs:
 
       # `npm test` alone cannot catch a glob that matched nothing: the runner
       # reports "tests 0" and exits 0. TAP's plan line is what makes that
-      # checkable, so the suite is re-run through the tap reporter and the plan
-      # is asserted to be non-empty. `pipefail` is set by the default bash shell,
-      # so a genuine failure still propagates through the pipe.
+      # checkable, so the suite runs through the tap reporter and the plan is
+      # asserted to be non-empty.
+      #
+      # THERE IS DELIBERATELY NO `| tee` HERE. A pipeline's exit status is that
+      # of its LAST command, and with `shell` unspecified the Actions runner
+      # invokes `bash -e {0}` - WITHOUT `-o pipefail`. That option is added only
+      # when `shell: bash` is named explicitly; GitHub's own docs note the two
+      # run "a different command". So `node --test | tee` would exit 0 on a
+      # FAILING suite, `set -e` would never fire, the plan line is printed on
+      # failure as well as success, and a red suite would deploy green - which
+      # is the one outcome this check exists to prevent.
+      #
+      # Redirecting to a file creates no pipeline, so `$?` is node's own exit
+      # code under any shell the runner might pick. `|| status=$?` stops `set -e`
+      # from aborting before the diagnostics below get to print.
       - name: test
         run: |
-          node --test --test-reporter=tap 'test/**/*.test.ts' | tee test-output.tap
+          status=0
+          node --test --test-reporter=tap 'test/**/*.test.ts' > test-output.tap || status=$?
+          cat test-output.tap
+          if [ "$status" -ne 0 ]; then
+            echo "::error::the test suite failed (exit $status)"
+            exit "$status"
+          fi
           grep -qE '^1\.\.[1-9]' test-output.tap || {
             echo '::error::the test glob matched no files - the suite did not run'
             exit 1

@@ -474,6 +474,15 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
   // silently stops correcting upstream deletions forever. Accounts that did not
   // attempt a re-walk (`fullRewalk: false`) say nothing about completeness, so
   // they are not counted either way.
+  //
+  // THE KNOWN COST, STATED PLAINLY: this key is GLOBAL, not per-account. One
+  // account that can never reach its end - permanently past the window, or past
+  // `maxPages` - suppresses the stamp for all of them, so every account then
+  // full-re-walks on EVERY cycle instead of every `fullRewalkDays`. That is
+  // extra listing traffic against eporner, which is the cost of not silently
+  // disabling the prune. The conservative direction is deliberate and is the
+  // whole point of the change; making the cadence per-account would trade the
+  // deletion-correction guarantee for request volume, and is a separate decision.
   const rewalked = reports.filter((report) => report.fullRewalk);
   if (rewalked.length && rewalked.every((report) => !report.error && report.endOfListing)) {
     store.setPoolMeta(POOL_FULL_REWALK_KEY, now.toISOString());

@@ -337,8 +337,9 @@ Four consequences of that blueprint worth knowing before the first deploy:
   Render's 30s default the platform would `SIGKILL` the process mid-write to the
   SQLite file on every single deploy.
 - **CI gates the deploy.** `.github/workflows/ci.yml` runs
-  `typecheck → lint → format:check → test`, and Render waits on it. Without that
-  workflow Render detects zero checks and never deploys again.
+  `typecheck → lint → test`, and Render waits on it. Without that workflow
+  Render detects zero checks and never deploys again. `format:check` is
+  deliberately not in the list — see above.
 
 After deploying, confirm the disk actually mounted: `liszt.db`, `liszt.db-wal`
 and `liszt.db-shm` under `/data`. Trigger one sync, restart the service, and

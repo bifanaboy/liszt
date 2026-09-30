@@ -28,10 +28,12 @@ services:
     # whatever the dashboard happens to say while a NEW service defaults to
     # `commit` - which would deploy straight from main with no checks at all.
     autoDeployTrigger: checksPass
-    # Render's default is 30s, and this app needs longer: the scheduler waits up
-    # to 30s for an in-flight cycle, then the server gets a 5s backstop. Against
-    # the default that overruns and the platform SIGKILLs the process mid-write
-    # to the SQLite file on the attached disk, on every single deploy.
+    # Render's default is 30s, and this app needs longer. The scheduler waits up
+    # to 30s for an in-flight cycle; `SHUTDOWN_BACKSTOP_MS` in src/app.ts then
+    # forces the exit at 45s. Against the 30s default that overruns and the
+    # platform SIGKILLs the process mid-write to the SQLite file on the attached
+    # disk, on every single deploy. 60s leaves 15s of headroom over the worst
+    # case the app can actually reach.
     maxShutdownDelaySeconds: 60
     disk:
       name: liszt-data

@@ -84,9 +84,21 @@ export async function mapWithConcurrency<T, R>(
  * state is what makes `mapWithConcurrency` deadlock when re-entered. This
  * function holds no module state at all, so its workers can be at any depth.
  *
- * The clamp is shared, not the count: an isolated fan-out still cannot burst
- * past `MAX_FETCH_CONCURRENCY`, so nesting two of them at the defaults puts at
- * most `4 x 4 = 16` requests in flight rather than an unbounded product.
+ * WHAT THIS COSTS, STATED PLAINLY: the guarantee above - one process-wide bound
+ * on outbound requests - does NOT survive nesting. Each isolated fan-out is
+ * capped on its own, so the total in flight is the PRODUCT of the depths rather
+ * than the sum. At the defaults (outer 4, hydration 4, sxyprn detail 3) the
+ * worst case is 16, against the 40-way burst the hydration cap used to allow.
+ * But the product is what it is: `LISZT_FETCH_CONCURRENCY=16` admits 16x16 = 256
+ * simultaneous requests, where the shared pool admitted 16. Nesting is still a
+ * large improvement on the deadlock it replaced, and it is bounded - but it is
+ * not bounded by `fetchConcurrency`, and nothing in this module pretends
+ * otherwise.
+ *
+ * A genuine fix would cap the total rather than each level - an absolute gate
+ * acquired BEFORE entering a fan-out, never inside one - which is compatible
+ * with nesting precisely because it is not re-entrant. That is a separate
+ * change; the per-site caps here are what make that one safe to make later.
  *
  * Order is preserved and a rejected task rejects the whole call, exactly as in
  * `mapWithConcurrency`; the difference is the accounting, not the contract.
