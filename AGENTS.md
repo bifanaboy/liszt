@@ -14,20 +14,20 @@ Every value in this table was read from Render's API on 2026-09-30. If one of
 these ever disagrees with the dashboard, the dashboard is right and this file is
 wrong — fix it here.
 
-| Thing            | Value                                                       |
-| ---------------- | ----------------------------------------------------------- |
-| Render workspace | `Liszt`, id `tea-daqlqsrtqb8s73b3qcu0`                      |
-| Service name     | `liszt` — slug `liszt-h2cl`, id `srv-daugkumgekts73ecsgp0`  |
-| Live URL         | `https://liszt-h2cl.onrender.com`                           |
-| Region           | `singapore`                                                 |
-| Service type     | `web` (Node)                                                |
-| Plan (live)      | `free`                                                      |
-| Build / start    | `yarn` / `npm run start`                                    |
-| Health check     | none configured on Render; the app serves `GET /health`     |
-| Disk             | **none attached** — see "The database is ephemeral" below   |
-| Auto-deploy      | Only after CI checks pass (`autoDeployTrigger: checksPass`) |
-| Source repo      | `https://github.com/bifanaboy/liszt`                        |
-| Service id       | read it from the table above, never guess it                |
+| Thing            | Value                                                                            |
+| ---------------- | -------------------------------------------------------------------------------- |
+| Render workspace | `Liszt`, id `tea-daqlqsrtqb8s73b3qcu0`                                           |
+| Service name     | `liszt` — slug `liszt-h2cl`, id `srv-daugkumgekts73ecsgp0`                       |
+| Live URL         | `https://liszt-h2cl.onrender.com`                                                |
+| Region           | `singapore`                                                                      |
+| Service type     | `web` (Node)                                                                     |
+| Plan (live)      | `free`                                                                           |
+| Build / start    | `yarn` / `npm run start`                                                         |
+| Health check     | none configured on Render; the app serves `GET /health`                          |
+| Disk             | **none attached** — see "The database does not survive an instance change" below |
+| Auto-deploy      | Only after CI checks pass (`autoDeployTrigger: checksPass`)                      |
+| Source repo      | `https://github.com/bifanaboy/liszt`                                             |
+| Service id       | read it from the table above, never guess it                                     |
 
 ### `https://liszt.onrender.com` is NOT this app
 
@@ -65,14 +65,28 @@ attach a paid disk — all of which section 2 forbids, and a region change means
 full restart with a cold cache. Treat reconciling the two as its own task, with
 its own approval, after the cost is spelled out.
 
-### The database is ephemeral
+### The database does not survive an instance change
 
-No disk is attached, and a free plan cannot hold one. The SQLite file therefore
-lives on the instance and is **erased on every deploy, restart, or scale event.**
-Confirmed: the service answered `total: 0` scenes immediately after the
-2026-09-30 14:48 deploy, having held data before it. Any measurement taken from
-a live URL has to be taken before the next deploy, and any local database is
-throwaway until a disk exists.
+No disk is attached, and a free plan cannot hold one, so the SQLite file lives on
+the instance's own filesystem.
+
+Measured on 2026-09-30: the service answered `total: 0` scenes at 18:38:07, then
+the logs show a **different instance** starting a full sync at 18:38:40
+(`…-rg2ss` before, `…-dgwn5` after), and by 18:41 `/api/scenes` reported 121
+scenes and the same 46 links again. The store was genuinely empty in between —
+`buildReadModel` derives `stats.total` from the rows themselves and does not
+blank it while a sync runs.
+
+The likely cause is the free plan's idle spin-down: a free instance is destroyed
+after 15 minutes without traffic, and a new one starts with an empty
+filesystem. A deploy does the same thing. Either way the practical rule is the
+same:
+
+**Never measure from the live URL unless you have just triggered a sync, and
+treat any local database as throwaway.** A measurement taken after an idle gap
+may be reading a store that has not been rebuilt yet, and a sync takes a couple
+of minutes — check `latestRun` and `refreshing` before trusting a number, and
+never read `total: 0` as "the app is broken".
 
 ### Monitoring without a Render key
 
