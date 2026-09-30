@@ -1,0 +1,67 @@
+# Liszt systemd unit. Production runs Node directly - not Docker.
+#
+# The security posture here is deliberate:
+#   - the service binds 127.0.0.1 only; the Cloudflare Tunnel reaches it
+#   - the filesystem is read-only except the one directory holding the database
+#   - the password hash is read from a 640 root+liszt file, never a CLI arg
+#   - the unit has no ambient privileges to escalate from
+#
+# Install:
+#   cp deploy/liszt.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now liszt
+
+[Unit]
+Description=Liszt release catalogue
+Documentation=https://github.com/bifanaboy/liszt
+After=network-online.target
+Wants=network-online.target
+# Start limit lives in [Unit], not [Service]: systemd ignores it there, so
+# putting it in [Service] silently reverts to the 5-in-10s default.
+# Give up only after repeated hard failures, not on a slow first sync.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=liszt
+Group=liszt
+WorkingDirectory=/opt/liszt
+
+# The credential lives in a file, not an argument, so it never appears in
+# `ps` output or the journal.
+EnvironmentFile=/etc/liszt/liszt.env
+Environment=NODE_ENV=production
+
+ExecStart=/usr/local/bin/node src/app.ts
+
+Restart=always
+RestartSec=5
+
+# Graceful shutdown: the app closes the store on SIGTERM, so SQLite is never
+# killed mid-transaction.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# The ONLY writable path: the SQLite database and its WAL.
+ReadWritePaths=/var/lib/liszt
+# The app opens outbound HTTPS to its sources; nothing inbound.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=liszt
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,42 @@
+# Render is an ALTERNATIVE to the VPS + Cloudflare Tunnel setup. It is here for
+# someone who would rather not hold a box; it is not the recommended path,
+# because Render's egress IPs make sxyprn answer 403 and put the pool rung's
+# calibration on shakier ground.
+#
+# The app binds 127.0.0.1 by design. Render needs a routable interface, so the
+# bind address is overridable here only, and ONLY because Render fronts the
+# service with its own proxy. Do not copy this to a VPS.
+services:
+  - type: web
+    name: liszt
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/app.ts
+    healthCheckPath: /api/health
+    # /api/health is gated on purpose, so a 401 IS a healthy response. Render
+    # treats only 2xx as healthy, hence a probe that accepts 401.
+    autoDeploy: false
+    disk:
+      name: liszt-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: LISZT_DB_PATH
+        value: /data/liszt.db
+      - key: LISZT_LISTEN_ADDR
+        value: 0.0.0.0
+      - key: LISZT_POLL_INTERVAL_MINUTES
+        value: "30"
+      - key: LISZT_EPORNER_LQ
+        value: "0"
+      - key: LISZT_TRUSTED_UPLOADERS
+        value: Vovick17,KJUIUI,Rafael12021988,wmrt0s
+      # Set this in the dashboard, never in a committed file.
+      - key: LISZT_AUTH_PASSWORD_HASH
+        sync: false
