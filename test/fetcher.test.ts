@@ -60,7 +60,10 @@ test("a caller abort and our own deadline are reported differently", async () =>
     await assert.rejects(pending, /aborted by the caller/);
 
     // The deadline path still says "timed out".
-    await assert.rejects(fetcher.fetch("https://example.test/", { timeoutMs: 5 }), /timed out after 5ms/);
+    await assert.rejects(
+      fetcher.fetch("https://example.test/", { timeoutMs: 5 }),
+      /timed out after 5ms/,
+    );
   } finally {
     globalThis.fetch = original;
   }

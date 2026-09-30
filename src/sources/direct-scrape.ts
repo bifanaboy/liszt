@@ -77,8 +77,7 @@ export function nextPageUrl(html: string, current: string): string | undefined {
   const tag = html.match(/<link[^>]+rel=["'][^"']*\bnext\b[^"']*["'][^>]*>/i)?.[0];
   if (!tag) return undefined;
   const target =
-    tag.match(/href=["']([^"']+)["']/i)?.[1] ??
-    tag.match(/content=["']([^"']+)["']/i)?.[1];
+    tag.match(/href=["']([^"']+)["']/i)?.[1] ?? tag.match(/content=["']([^"']+)["']/i)?.[1];
   if (!target) return undefined;
   try {
     return new URL(decodeHtml(target), current).href;

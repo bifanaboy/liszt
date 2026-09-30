@@ -144,7 +144,9 @@ test("a repeat poll preserves resolved links, dead links and the re-verify water
   // the same cycle, which is not a property anyone could rely on.
   const store = new SqliteStore(":memory:");
   store.migrate();
-  const sync = buildSync(store, [adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))]);
+  const sync = buildSync(store, [
+    adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+  ]);
 
   await sync("first");
   const resolved: Scene = {
@@ -200,9 +202,12 @@ test("a repeat poll preserves resolved links, dead links and the re-verify water
   store.close();
 });
 
-test("a repeat sync converges instead of duplicating", async () => {  const store = new SqliteStore(":memory:");
+test("a repeat sync converges instead of duplicating", async () => {
+  const store = new SqliteStore(":memory:");
   store.migrate();
-  const sync = buildSync(store, [adapter("good", async () => ({ scenes: [raw("1"), raw("2")], verifiedEmpty: false }))]);
+  const sync = buildSync(store, [
+    adapter("good", async () => ({ scenes: [raw("1"), raw("2")], verifiedEmpty: false })),
+  ]);
 
   const first = await sync("first");
   const second = await sync("second");
@@ -251,7 +256,9 @@ test("a record that fails the schema boundary is skipped, not fatal to the run",
 test("the run ledger records each cycle with its outcomes", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
-  const sync = buildSync(store, [adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))]);
+  const sync = buildSync(store, [
+    adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+  ]);
   await sync("test");
   const [run] = store.recentRuns(1);
   assert.ok(run);
@@ -295,23 +302,22 @@ test("a pool match dated outside the window is refused end to end", async () => 
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () =>
-        ({
-          url: "",
-          embedUrl: "",
-          videoId: "",
-          uploader: "Vovick17",
-          title: "Marfe compilation",
-          identityTier: 0,
-          lagDays: 21,
-          candidatesConsidered: 40,
-          durationPassed: 1,
-          hydrated: 1,
-          rejectedByDate: 1,
-          unknownDate: 0,
-          hydrationCapped: false,
-          rejected: "date",
-        }),
+      poolLookup: async () => ({
+        url: "",
+        embedUrl: "",
+        videoId: "",
+        uploader: "Vovick17",
+        title: "Marfe compilation",
+        identityTier: 0,
+        lagDays: 21,
+        candidatesConsidered: 40,
+        durationPassed: 1,
+        hydrated: 1,
+        rejectedByDate: 1,
+        unknownDate: 0,
+        hydrationCapped: false,
+        rejected: "date",
+      }),
     },
   );
   const summary = await sync("test");
@@ -333,23 +339,22 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () =>
-        ({
-          url: "https://www.eporner.com/video-abc/",
-          embedUrl: "https://www.eporner.com/embed/abc/",
-          videoId: "abc",
-          uploader: "Vovick17",
-          title: "Marfe compilation",
-          identityTier: 1,
-          lagDays: 2,
-          candidatesConsidered: 40,
-          durationPassed: 1,
-          hydrated: 1,
-          rejectedByDate: 0,
-          unknownDate: 0,
-          hydrationCapped: false,
-          rejected: null,
-        }),
+      poolLookup: async () => ({
+        url: "https://www.eporner.com/video-abc/",
+        embedUrl: "https://www.eporner.com/embed/abc/",
+        videoId: "abc",
+        uploader: "Vovick17",
+        title: "Marfe compilation",
+        identityTier: 1,
+        lagDays: 2,
+        candidatesConsidered: 40,
+        durationPassed: 1,
+        hydrated: 1,
+        rejectedByDate: 0,
+        unknownDate: 0,
+        hydrationCapped: false,
+        rejected: null,
+      }),
     },
   );
   const summary = await sync("test");
@@ -370,23 +375,22 @@ test("a tier-0 winner is recorded as LOW CONFIDENCE for eyeballing", async () =>
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () =>
-        ({
-          url: "https://www.eporner.com/video-abc/",
-          embedUrl: "https://www.eporner.com/embed/abc/",
-          videoId: "abc",
-          uploader: "Vovick17",
-          title: "unrelated clip",
-          identityTier: 0,
-          lagDays: 2,
-          candidatesConsidered: 40,
-          durationPassed: 3,
-          hydrated: 3,
-          rejectedByDate: 0,
-          unknownDate: 0,
-          hydrationCapped: false,
-          rejected: null,
-        }),
+      poolLookup: async () => ({
+        url: "https://www.eporner.com/video-abc/",
+        embedUrl: "https://www.eporner.com/embed/abc/",
+        videoId: "abc",
+        uploader: "Vovick17",
+        title: "unrelated clip",
+        identityTier: 0,
+        lagDays: 2,
+        candidatesConsidered: 40,
+        durationPassed: 3,
+        hydrated: 3,
+        rejectedByDate: 0,
+        unknownDate: 0,
+        hydrationCapped: false,
+        rejected: null,
+      }),
     },
   );
   await sync("test");

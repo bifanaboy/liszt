@@ -54,7 +54,10 @@ test("matchEpornerOpen rejects a row whose URL or embed is invalid", () => {
   };
   const gate = { dateWindowDays: 7 };
   assert.ok(matchEpornerOpen(scene, [valid], gate));
-  assert.equal(matchEpornerOpen(scene, [{ ...valid, url: "https://evil.example/video-abc/" }], gate), null);
+  assert.equal(
+    matchEpornerOpen(scene, [{ ...valid, url: "https://evil.example/video-abc/" }], gate),
+    null,
+  );
   // Same rule as every other rung: outside the window is a rejection.
   assert.equal(matchEpornerOpen(scene, [{ ...valid, added: "2026-05-01 10:00:00" }], gate), null);
   assert.equal(matchEpornerOpen(scene, [{ ...valid, added: null }], gate), null);

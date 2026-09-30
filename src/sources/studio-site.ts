@@ -46,7 +46,12 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
     if (a >= 224) return true;
   }
   if (host === "localhost" || host === "localhost.localdomain") return true;
-  if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) {
+  if (
+    host === "::1" ||
+    host.startsWith("fe80:") ||
+    host.startsWith("fc") ||
+    host.startsWith("fd")
+  ) {
     return true;
   }
   return false;
@@ -200,7 +205,10 @@ export function extractStudioMetadata(
     if (output.durationSec === null && /duration/.test(key)) {
       output.durationSec = parseIsoDuration(value);
     }
-    if (!output.releaseDate && /(?:datepublished|release_date|published_time|uploaddate)/.test(key)) {
+    if (
+      !output.releaseDate &&
+      /(?:datepublished|release_date|published_time|uploaddate)/.test(key)
+    ) {
       output.releaseDate = value;
     }
     if (!output.performers.length && /(?:actor|performer|starring)/.test(key)) {

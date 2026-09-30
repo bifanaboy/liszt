@@ -47,7 +47,7 @@ function textFetcher(pages: Record<number, string>): Fetcher {
       }
       return body;
     },
-    json: async <T>() => ({} as T),
+    json: async <T>() => ({}) as T,
   };
 }
 
@@ -57,8 +57,14 @@ const NOW = new Date("2026-03-10T00:00:00Z");
 test("pagination is path-based: the query form 301s back to page 1", () => {
   // Verified live: `/uploaded-videos/?page=2` answers 301; `/uploaded-videos/2/`
   // answers 200 with different videos.
-  assert.equal(profileListingUrl("Vovick17", 1), "https://www.eporner.com/profile/Vovick17/uploaded-videos/");
-  assert.equal(profileListingUrl("Vovick17", 2), "https://www.eporner.com/profile/Vovick17/uploaded-videos/2/");
+  assert.equal(
+    profileListingUrl("Vovick17", 1),
+    "https://www.eporner.com/profile/Vovick17/uploaded-videos/",
+  );
+  assert.equal(
+    profileListingUrl("Vovick17", 2),
+    "https://www.eporner.com/profile/Vovick17/uploaded-videos/2/",
+  );
   assert.ok(!profileListingUrl("Vovick17", 2).includes("?"));
 });
 
@@ -142,17 +148,33 @@ test("the pre-filter is the DURATION half only, and nothing else", () => {
     releaseDate: "2026-03-04",
     durationSec: 2138,
   });
-  const good = { id: "a", uploader: "Vovick17", title: "Marfe compilation 0304", added: null, durationSec: 2138, hydratedAt: null };
+  const good = {
+    id: "a",
+    uploader: "Vovick17",
+    title: "Marfe compilation 0304",
+    added: null,
+    durationSec: 2138,
+    hydratedAt: null,
+  };
   // Right duration: survives, whatever the title and whatever the date.
   assert.equal(preFilter(scene, good, { durationToleranceSec: 2 }), true);
   // Right duration, no identity at all: STILL survives. The pre-filter no
   // longer pre-judges identity - it ranks later, in `pickMatch`.
-  assert.equal(preFilter(scene, { ...good, title: "unrelated clip" }, { durationToleranceSec: 2 }), true);
+  assert.equal(
+    preFilter(scene, { ...good, title: "unrelated clip" }, { durationToleranceSec: 2 }),
+    true,
+  );
   // Right identity, wrong duration: rejected without any network call.
-  assert.equal(preFilter(scene, { ...good, durationSec: 2500 }, { durationToleranceSec: 2 }), false);
+  assert.equal(
+    preFilter(scene, { ...good, durationSec: 2500 }, { durationToleranceSec: 2 }),
+    false,
+  );
   // Boundary: exactly at the tolerance is inside, one second past is not.
   assert.equal(preFilter(scene, { ...good, durationSec: 2140 }, { durationToleranceSec: 2 }), true);
-  assert.equal(preFilter(scene, { ...good, durationSec: 2141 }, { durationToleranceSec: 2 }), false);
+  assert.equal(
+    preFilter(scene, { ...good, durationSec: 2141 }, { durationToleranceSec: 2 }),
+    false,
+  );
   // Unknown duration: passes through so hydration can supply the real one.
   assert.equal(preFilter(scene, { ...good, durationSec: null }, { durationToleranceSec: 2 }), true);
   // No title at all: nothing to rank on, and hydration will not invent one.
@@ -175,9 +197,19 @@ test("setPoolHydration round-trips the date the API supplied, as ISO UTC", () =>
     });
     assert.equal(store.poolUndatedCount(), 1);
 
-    store.setPoolHydration("abc", "Vovick17", 2138, "2026-03-05 11:22:33", "2026-03-10T00:00:00.000Z");
+    store.setPoolHydration(
+      "abc",
+      "Vovick17",
+      2138,
+      "2026-03-05 11:22:33",
+      "2026-03-10T00:00:00.000Z",
+    );
     const [row] = store.poolVideosForUploader("Vovick17");
-    assert.equal(row!.added, "2026-03-05T11:22:33.000Z", "normalised so the TEXT range scan sorts correctly");
+    assert.equal(
+      row!.added,
+      "2026-03-05T11:22:33.000Z",
+      "normalised so the TEXT range scan sorts correctly",
+    );
     assert.equal(row!.durationSec, 2138);
     assert.equal(store.poolUndatedCount(), 0);
 
@@ -196,12 +228,20 @@ test("a dated row is now findable by the window query", () => {
   store.migrate();
   try {
     store.upsertPoolVideo({
-      id: "abc", uploader: "Vovick17", title: "t", added: "2026-03-05T11:22:33.000Z",
-      durationSec: 2138, hydratedAt: null,
+      id: "abc",
+      uploader: "Vovick17",
+      title: "t",
+      added: "2026-03-05T11:22:33.000Z",
+      durationSec: 2138,
+      hydratedAt: null,
     });
     // The naive zoneless format does not sort against an ISO bound; this is the
     // regression that `toIsoUtc` at the write boundary prevents.
-    const inWindow = store.poolVideosInWindow("Vovick17", "2026-03-04T00:00:00.000Z", "2026-03-12T00:00:00.000Z");
+    const inWindow = store.poolVideosInWindow(
+      "Vovick17",
+      "2026-03-04T00:00:00.000Z",
+      "2026-03-12T00:00:00.000Z",
+    );
     assert.equal(inWindow.length, 1);
   } finally {
     store.close();
@@ -224,12 +264,19 @@ test("the undated working set is ordered newest-first and capped in SQL", () => 
   try {
     for (const id of ["newest", "middle", "oldest"]) {
       store.upsertPoolVideo({
-        id, uploader: "Vovick17", title: id, added: null,
-        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+        id,
+        uploader: "Vovick17",
+        title: id,
+        added: null,
+        durationSec: 600,
+        hydratedAt: "2026-03-10T00:00:00.000Z",
       });
     }
     const all = store.poolVideosUndated("Vovick17");
-    assert.deepEqual(all.map((row) => row.id), ["newest", "middle", "oldest"]);
+    assert.deepEqual(
+      all.map((row) => row.id),
+      ["newest", "middle", "oldest"],
+    );
     assert.deepEqual(
       store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
       ["newest", "middle"],
@@ -237,7 +284,13 @@ test("the undated working set is ordered newest-first and capped in SQL", () => 
     );
     assert.deepEqual(store.poolVideosUndated("Vovick17", 0), []);
     // A dated row is not in this set at all.
-    store.setPoolHydration("middle", "Vovick17", 600, "2026-03-05 00:00:00", "2026-03-10T00:00:00.000Z");
+    store.setPoolHydration(
+      "middle",
+      "Vovick17",
+      600,
+      "2026-03-05 00:00:00",
+      "2026-03-10T00:00:00.000Z",
+    );
     assert.deepEqual(
       store.poolVideosUndated("Vovick17").map((row) => row.id),
       ["newest", "oldest"],
@@ -274,15 +327,21 @@ test("a truncated re-walk never prunes by absence", async () => {
     // Last complete walk left five rows behind.
     for (const id of ["a", "b", "c", "d", "e"]) {
       store.upsertPoolVideo({
-        id, uploader: "Vovick17", title: id, added: null,
-        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+        id,
+        uploader: "Vovick17",
+        title: id,
+        added: null,
+        durationSec: 600,
+        hydratedAt: "2026-03-10T00:00:00.000Z",
       });
     }
 
     // COMPLETE walk: page 1 is full (a short page is itself a stop), and page 2
     // answers 404, so the end of the listing was genuinely reached. `d` and `e`
     // were deleted upstream, and saying so is the whole point of the re-walk.
-    const complete = await index({ 1: page(["a", "b", "c", "f", "g", "h", "i", "j", "k", "l", "m", "n"]) });
+    const complete = await index({
+      1: page(["a", "b", "c", "f", "g", "h", "i", "j", "k", "l", "m", "n"]),
+    });
     assert.equal(complete.ok, true);
     assert.equal(complete.uploaders[0]!.endOfListing, true);
     assert.equal(complete.uploaders[0]!.pruned, 2, "d and e were genuinely deleted upstream");
@@ -292,8 +351,12 @@ test("a truncated re-walk never prunes by absence", async () => {
     // fires on page 1 and the rest of the account is never looked at.
     for (const id of ["o", "p", "q"]) {
       store.upsertPoolVideo({
-        id, uploader: "Vovick17", title: id, added: null,
-        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+        id,
+        uploader: "Vovick17",
+        title: id,
+        added: null,
+        durationSec: 600,
+        hydratedAt: "2026-03-10T00:00:00.000Z",
       });
     }
     const truncated = await index({
@@ -301,7 +364,11 @@ test("a truncated re-walk never prunes by absence", async () => {
       2: page(["o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"], "Mar 1, 2019"),
     });
     assert.equal(truncated.ok, true);
-    assert.equal(truncated.uploaders[0]!.endOfListing, false, "the walk stopped early, not at the end");
+    assert.equal(
+      truncated.uploaders[0]!.endOfListing,
+      false,
+      "the walk stopped early, not at the end",
+    );
     assert.equal(truncated.uploaders[0]!.pagesFetched, 1);
     assert.equal(truncated.uploaders[0]!.pruned, 0, "nothing may be deleted on a truncated walk");
     assert.equal(
@@ -393,14 +460,18 @@ test("hydration inside a scene resolve does not deadlock the shared fetch pool",
       mapWithConcurrency(
         scenes,
         (scene) =>
-          gatherPoolSurvivors(scene, {
-            store,
-            fetcher,
-            uploaders: ["Vovick17"],
-            durationToleranceSec: 2,
-            dateWindowDays: 90,
-            log: () => {},
-          }, NOW),
+          gatherPoolSurvivors(
+            scene,
+            {
+              store,
+              fetcher,
+              uploaders: ["Vovick17"],
+              durationToleranceSec: 2,
+              dateWindowDays: 90,
+              log: () => {},
+            },
+            NOW,
+          ),
         4,
       ),
       5_000,
@@ -421,8 +492,10 @@ test("hydration inside a scene resolve does not deadlock the shared fetch pool",
 
 /** A card whose only date is the given one, or none at all. */
 function walkCard(id: string, date?: string): string {
-  return `<div class="mb"><a href="/video-${id}/slug/"><img alt="Scene ${id}" /></a>` +
-    `<p class="mbstats">${date ?? ""}<span class="mbtim" title="Duration">10:00</span></p></div>`;
+  return (
+    `<div class="mb"><a href="/video-${id}/slug/"><img alt="Scene ${id}" /></a>` +
+    `<p class="mbstats">${date ?? ""}<span class="mbtim" title="Duration">10:00</span></p></div>`
+  );
 }
 const walkPage = (ids: string[], date?: string): string =>
   ids.map((id) => walkCard(id, date)).join("\n");
@@ -453,8 +526,12 @@ test("an account whose count is not a multiple of the page size still reaches th
     // upstream and `a` and `b` were never there.
     for (const id of ["a", "b", "c", "d", "e"]) {
       store.upsertPoolVideo({
-        id, uploader: "Vovick17", title: id, added: null,
-        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+        id,
+        uploader: "Vovick17",
+        title: id,
+        added: null,
+        durationSec: 600,
+        hydratedAt: "2026-03-10T00:00:00.000Z",
       });
     }
     // Page 1 is a FULL page of 12; page 2 holds the 7 that end the account, so
@@ -502,15 +579,24 @@ test("a walk truncated at the maxPages ceiling neither prunes nor stamps the cad
   try {
     for (const id of ["a", "b", "c"]) {
       store.upsertPoolVideo({
-        id, uploader: "Vovick17", title: id, added: null,
-        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+        id,
+        uploader: "Vovick17",
+        title: id,
+        added: null,
+        durationSec: 600,
+        hydratedAt: "2026-03-10T00:00:00.000Z",
       });
     }
     // Every page is FULL, so the short-page test never fires, and page 3 does not
     // exist - but the ceiling stops the walk on page 2 before the 404 is reached.
-    const full = (prefix: string) => walkPage(Array.from({ length: 12 }, (_, i) => `${prefix}${i}z`));
+    const full = (prefix: string) =>
+      walkPage(Array.from({ length: 12 }, (_, i) => `${prefix}${i}z`));
     const truncated = await index({ 1: full("p1"), 2: full("p2") }, 2);
-    assert.equal(truncated.uploaders[0]!.endOfListing, false, "the ceiling is not the end of the listing");
+    assert.equal(
+      truncated.uploaders[0]!.endOfListing,
+      false,
+      "the ceiling is not the end of the listing",
+    );
     assert.equal(truncated.uploaders[0]!.pruned, 0, "nothing may be deleted on a truncated walk");
     assert.equal(
       truncated.uploaders[0]!.pruneSkipped,
@@ -535,7 +621,10 @@ test("a walk truncated at the maxPages ceiling neither prunes nor stamps the cad
     );
     assert.equal(store.getPoolMeta(POOL_FULL_REWALK_KEY), NOW.toISOString());
     assert.deepEqual(
-      store.poolVideosForUploader("Vovick17").map((row) => row.id).sort(),
+      store
+        .poolVideosForUploader("Vovick17")
+        .map((row) => row.id)
+        .sort(),
       ["c", "d", "e"],
     );
   } finally {

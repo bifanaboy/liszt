@@ -158,9 +158,7 @@ function hasZoneDesignator(text: string): boolean {
 export function parseTimestamp(value: string | null | undefined): number | null {
   const text = String(value ?? "").trim();
   if (!text) return null;
-  const zoneless = text.match(
-    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/,
-  );
+  const zoneless = text.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (zoneless) {
     const day = calendarDateUtc(Number(zoneless[1]), Number(zoneless[2]), Number(zoneless[3]));
     if (day === null) return null;
@@ -261,7 +259,11 @@ export function identityTier(scene: SceneIdentity, title: string): IdentityTier 
     if (tokens.every((token) => candidate.has(token))) return 2;
     // `Vovick0301` style: the name glued to a date code as one token.
     const first = tokens[0] as string;
-    if (best < 1 && (candidate.has(first) || candidateTokens.some((token) => new RegExp(`^${first}\\d{3,4}$`).test(token)))) {
+    if (
+      best < 1 &&
+      (candidate.has(first) ||
+        candidateTokens.some((token) => new RegExp(`^${first}\\d{3,4}$`).test(token)))
+    ) {
       best = 1;
     }
   }

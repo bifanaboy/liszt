@@ -20,7 +20,15 @@ test("stop() waits for the in-flight cycle before it resolves", async () => {
   const order: string[] = [];
   const scheduler = createScheduler({
     intervalMs: 5,
-    log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
+    log: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      child() {
+        return this;
+      },
+    },
     run: async () => {
       started += 1;
       await new Promise<void>((resolve) => {
@@ -49,7 +57,15 @@ test("a second tick cannot start a cycle on top of one in flight", async () => {
   let finish: (() => void) | undefined;
   const scheduler = createScheduler({
     intervalMs: 5,
-    log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
+    log: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      child() {
+        return this;
+      },
+    },
     run: async () => {
       started += 1;
       await new Promise<void>((resolve) => {
@@ -68,7 +84,15 @@ test("stop() gives up on a wedged cycle instead of hanging shutdown", async () =
   const scheduler = createScheduler({
     intervalMs: 5,
     stopTimeoutMs: 30,
-    log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
+    log: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      child() {
+        return this;
+      },
+    },
     // Never settles.
     run: () => new Promise(() => {}),
   });
@@ -87,7 +111,15 @@ test("stop() reports a clean stop once the cycle settles", async () => {
   const scheduler = createScheduler({
     intervalMs: 5,
     stopTimeoutMs: 10_000,
-    log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
+    log: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      child() {
+        return this;
+      },
+    },
     run: async () => {
       await new Promise<void>((resolve) => {
         finish = resolve;
@@ -104,7 +136,15 @@ test("stop() reports a clean stop once the cycle settles", async () => {
 test("stop() on an idle scheduler is clean", async () => {
   const scheduler = createScheduler({
     intervalMs: 1000,
-    log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
+    log: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      child() {
+        return this;
+      },
+    },
     run: async () => undefined,
   });
   assert.equal(await scheduler.stop(), true);

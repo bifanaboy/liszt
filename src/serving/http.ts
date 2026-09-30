@@ -52,7 +52,12 @@ export interface HttpDeps {
   publicDir: string;
 }
 
-function send(res: ServerResponse, status: number, contentType: string, body: string | Buffer): void {
+function send(
+  res: ServerResponse,
+  status: number,
+  contentType: string,
+  body: string | Buffer,
+): void {
   res.writeHead(status, {
     "content-type": contentType,
     "content-length": Buffer.byteLength(body),
@@ -65,8 +70,6 @@ function send(res: ServerResponse, status: number, contentType: string, body: st
 function sendJson(res: ServerResponse, status: number, value: unknown): void {
   send(res, status, "application/json; charset=utf-8", JSON.stringify(value));
 }
-
-
 
 /** Resolve a URL path to a file inside `publicDir`, or null on traversal. */
 function staticTarget(publicDir: string, pathname: string): string | null {
@@ -85,14 +88,20 @@ async function serveStatic(deps: HttpDeps, pathname: string, res: ServerResponse
   }
   try {
     const body = await readFile(target);
-    send(res, 200, CONTENT_TYPES[extname(target).toLowerCase()] ?? "application/octet-stream", body);
+    send(
+      res,
+      200,
+      CONTENT_TYPES[extname(target).toLowerCase()] ?? "application/octet-stream",
+      body,
+    );
   } catch {
     send(res, 404, "text/plain; charset=utf-8", "not found\n");
   }
 }
 
-
-export function createHttpHandler(deps: HttpDeps): (request: IncomingMessage, response: ServerResponse) => void {
+export function createHttpHandler(
+  deps: HttpDeps,
+): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     void handle(deps, request, response).catch((error) => {
       deps.log.error("request failed", { error: (error as Error).message });
@@ -102,7 +111,11 @@ export function createHttpHandler(deps: HttpDeps): (request: IncomingMessage, re
   };
 }
 
-async function handle(deps: HttpDeps, request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function handle(
+  deps: HttpDeps,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
   const method = (request.method ?? "GET").toUpperCase();
   const url = new URL(request.url ?? "/", "http://localhost");
   const path = url.pathname;
@@ -136,7 +149,9 @@ async function handle(deps: HttpDeps, request: IncomingMessage, response: Server
   if (path === "/api/refresh" && method === "POST") {
     const joined = deps.isBusy();
     const pending = deps.refresh();
-    pending.catch((error) => deps.log.error("refresh cycle failed", { error: (error as Error).message }));
+    pending.catch((error) =>
+      deps.log.error("refresh cycle failed", { error: (error as Error).message }),
+    );
     sendJson(response, 202, {
       ok: true,
       status: joined ? "joined" : "started",
@@ -151,7 +166,6 @@ async function handle(deps: HttpDeps, request: IncomingMessage, response: Server
   }
   sendJson(response, 405, { error: "method not allowed" });
 }
-
 
 export function createHttpServer(deps: HttpDeps): Server {
   return createServer(createHttpHandler(deps));

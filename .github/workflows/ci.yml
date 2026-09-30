@@ -17,7 +17,7 @@ jobs:
           # Render resolves `engines.node` to the newest release in the range and
           # applies security patches on every deploy. CI pins to the same major
           # so a check can never pass on a runtime the deploy will not use.
-          node-version: '24'
+          node-version: "24"
 
       # WITH devDependencies. `npm ci --omit=dev` is what Render runs to build,
       # but the checks below are the devDependencies themselves.

@@ -52,9 +52,7 @@ export const Config = z.object({
   /** The eporner open-search low-quality filter. The API default is 1, which
    *  *includes* low-quality content; 0 excludes it. */
   epornerLq: z.coerce.number().int().min(0).max(1).default(0),
-  trustedUploaders: z
-    .array(z.string().min(1))
-    .default([...DEFAULT_TRUSTED_UPLOADERS]),
+  trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
   /** Duration gate, applied identically on every rung. Not per-rung. */
   matchDurationToleranceSec: z.coerce.number().positive().default(2),
   /**
@@ -136,7 +134,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     windowDays: env.LISZT_WINDOW_DAYS,
     pollIntervalMinutes: env.LISZT_POLL_INTERVAL_MINUTES,
     bootSync:
-      env.LISZT_BOOT_SYNC === undefined ? undefined : bool("LISZT_BOOT_SYNC", env.LISZT_BOOT_SYNC, true),
+      env.LISZT_BOOT_SYNC === undefined
+        ? undefined
+        : bool("LISZT_BOOT_SYNC", env.LISZT_BOOT_SYNC, true),
     fetchConcurrency: env.LISZT_FETCH_CONCURRENCY,
     fetchTimeoutMs: env.LISZT_FETCH_TIMEOUT_MS,
     sxyprnTimeoutMs: env.LISZT_SXYPRN_TIMEOUT_MS,
@@ -162,4 +162,3 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   return result.data;
 }
-

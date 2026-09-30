@@ -163,7 +163,9 @@ async function trySxyprn(
     rejections.noMatch += 1;
     return null;
   }
-  const found = matches.find((candidate) => validSxyprnUrl(candidate.url) && !dead.has(candidate.url));
+  const found = matches.find(
+    (candidate) => validSxyprnUrl(candidate.url) && !dead.has(candidate.url),
+  );
   if (!found) {
     rejections.noMatch += 1;
     return null;
@@ -207,8 +209,10 @@ export async function resolveScene(
   deps: ResolveDeps,
   rejections: RungRejections = emptyRejections(),
 ): Promise<ResolveResult> {
-  if (deps.matcher === null) return { scene, changed: false, matched: false, rung: "none", tier: null };
-  if (scene.videoUrls.length > 0) return { scene, changed: false, matched: false, rung: null, tier: null };
+  if (deps.matcher === null)
+    return { scene, changed: false, matched: false, rung: "none", tier: null };
+  if (scene.videoUrls.length > 0)
+    return { scene, changed: false, matched: false, rung: null, tier: null };
   if (!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) {
     return { scene, changed: false, matched: false, rung: null, tier: null };
   }
@@ -233,7 +237,12 @@ export async function resolveScene(
   }
 
   const { link, tier } = winner;
-  const rung: Rung = link.source === "sxyprn" ? "sxyprn" : link.source === "eporner" ? "eporner-open" : "eporner-pool";
+  const rung: Rung =
+    link.source === "sxyprn"
+      ? "sxyprn"
+      : link.source === "eporner"
+        ? "eporner-open"
+        : "eporner-pool";
   const rule = rung === "eporner-pool" ? POOL_RULE : rung === "sxyprn" ? SXYPRN_RULE : OPEN_RULE;
   return {
     scene: {
@@ -257,7 +266,10 @@ export async function resolveScene(
 export interface ResolveLinksOptions {
   scenes: Scene[];
   now: Date;
-  mapWithConcurrency: <T, R>(items: T[], task: (item: T, index: number) => Promise<R>) => Promise<R[]>;
+  mapWithConcurrency: <T, R>(
+    items: T[],
+    task: (item: T, index: number) => Promise<R>,
+  ) => Promise<R[]>;
   /** The declared lane per scene, so a metadata-only lane is skipped. */
   matcherFor: (scene: Scene) => { matcher: string | null; creatorStudio: boolean };
   poolLookup: ResolveDeps["poolLookup"];
@@ -310,7 +322,11 @@ export async function resolveLinks({
   // per-scene counter could not be summed without racing.
   const results = await mapWithConcurrency(queue, (scene) => {
     const { matcher, creatorStudio } = matcherFor(scene);
-    return resolveScene(scene, { matcher, creatorStudio, now, poolLookup, sxyprnLookup, openLookup }, rejections);
+    return resolveScene(
+      scene,
+      { matcher, creatorStudio, now, poolLookup, sxyprnLookup, openLookup },
+      rejections,
+    );
   });
   const byId = new Map(results.map((result) => [result.scene.id, result.scene]));
   let matched = 0;

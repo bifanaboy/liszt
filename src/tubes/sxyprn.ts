@@ -30,7 +30,13 @@
  * was a workaround for opaque titles, and the rebuild dropped it: a link that
  * cannot clear the measured gate is not written.
  */
-import { pickMatch, parseTimestamp, titleStem, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
+import {
+  pickMatch,
+  parseTimestamp,
+  titleStem,
+  type IdentityTier,
+  type TubeCandidate,
+} from "../core/matching.ts";
 import { mapIsolated } from "../core/concurrency.ts";
 import { createExpiringCache } from "./eporner.ts";
 import { buildQueries, configuredSceneCode } from "./queries.ts";
@@ -170,12 +176,13 @@ export function createSxyprnLookup({
     // uploads over embeds: a card is cheap to check and an embed is a link to
     // someone else's file.
     const sameStem = mapped.filter(
-      (item) => titleStem(item.title) === titleStem(picked.candidate.title) && item.url !== picked.candidate.url,
+      (item) =>
+        titleStem(item.title) === titleStem(picked.candidate.title) &&
+        item.url !== picked.candidate.url,
     );
-    const ranked = [
-      picked.candidate as TubeCandidate & { isExternal: boolean },
-      ...sameStem,
-    ].sort((left, right) => Number(left.isExternal) - Number(right.isExternal));
+    const ranked = [picked.candidate as TubeCandidate & { isExternal: boolean }, ...sameStem].sort(
+      (left, right) => Number(left.isExternal) - Number(right.isExternal),
+    );
 
     // The detail pass. The posts are fetched concurrently (each pays a browser-
     // impersonated request, so serial would multiply the ladder's latency by

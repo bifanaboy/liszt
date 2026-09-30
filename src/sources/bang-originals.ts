@@ -25,9 +25,7 @@ interface SearchResultsPage {
 
 /** Parse the listing's structured search results plus the card dates. */
 export function parseListing(html: string, base: string): ListingEntry[] {
-  const blocks = [
-    ...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g),
-  ];
+  const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
   if (!blocks.length) {
     throw new Error("Bang! Originals listing is missing structured search results");
   }
@@ -126,11 +124,20 @@ export function parseVideoPage(html: string, entry: ListingEntry): RawScene {
     throw new Error(`Required Bang! video metadata missing for ${entry.releaseUrl}`);
   }
   const releaseDate = video.datePublished.slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(releaseDate) || Number.isNaN(Date.parse(`${releaseDate}T00:00:00Z`))) {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(releaseDate) ||
+    Number.isNaN(Date.parse(`${releaseDate}T00:00:00Z`))
+  ) {
     throw new Error(`Invalid Bang! video release date for ${entry.releaseUrl}`);
   }
   const performers = Array.isArray(video.actor)
-    ? [...new Set(video.actor.map(({ name }) => name?.trim()).filter((name): name is string => Boolean(name)))]
+    ? [
+        ...new Set(
+          video.actor
+            .map(({ name }) => name?.trim())
+            .filter((name): name is string => Boolean(name)),
+        ),
+      ]
     : [];
   return {
     sourceSceneId,
@@ -151,16 +158,17 @@ export function parseVideoPage(html: string, entry: ListingEntry): RawScene {
 }
 
 function parseDuration(value: string): number | null {
-  const iso = value.match(
-    /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i,
-  );
+  const iso = value.match(/^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
   if (!iso) {
     const clock = value.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
     if (!clock) return null;
     return Number(clock[1] || 0) * 3_600 + Number(clock[2]) * 60 + Number(clock[3]);
   }
   const total =
-    Number(iso[1] || 0) * 86_400 + Number(iso[2] || 0) * 3_600 + Number(iso[3] || 0) * 60 + Number(iso[4] || 0);
+    Number(iso[1] || 0) * 86_400 +
+    Number(iso[2] || 0) * 3_600 +
+    Number(iso[3] || 0) * 60 +
+    Number(iso[4] || 0);
   return total > 0 ? total : null;
 }
 

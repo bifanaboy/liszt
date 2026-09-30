@@ -41,7 +41,10 @@ test("a definitive failure strikes once, then moves the link to dead", async () 
 test("a live result refreshes verifiedAt and clears strikes", async () => {
   const scene = makeScene({ id: "test:2", videoUrls: [link({ verifyFailures: 1 })] });
   const now = new Date("2026-03-10T00:00:00Z");
-  const result = await reverifyLinks([scene], { verify: async () => ({ status: "live" as const }), now });
+  const result = await reverifyLinks([scene], {
+    verify: async () => ({ status: "live" as const }),
+    now,
+  });
   assert.equal(result.scenes[0]!.videoUrls[0]!.verifyFailures, 0);
   assert.equal(result.scenes[0]!.videoUrls[0]!.verifiedAt, now.toISOString());
 });
@@ -59,9 +62,24 @@ test("an inconclusive result leaves the link untouched", async () => {
 
 test("the re-verify slice is the stalest links first, capped at the limit", () => {
   const scenes = [
-    makeScene({ id: "test:a", videoUrls: [link({ url: "https://www.eporner.com/video-a/", verifiedAt: "2026-03-05T00:00:00Z" })] }),
-    makeScene({ id: "test:b", videoUrls: [link({ url: "https://www.eporner.com/video-b/", verifiedAt: "2026-03-01T00:00:00Z" })] }),
-    makeScene({ id: "test:c", videoUrls: [link({ url: "https://www.eporner.com/video-c/", verifiedAt: "2026-03-03T00:00:00Z" })] }),
+    makeScene({
+      id: "test:a",
+      videoUrls: [
+        link({ url: "https://www.eporner.com/video-a/", verifiedAt: "2026-03-05T00:00:00Z" }),
+      ],
+    }),
+    makeScene({
+      id: "test:b",
+      videoUrls: [
+        link({ url: "https://www.eporner.com/video-b/", verifiedAt: "2026-03-01T00:00:00Z" }),
+      ],
+    }),
+    makeScene({
+      id: "test:c",
+      videoUrls: [
+        link({ url: "https://www.eporner.com/video-c/", verifiedAt: "2026-03-03T00:00:00Z" }),
+      ],
+    }),
   ];
   const slice = selectReverifySlice(scenes, 2);
   assert.deepEqual(
@@ -119,7 +137,7 @@ test("an eporner 200 with a non-JSON body is an anti-bot wall, not a deletion", 
     fetcher: {
       fetch: async () => new Response("<html>checking your browser</html>", html),
       text: async () => "",
-      json: async <T>() => ({} as T),
+      json: async <T>() => ({}) as T,
     },
   });
   const outcome = await verify(link());

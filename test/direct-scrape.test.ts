@@ -53,7 +53,7 @@ function studioFetcher(fail?: string): Fetcher {
   return {
     fetch: async (url: string) => respond(url),
     text: async (url: string) => respond(url).text(),
-    json: async <T>() => ({} as T),
+    json: async <T>() => ({}) as T,
   };
 }
 
@@ -95,17 +95,17 @@ test("listing hydration inside the per-source fan-out does not deadlock the shar
   // cannot survive. Deterministic, not a timing gamble.
   const adapters = ["one", "two", "three", "four"].map((id) => ({ id }));
   const results = await withDeadline(
-    mapWithConcurrency(
-      adapters,
-      () => studio(context(4)),
-      4,
-    ),
+    mapWithConcurrency(adapters, () => studio(context(4)), 4),
     5_000,
     "direct-scrape hydration deadlocked the shared fetch pool",
   );
   assert.equal(results.length, 4);
   for (const [index, result] of results.entries()) {
-    assert.equal(result.scenes.length, 4, `source ${index} hydrated every page rather than deadlocking`);
+    assert.equal(
+      result.scenes.length,
+      4,
+      `source ${index} hydrated every page rather than deadlocking`,
+    );
   }
 });
 
@@ -115,10 +115,11 @@ test("one failed video page keeps the rest of the lane's scenes", async () => {
   // record the other N-1 pages had already produced.
   const ctx = context(2, studioFetcher("/scene/b"));
   const result = await studio(ctx);
-  assert.deepEqual(
-    result.scenes.map((scene) => scene.sourceSceneId).sort(),
-    ["/scene/a", "/scene/c", "/scene/d"],
-  );
+  assert.deepEqual(result.scenes.map((scene) => scene.sourceSceneId).sort(), [
+    "/scene/a",
+    "/scene/c",
+    "/scene/d",
+  ]);
   assert.equal(result.verifiedEmpty, false, "a lane that lost records must not claim it is empty");
 });
 
@@ -126,14 +127,11 @@ test("an empty queue is only trusted when the listing itself carried entries", a
   // `verifiedEmpty: true` tells sync to delete the lane's catalogue. That is only
   // evidence when the listing was READABLE, so a listing that parsed to nothing
   // must not be able to trigger it.
-  const ctx = context(
-    2,
-    {
-      fetch: async () => new Response("<html><body>nothing here</body></html>", { status: 200 }),
-      text: async () => "<html><body>nothing here</body></html>",
-      json: async <T>() => ({} as T),
-    },
-  );
+  const ctx = context(2, {
+    fetch: async () => new Response("<html><body>nothing here</body></html>", { status: 200 }),
+    text: async () => "<html><body>nothing here</body></html>",
+    json: async <T>() => ({}) as T,
+  });
   const result = await studio(ctx);
   assert.deepEqual(result.scenes, []);
   assert.equal(result.verifiedEmpty, false);
