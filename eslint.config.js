@@ -37,7 +37,15 @@ export default tseslint.config(
     // renamed or typo'd helper, a binding deleted at the call site. `globals`
     // is one devDependency and one config line, which is the alternative if
     // that blind spot ever earns the dependency. Both files currently resolve.
+    // Both files are ES modules - `<script type="module" src="/app.js">` in
+    // index.html, and source-health.js is imported from app.js - so the parse
+    // sourceType is pinned here rather than inherited from whatever a default
+    // happens to be, which would silently turn into a classic script parse if
+    // that ever changed. ecmaVersion is deliberately NOT pinned: freezing it
+    // would make this gate reject syntax these files are later allowed to use,
+    // which is the opposite of what it is for.
     files: ["public/**/*.js"],
+    languageOptions: { sourceType: "module" },
     rules: { "no-undef": "off" },
   },
 );
