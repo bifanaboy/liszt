@@ -118,6 +118,48 @@ test("idle polling retries failed completion reloads and stops reloading after s
   assert.deepEqual([...app.timers.values()], [20000]);
 });
 
+for (const previousRun of [undefined, "previous-run"]) {
+  test(`idle polling reloads a missed run after ${previousRun ?? "no previous run"}`, async () => {
+    let progress = { ...idle, runId: previousRun };
+    let loads = 0;
+    const app = await dashboard(async (url) => {
+      if (url === "/api/progress") return response({ progress });
+      loads += 1;
+      return response({ ...catalogue, progress, stats: { total: loads } });
+    });
+    assert.equal(loads, 1, "the initial snapshot does not trigger another load");
+    await app.pollProgress();
+    assert.equal(loads, 1, "the unchanged idle snapshot does not reload");
+
+    progress = { ...idle, runId: "missed-run" };
+    await app.pollProgress();
+    await settle();
+    assert.equal(loads, 2);
+    assert.equal(app.element("#stat-scenes").textContent, "2");
+    assert.equal(app.element("#progress-live").textContent, "");
+    await app.pollProgress();
+    assert.equal(loads, 2, "the completed run only reloads once");
+  });
+}
+
+test("idle polling retries a failed reload for a missed run", async () => {
+  const completed = { ...idle, runId: "missed-run" };
+  let loads = 0;
+  const app = await dashboard(async (url) => {
+    if (url === "/api/progress") return response({ progress: completed });
+    loads += 1;
+    if (loads === 2) throw new Error("catalogue unavailable");
+    return response({ ...catalogue, progress: loads === 1 ? idle : completed });
+  });
+  await app.pollProgress();
+  await settle();
+  assert.equal(loads, 2);
+  await app.pollProgress();
+  assert.equal(loads, 3);
+  await app.pollProgress();
+  assert.equal(loads, 3, "successful retry stops catalogue reloads");
+});
+
 test("a direct poll cancels its scheduled timer before awaiting the response", async () => {
   let resolvePoll!: (value: unknown) => void;
   const pending = new Promise((resolve) => {

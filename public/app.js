@@ -296,9 +296,11 @@ function syncRefreshChrome(active) {
 /** Absorb one snapshot. Returns whether a cycle is live, which sets the next poll delay. */
 function applyProgress(next) {
   const wasActive = Boolean(progressState.active);
+  const previousRun = progressState.runId || null;
   progressState = next && typeof next === "object" ? next : { active: false, stage: "idle" };
   const active = Boolean(progressState.active);
   const run = progressState.runId || null;
+  const newRun = primed && run !== null && run !== previousRun;
 
   // The live region carries exactly two messages per run. The first snapshot of
   // a page load is not one of them: a cycle already in flight was started by the
@@ -327,10 +329,12 @@ function applyProgress(next) {
     if (!elapsedTimer) elapsedTimer = setInterval(tickElapsed, 1000);
   } else {
     hideRow();
-    // Only on the falling edge. Refetching the catalogue on every idle poll
-    // would re-sort the list under the reader's cursor for nothing.
+    // A run can finish between polls or while the tab is hidden. Reload on
+    // completion or a newly observed run, without refetching every idle poll.
     if (wasActive) {
       progressLive.textContent = progressState.stage === "error" ? "Refresh failed" : "Refresh finished";
+    }
+    if (wasActive || newRun) {
       load().then(() => { catalogueReloadFailed = false; }).catch(() => { catalogueReloadFailed = true; });
     }
   }
