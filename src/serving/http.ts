@@ -20,6 +20,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import type { Logger } from "../core/logger.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
+import { idleProgress, type SyncProgress } from "../pipeline/progress.ts";
 import type { ReadModel } from "./read-model.ts";
 
 /**
@@ -50,6 +51,15 @@ export interface HttpDeps {
   refresh: () => Promise<unknown>;
   isBusy: () => boolean;
   publicDir: string;
+  /**
+   * The live cycle's progress, for `GET /api/progress`.
+   *
+   * A dedicated route because the meters change every couple of seconds and
+   * `/api/scenes` is the whole catalogue: refetching that to move a bar would
+   * re-sort the list under the reader's cursor. Status and data are separate
+   * channels on purpose.
+   */
+  progress?: () => SyncProgress;
 }
 
 function send(
@@ -135,6 +145,13 @@ async function handle(
   }
   if (path === "/api/scenes" && method === "GET") {
     sendJson(response, 200, deps.readModel());
+    return;
+  }
+  if (path === "/api/progress" && method === "GET") {
+    sendJson(response, 200, {
+      generatedAt: now.toISOString(),
+      progress: deps.progress ? deps.progress() : idleProgress(),
+    });
     return;
   }
   if (path === "/api/sources" && method === "GET") {

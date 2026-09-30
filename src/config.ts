@@ -49,12 +49,19 @@ export const Config = z.object({
   maximoListingUrl: z.string().url().optional(),
 
   // Tube ladder.
-  /** The eporner open-search low-quality filter. The API default is 1, which
-   *  *includes* low-quality content; 0 excludes it. */
-  epornerLq: z.coerce.number().int().min(0).max(1).default(0),
   trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
-  /** Duration gate, applied identically on every rung. Not per-rung. */
-  matchDurationToleranceSec: z.coerce.number().positive().default(2),
+  /**
+   * Duration gate, applied identically on every rung. Not per-rung.
+   *
+   * Duplicated from `MATCH_DURATION_TOLERANCE_SEC` rather than imported, because
+   * this file is the configuration schema and that constant is the rule - a
+   * config module importing the thing it configures makes the dependency
+   * circular. The two must agree: over the 46 links the live service held on
+   * 2026-09-30, every winner carrying identity evidence sat at exactly 0s, and
+   * all 20 winners at 1s or 2s were the wrong video. See the constant for the
+   * table and for what would overturn it.
+   */
+  matchDurationToleranceSec: z.coerce.number().positive().default(1),
   /**
    * The upload window's upper bound. The lower bound is fixed at
    * `release - 1 day` and is not a knob: it is the pre-release-leak margin.
@@ -144,7 +151,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traxxxCacheTtlMs: env.LISZT_TRAXXX_CACHE_TTL_MS,
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
     maximoListingUrl: optionalValue(env.LISZT_MAXIMO_LISTING_URL),
-    epornerLq: env.LISZT_EPORNER_LQ,
     trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,

@@ -4,41 +4,56 @@
  * golden-corpus calibration harness possible.
  *
  *   ELIGIBILITY. A candidate is eligible when BOTH hold:
- *     1. duration within `LISZT_MATCH_DURATION_TOLERANCE_SEC` (default 2s)
+ *     1. duration within `LISZT_MATCH_DURATION_TOLERANCE_SEC` (default 1s)
  *     2. upload date within the window `release - 1 day` .. `release + N days`
+ *     3. under `requireIdentity`, some surviving stem group names the scene
  *
  *   RANKING. Zero survivors -> the rung found nothing. One -> link it. Several
- *   -> collapse same-video reposts by title stem, then order by:
+ *     -> collapse same-video reposts by title stem, then order by:
  *     1. identity tier (see `identityTier`)
  *     2. highest view count
  *     3. smallest upload-date lag
  *     4. URL, purely so the order is total
  *
- * IDENTITY IS A RANKING SIGNAL, NOT A GATE. This is the load-bearing decision,
- * and the numbers are why. The pool index holds thousands of videos; at roughly
- * one video per second-value of duration a +-2s band is ~5 second-values, so
- * ~5 unrelated pool videos share a scene's duration, and the date window then
- * admits 0-2 of them. Ranking on views alone therefore picks the most popular
- * decoy in a large fraction of pool matches - not missing links, but
- * confidently wrong ones. Performer-in-title costs nothing as a tiebreak and
- * removes nearly all of that: a true match carries the name, a decoy does not.
- * It also closes a real gap the previous gate had - performer data is genuinely
- * spotty, and under an identity gate a performer-less scene could never match.
+ * IDENTITY IS A GATE FIRST AND A RANKING SIGNAL SECOND. This is the
+ * load-bearing decision, and it was measured rather than argued.
  *
- * The residual risk is named rather than hidden: decoy exposure is now exactly
- * the set of matches won with NO identity evidence, and those are recorded
- * `confidence: "low"` and counted by `cli/calibrate.ts`.
+ * The previous version of this file said the opposite - identity ranks, never
+ * gates - on the reasoning that a gate had once cost real links. That
+ * measurement, over the 46 links the live service held on 2026-09-30:
+ *
+ *   - 36 of 46 links (78%) had a winner with NO identity evidence, selected on
+ *     view count or upload proximity. Read by hand they are not near misses:
+ *     a 1847s scene for Vivian Fernandes linked to a 1845s video titled
+ *     "Aceita Dupla Penetracao".
+ *   - The remaining 10, whose winners name the performer, are all correct.
+ *
+ * So the "tiebreak costs nothing and removes nearly all decoy exposure" claim
+ * did not hold: identity as a tiebreak removed none of these, because 78% of
+ * winners had nothing to be ranked on. `requireIdentity` restores the gate at
+ * the point where the cheap filters have already cut the set down, and the
+ * hierarchy in `tubes/resolve.ts` turns a gated no-match into "try the next
+ * tube" rather than "give up".
+ *
+ * The residual risk is named rather than hidden: a gated no-match is a MISSING
+ * high-confidence link, and the measured cost is stated - over the 115
+ * linkable scenes in the calibration corpus, only 7 had any trusted-pool
+ * candidate whose title named the performer at all. The terminal fallback now
+ * keeps date-and-duration survivors from every tube available as visibly low
+ * confidence links, rather than silently dropping every scene outside those 7.
  *
  * THE MMDD PROXY IS GONE. `mmddCode` / `hasDateEvidence` / the
  * `LISZT_POOL_REQUIRE_DATE_EVIDENCE` knob existed only to make identity
- * stricter. With identity demoted to a tiebreak they have no purpose, and they
- * measured as completely inert besides - the trusted pool's retitles carry no
- * date code at all.
+ * stricter. They measured as completely inert besides - the trusted pool's
+ * retitles carry no date code at all - and date already has its own upload
+ * window filter. Identity is now a gate again, but that does not make a date
+ * token an identity signal.
  *
  * THE FALSIFIED STAGES ARE STILL ABSENT and must not be re-added: studio-in-
  * title, thumbnail similarity, tag-based search, and fuzzy title similarity.
- * Duration and date are filters, never evidence of a match; identity orders
- * survivors, it never invents one.
+ * Duration and date are filters, never evidence of a match; identity gates a
+ * high-confidence result and ranks the named survivors. Only the explicit
+ * terminal fallback may use views after no tube produced a named result.
  */
 const DECORATION_WORDS = new Set(["new", "watch", "download"]);
 
@@ -334,12 +349,44 @@ export function titleStem(value: string | null | undefined): string {
 /**
  * The default duration tolerance.
  *
- * Measured, not chosen: a live matched pair read 2407s against 2408s, which is
- * one second of re-encode drift. A live survivor-set measurement over 1,005
- * indexed pool videos put the mean +-2s band at 3.1 videos and the maximum at
- * 13, so this admits a handful of candidates per scene and no more.
+ * MEASURED OVER THE LINKS THAT EXISTED, not chosen. On 2026-09-30 the live
+ * service held 46 links; the winner's duration was compared against the scene's
+ * for every one of them, reading `length_sec` back from eporner:
+ *
+ *   | 0s | 1s | 2s |
+ *   | -- | -- | -- |
+ *   | 26 |  9 | 11 |
+ *
+ * That distribution is only interesting with one more column, so the same 46
+ * were cross-tabulated against whether the winner's title names the performer:
+ *
+ *   | delta | links | identity evidence |
+ *   | ----- | ----- | ----------------- |
+ *   |   0s  |   26  |  10 named, 16 not |
+ *   |   1s  |    9  |   0 named         |
+ *   |   2s  |   11  |   0 named         |
+ *
+ * Every link carrying identity evidence sits at exactly 0s, and every link
+ * sitting at 1s or more carries none. Reading those 20 by hand, all of them are
+ * the wrong video - not a near miss, a different film with a similar running
+ * time. The reported bug is in that group: a 1847s scene linked to a 1845s
+ * video, admitted because the comparison was `> tolerance` and 2 > 2 is false.
+ *
+ * So the choice is not a trade-off. Dropping 2s to 1s removes 20 wrong-video
+ * winners on this corpus and 0 correct ones, and the correctness argument does
+ * not depend on the tolerance at all - see `requireIdentity` below, which is what
+ * actually excludes a decoy.
+ *
+ * WHAT WOULD OVERTURN IT. The evidence is 10 proven links, not 46, because the
+ * other 36 are unproven rather than known-bad. A true pair that drifts 2s or
+ * more would lose its link here; the direction of that error is a missing link
+ * rather than a wrong one, which is why 1s is taken even though 0s would score
+ * identically on this corpus. `.env.example` justified the old value with a
+ * single pair reading 2407s against 2408s, but nothing in this corpus
+ * corroborates it: all nine of the 1s links here are decoys, so that pair is
+ * more likely itself a decoy pair than a measurement of re-encode drift.
  */
-export const MATCH_DURATION_TOLERANCE_SEC = 2;
+export const MATCH_DURATION_TOLERANCE_SEC = 1;
 
 /**
  * The tolerance to actually apply.
@@ -372,6 +419,42 @@ export interface PickOptions {
    * deferred pass can never be mistaken for an admission.
    */
   dateWindowDays: number | null;
+  /**
+   * Refuse to return a winner that no surviving stem group can name.
+   *
+   * THE GATE, AND WHY IT IS REINTRODUCED HERE. This module used to document the
+   * opposite decision on purpose - "there is deliberately no identity gate" -
+   * because identity had been demoted to a tiebreak and an earlier gate had cost
+   * real links. That reasoning was sound on the evidence available then, and the
+   * evidence has since changed.
+   *
+   * MEASURED, 2026-09-30, over the 46 links the live service held: 36 of 46 -
+   * 78% - were `confidence: "low"`, meaning the winner carried no identity
+   * evidence at all and was chosen on views or upload proximity. Reading them by
+   * hand, they are not near misses. They are different videos that happen to
+   * share a running time: a 1847s Brazilian scene linked to a 1845s video
+   * titled "Aceita Dupla Penetracao", a 2806s scene for a performer named Mia
+   * Walker linked to "Bem No Fundo Da Bunda". All ten links that DID name the
+   * performer are correct.
+   *
+   * So the cost of dropping identity-as-ranking-signal was not a few lost links.
+   * It was 36 confident-looking wrong URLs, and the "a first-name-only match is
+   * a real match" comment above sat on top of a rule that had stopped
+   * discriminating. The position is different from the gate that was removed:
+   * that one filtered candidates DURING selection, where a performer-less scene
+   * could never match at all. This one runs AFTER date and duration narrowing,
+   * on the small set that survived, and returns `no-match` so the LADDER can
+   * move on - which is what a sparse identity signal needs. It gates the answer,
+   * not the question.
+   *
+   * A performer-less scene is NOT excluded by this: with no performers and no
+   * scene code, every candidate scores tier 0, so the gate returns no-match for
+   * a scene whose video could not have been named anyway. The ladder, not this
+   * flag, is where a performer-less scene is decided: if no tube can name it,
+   * the terminal fallback may still link its most-viewed eligible survivor and
+   * mark it `low`.
+   */
+  requireIdentity?: boolean;
 }
 
 export interface PickResult {
@@ -411,6 +494,39 @@ function viewCount(candidate: TubeCandidate): number | null {
   const suffix = /(k|m)$/i.exec(raw.trim());
   if (suffix) return value * (/^m$/i.test(suffix[1] as string) ? 1_000_000 : 1_000);
   return value;
+}
+
+/**
+ * Pick the largest known view count, with a stable URL tie-break.
+ *
+ * This is intentionally NOT `pickMatch`: the terminal fallback runs only after
+ * every identity-gated rung declined, and its rule is explicitly views-first
+ * across the survivors from ALL tubes. Re-applying identity-tier ranking here
+ * would quietly turn the fallback back into a named match and let an older,
+ * lower-view candidate win. Unknown counts rank below any real count; when all
+ * counts are unknown, URL order makes the result deterministic.
+ */
+export function pickHighestViews(candidates: readonly TubeCandidate[]): TubeCandidate | null {
+  let best: TubeCandidate | null = null;
+  let bestViews: number | null = null;
+  for (const candidate of candidates) {
+    const views = viewCount(candidate);
+    if (best === null) {
+      best = candidate;
+      bestViews = views;
+      continue;
+    }
+    const wins =
+      (views !== null && bestViews === null) ||
+      (views !== null && bestViews !== null && views > bestViews) ||
+      (views === bestViews &&
+        String(candidate.url ?? "").localeCompare(String(best.url ?? "")) < 0);
+    if (wins) {
+      best = candidate;
+      bestViews = views;
+    }
+  }
+  return best;
 }
 
 /** The tiebreak chain: identity tier, then views, then lag, then URL. */
@@ -455,9 +571,20 @@ function rank(scene: SceneIdentity, left: Scored, right: Scored): number {
  *  - A scene with no positive duration is never matched, on any rung. Duration
  *    is the one signal every rung can supply.
  *
- * There is deliberately no multi-uploader rejection and no identity gate. Both
- * existed to defend an identity gate that no longer exists; leaving them would
- * reject correct multi-uploader matches for no gain.
+ *  - A candidate whose title stems to NOTHING is not a candidate. Every such
+ *    title hashes to the same empty key, so they would collapse into one stem
+ *    group and one of them - whichever the comparator happened to prefer -
+ *    would take the group's slot. Worse, a titled candidate that loses the
+ *    rank to a blank one is then discarded with it. The gate can still measure
+ *    duration and date without a title, so the honest outcome is "this rung
+ *    cannot rank it", which is what returning null for the stem expresses.
+ *
+ * There is deliberately no multi-uploader rejection. A single uploader, though,
+ * is no longer enough: under `requireIdentity` a rung may only link a candidate
+ * whose title identifies the scene, and returns no-match otherwise so the ladder
+ * can move to the next tube. See `PickOptions.requireIdentity` for the
+ * measurement behind that and for why it is a different gate from the one this
+ * comment used to describe.
  */
 export function pickMatch(
   scene: SceneIdentity,
@@ -499,11 +626,40 @@ export function pickMatch(
     if (!current || rank(scene, scored, current) < 0) bestByStem.set(stem, scored);
   }
 
-  const best = [...bestByStem.values()].sort((left, right) => rank(scene, left, right))[0];
+  const best = survivors(scene, bestByStem, options);
   if (!best) return null;
   return {
     candidate: best.candidate,
     identityTier: best.tier,
     dateWindowApplied: options.dateWindowDays !== null,
   };
+}
+
+/**
+ * The stem groups that may still compete, then the best of them.
+ *
+ * The identity gate lives here rather than in the scan loop for a reason that
+ * is easy to get wrong: candidates are collapsed by title stem BEFORE ranking,
+ * so a repost and its original are a single group. Gating inside the loop would
+ * judge a group on whichever of its members happened to be examined first, and
+ * would drop a correctly-titled original because an untitled sibling was seen
+ * first. Gating on the group's BEST tier - which is the member `rank` already
+ * chose, since the collapse keeps the highest-ranked member of each stem - means
+ * one named member is enough to keep the group, and no member's absence can
+ * remove a title that was there all along.
+ *
+ * The `requireIdentity` check is `tier > 0`, not `tier === 3`. Tier 1 is a
+ * first-name-only match, and the trusted pool's retitles routinely carry first
+ * names alone for multi-performer scenes, so requiring the top tier would score
+ * the whole pool at zero - the exact failure that got the earlier gate removed.
+ * Zero is the only tier that means "nothing in this title identifies the scene".
+ */
+function survivors(
+  scene: SceneIdentity,
+  bestByStem: Map<string, Scored>,
+  options: PickOptions,
+): Scored | undefined {
+  const groups = [...bestByStem.values()];
+  const eligible = options.requireIdentity ? groups.filter((scored) => scored.tier > 0) : groups;
+  return eligible.sort((left, right) => rank(scene, left, right))[0];
 }

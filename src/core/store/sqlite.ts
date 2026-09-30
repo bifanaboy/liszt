@@ -43,6 +43,15 @@ export interface PoolVideo {
   added: string | null;
   durationSec: number | null;
   hydratedAt: string | null;
+  /**
+   * View count, or NULL when no source has ever reported one.
+   *
+   * NULL is the honest value for "the source did not say", and it is distinct
+   * from 0. The ranking chain lets a candidate with a KNOWN count outrank one
+   * with none, and falls through to lag when both are NULL, so a fabricated
+   * default here would silently reorder the tiebreak it exists to serve.
+   */
+  views: number | null;
 }
 
 interface SceneRow {
@@ -464,17 +473,24 @@ export class SqliteStore {
    * is a TEXT range scan, so the column must hold one comparable shape; the raw
    * value from `video/id` is `YYYY-MM-DD HH:MM:SS`, which does not sort against
    * an ISO bound.
+   *
+   * `views` is COALESCEd on update, exactly like `duration_sec` and `hydrated_at`
+   * and for the same reason: this path runs on every listing walk, which supplies
+   * a title and a duration but NO view count, so a plain assignment would blank a
+   * count the hydration pass had already paid a network request to learn. A
+   * genuine deletion of the column's value is not a thing any caller needs.
    */
   upsertPoolVideo(video: PoolVideo): void {
     this.db
       .prepare(
-        `INSERT INTO pool_videos (id, uploader, title, added, duration_sec, hydrated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO pool_videos (id, uploader, title, added, duration_sec, hydrated_at, views)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id, uploader) DO UPDATE SET
            title = COALESCE(excluded.title, pool_videos.title),
            added = COALESCE(excluded.added, pool_videos.added),
            duration_sec = COALESCE(excluded.duration_sec, pool_videos.duration_sec),
-           hydrated_at = COALESCE(excluded.hydrated_at, pool_videos.hydrated_at)`,
+           hydrated_at = COALESCE(excluded.hydrated_at, pool_videos.hydrated_at),
+           views = COALESCE(excluded.views, pool_videos.views)`,
       )
       .run(
         video.id,
@@ -483,6 +499,7 @@ export class SqliteStore {
         toIsoUtc(video.added),
         video.durationSec,
         video.hydratedAt,
+        video.views,
       );
   }
 
@@ -564,6 +581,11 @@ export class SqliteStore {
    * `added` is normalised to ISO 8601 UTC; null means the source did not supply
    * one, which is a distinct state the gate treats as inadmissible rather than
    * as a pass.
+   *
+   * `views` is COALESCEd for the same reason `added` is. A hydration is a paid
+   * network request, so whatever it learned about the view count is persisted
+   * for the next scene to use rather than being overwritten by the next listing
+   * walk, which cannot supply one.
    */
   setPoolHydration(
     id: string,
@@ -571,14 +593,16 @@ export class SqliteStore {
     durationSec: number,
     added: string | null,
     hydratedAt: string,
+    views: number | null = null,
   ): void {
     this.db
       .prepare(
         `UPDATE pool_videos
-            SET duration_sec = ?, added = COALESCE(?, added), hydrated_at = ?
+            SET duration_sec = ?, added = COALESCE(?, added), views = COALESCE(?, views),
+                hydrated_at = ?
           WHERE id = ? AND uploader = ?`,
       )
-      .run(durationSec, toIsoUtc(added), hydratedAt, id, uploader);
+      .run(durationSec, toIsoUtc(added), views, hydratedAt, id, uploader);
   }
 
   /** The incremental watermark: the newest upload date seen for an uploader. */
@@ -661,5 +685,10 @@ function rowToPoolVideo(row: Record<string, unknown>): PoolVideo {
     added: (row.added as string | null) ?? null,
     durationSec: row.duration_sec === null ? null : Number(row.duration_sec),
     hydratedAt: (row.hydrated_at as string | null) ?? null,
+    // `undefined` means the column is absent, which is what a database created
+    // before migration 0003 reports through some drivers. It is normalised to
+    // NULL rather than left undefined so the two "no count" spellings cannot
+    // diverge in `rank`.
+    views: row.views === null || row.views === undefined ? null : Number(row.views),
   };
 }

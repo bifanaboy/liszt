@@ -52,8 +52,6 @@ services:
         value: 0.0.0.0
       - key: LISZT_POLL_INTERVAL_MINUTES
         value: "30"
-      - key: LISZT_EPORNER_LQ
-        value: "0"
       - key: LISZT_TRUSTED_UPLOADERS
         value: Vovick17,KJUIUI,Rafael12021988,wmrt0s
       # The Node version is NOT pinned here. A `NODE_VERSION` of "24.0.0" holds

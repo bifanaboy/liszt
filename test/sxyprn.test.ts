@@ -226,6 +226,78 @@ test("a post that clears the gate is admitted, and its evidence is recorded", as
   assert.equal(matches[0]?.lagDays, 1);
 });
 
+test("an unnamed date-and-duration survivor is returned with views for terminal fallback", async () => {
+  // This post cannot be a high-confidence match: it names no performer. It
+  // still clears the cheap filters and must remain available to the ladder's
+  // cross-tube fallback, where its views are compared with the pool's
+  // leftovers. Returning `[]` here would make sxyprn's useful near-miss
+  // invisible even though the source supplied every field the fallback needs.
+  const lookup = createSxyprnLookup({
+    client: stubClient({
+      cards: [{ url: POST, title: "viral unrelated video", durationSeconds: 1418 }],
+      details: async (url) => ({
+        url,
+        title: "viral unrelated video",
+        durationSeconds: 1418,
+        streamUrl: "https://sxyprn.com/stream.m3u8",
+        uploadDate: "2026-03-05T10:00:00+00:00",
+        views: "12,345",
+      }),
+    }),
+    dateWindowDays: 7,
+  });
+  const candidates = await lookup(SCENE);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.identityTier, 0);
+  assert.equal(candidates[0]?.views, "12,345");
+  assert.equal(candidates[0]?.url, POST);
+});
+
+test("a blank search-card title still reaches detail verification", async () => {
+  // The card pass is a duration shortlist, not an identity gate. Some cards do
+  // not carry a usable title even though the post detail does; dropping them
+  // before detail verification would lose both a possible named match and the
+  // fallback survivor.
+  const lookup = createSxyprnLookup({
+    client: stubClient({
+      cards: [{ url: POST, title: "", durationSeconds: 1418, views: 5000 }],
+      details: async (url) => ({
+        url,
+        title: "Marfe takes it deep",
+        durationSeconds: 1418,
+        streamUrl: "https://sxyprn.com/stream.m3u8",
+        uploadDate: "2026-03-05T10:00:00+00:00",
+        views: 5000,
+      }),
+    }),
+    dateWindowDays: 7,
+  });
+  const candidates = await lookup(SCENE);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.identityTier, 3);
+});
+
+test("a blank detail title can still be a low-confidence survivor", async () => {
+  const lookup = createSxyprnLookup({
+    client: stubClient({
+      cards: [{ url: POST, title: "", durationSeconds: 1418 }],
+      details: async (url) => ({
+        url,
+        title: "",
+        durationSeconds: 1418,
+        streamUrl: "https://sxyprn.com/stream.m3u8",
+        uploadDate: "2026-03-05T10:00:00+00:00",
+        views: 77,
+      }),
+    }),
+    dateWindowDays: 7,
+  });
+  const candidates = await lookup(SCENE);
+  assert.equal(candidates.length, 1, "date and duration are enough for a fallback survivor");
+  assert.equal(candidates[0]?.identityTier, 0);
+  assert.equal(candidates[0]?.views, 77);
+});
+
 test("a post the gate rejects is a miss, NOT a source outage", async () => {
   // The distinction the counter exists for: an answered post that failed the
   // gate must not abort the ladder, or a mis-tuned window reads as "sxyprn is
@@ -294,7 +366,7 @@ test("the detail pass fetches concurrently but verifies in rank order", async ()
   assert.equal(peak, 2, "the slice is fetched concurrently");
   for (const resolve of release) resolve();
   const matches = await pending;
-  assert.equal(matches.length, 1);
+  assert.equal(matches.length, 2, "the bounded detail survivors are all returned to the ladder");
   assert.equal(matches[0]?.url, POST, "rank order decides the winner, not completion order");
 });
 

@@ -1,24 +1,29 @@
 /**
- * eporner open search - rung 3 of the ladder. Real REST API, no key, and a
- * `length_sec` on every row.
+ * The eporner primitives the trusted-pool rung is built from: URL shapes, id
+ * extraction, and the per-video record fetch.
  *
- * THE `lq` PARAMETER. The API DEFAULTS TO `lq=1`, which *includes*
- * low-quality content. Both reference repos omitted `lq` entirely and so
- * silently ingested it. It is now always passed explicitly, and
- * `test/eporner.test.ts` asserts the request URL carries it - that assertion is
- * the only thing keeping the bug from coming back.
+ * THE OPEN-SEARCH CLIENT IS GONE. It was rung 3 of the ladder and it has been
+ * deleted, with the rung, because it could not answer the question the ladder
+ * asks it. The v2 search API takes `query, per_page, page, thumbsize, order,
+ * gay, lq, format` and NO upload date, so a scene released 90 days ago could
+ * only be reached by paginating backwards from `order=latest` with no reliable
+ * stop - and the uploader appears in no API response at all, only in the video
+ * page markup, so the rung could not tell a trusted repost from an untrusted
+ * account's upload. It contributed one link out of 46, and that link came from
+ * an account outside the trusted pool, so removing it cost that uploader's
+ * whole catalogue rather than one link.
  *
- * There is no resolution field in the v2 REST API (only `length_sec`, `views`,
- * `embed`, and a `default_thumb` whose dimensions are the requested thumb size,
- * not the native video resolution), so a numeric quality floor is not possible
- * without scraping the embed page. `lq=0` is the accepted approximation.
+ * The two behaviours that client was written to enforce go with it, and the
+ * reasoning is kept here because it applies to anything that talks to this API
+ * later: the API DEFAULTS to `lq=1`, which INCLUDES low-quality content (both
+ * reference repos omitted `lq` and silently ingested it), and there is no
+ * resolution field at all - only `length_sec`, `views`, `embed`, and a
+ * `default_thumb` whose dimensions are the requested thumb size rather than the
+ * native resolution - so a numeric quality floor is not possible without
+ * scraping the embed page.
  */
-import { pickMatch, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
-import { buildQueries } from "./queries.ts";
 import type { Fetcher } from "../sources/types.ts";
-import type { MatchScene } from "./types.ts";
 
-const SEARCH_URL = "https://www.eporner.com/api/v2/video/search/";
 const VIDEO_URL = "https://www.eporner.com/api/v2/video/id/";
 export const EPORNER_HOSTS = Object.freeze(["eporner.com", "www.eporner.com"]);
 
@@ -30,7 +35,15 @@ export interface EpornerVideo {
   length_sec?: number | string;
   /** The upload timestamp. Null when the API row carries none. */
   added?: string | null;
-  views?: number | string;
+  /**
+   * View count. Null when the source reported none.
+   *
+   * Distinct from `undefined` and from 0 for the same reason `added` is: the
+   * ranking chain lets a candidate with a KNOWN count outrank one the source
+   * said nothing about, and falls through to lag when both are unknown. A
+   * fabricated 0 would let an uncounted video outrank a genuinely uncounted one.
+   */
+  views?: number | string | null;
   uploader?: string;
 }
 
@@ -86,41 +99,6 @@ export function epornerVideoId(value: unknown): string | null {
   }
 }
 
-/** Map an API row to the shared candidate shape. */
-export function toCandidate(video: EpornerVideo): TubeCandidate {
-  return {
-    url: String(video.url ?? ""),
-    title: String(video.title ?? ""),
-    duration: Number(video.length_sec),
-    added: video.added ?? null,
-    views: video.views ?? null,
-    ...(video.uploader ? { uploader: video.uploader } : {}),
-  };
-}
-
-/**
- * Gate eporner rows against a scene. The same rule as every other rung: the
- * duration band and the upload window filter, identity only ranks.
- *
- * `added` comes free on every search row - measured live, 200 of 200 rows
- * carried a parseable one - so this rung adds zero requests for the date half.
- * The accepted candidate is returned, not the row, so callers can record which
- * shape actually passed.
- */
-export function matchEpornerOpen(
-  scene: MatchScene,
-  videos: EpornerVideo[],
-  options: { durationToleranceSec?: number; dateWindowDays: number },
-): { video: EpornerVideo; candidate: TubeCandidate; identityTier: IdentityTier } | null {
-  const safe = videos
-    .filter((video) => validEpornerUrl(video.url) && validEpornerEmbedUrl(video.embed))
-    .map(toCandidate);
-  const match = pickMatch(scene, safe, options);
-  if (!match) return null;
-  const video = videos.find((entry) => String(entry.url ?? "") === match.candidate.url);
-  return video ? { video, candidate: match.candidate, identityTier: match.identityTier } : null;
-}
-
 /** Deduplicate concurrent lookups for a short window; evict rejections at once. */
 export function createExpiringCache({ ttlMs = 5 * 60_000, limit = 512 } = {}) {
   const entries = new Map<string, { createdAt: number; value: Promise<unknown> }>();
@@ -136,89 +114,6 @@ export function createExpiringCache({ ttlMs = 5 * 60_000, limit = 512 } = {}) {
     });
     if (entries.size > limit) entries.delete(entries.keys().next().value as string);
     return value;
-  };
-}
-
-export interface EpornerSearchOptions {
-  fetcher: Fetcher;
-  /** 0 excludes low-quality content. The API default of 1 INCLUDES it. */
-  lq?: number;
-  perPage?: number;
-  /** Set false to skip the one-per-run search cache (used in tests). */
-  cacheTtlMs?: number;
-}
-
-/**
- * The open-search request URL. Exported so the `lq=0` assertion in the tests
- * reads the same code path the client uses, rather than a re-implementation.
- */
-export function buildSearchUrl(
-  query: string,
-  { lq, perPage = 1000 }: { lq: number; perPage?: number },
-): string {
-  const url = new URL(SEARCH_URL);
-  url.searchParams.set("query", query);
-  url.searchParams.set("per_page", String(perPage));
-  url.searchParams.set("page", "1");
-  url.searchParams.set("order", "latest");
-  url.searchParams.set("format", "json");
-  // Explicit, and never defaulted. This is the inherited bug this fixes.
-  url.searchParams.set("lq", String(lq));
-  return url.href;
-}
-
-export function createEpornerOpenSearch({
-  fetcher,
-  lq = 0,
-  perPage = 1000,
-  cacheTtlMs = 5 * 60_000,
-}: EpornerSearchOptions): (query: string) => Promise<EpornerVideo[]> {
-  const cached = createExpiringCache({ ttlMs: cacheTtlMs });
-  return (query: string) =>
-    cached(query, async () => {
-      const data = await fetcher.json<{ videos?: unknown }>(
-        buildSearchUrl(query, { lq, perPage }),
-        {
-          headers: { accept: "application/json" },
-        },
-      );
-      if (!data || !Array.isArray(data.videos)) {
-        throw new Error("eporner returned an invalid response");
-      }
-      return data.videos as EpornerVideo[];
-    });
-}
-
-/** The eporner-open winner, with the tier that admitted it. */
-export interface EpornerOpenMatch {
-  video: EpornerVideo;
-  identityTier: IdentityTier;
-}
-
-/**
- * Build the open-search lookup bound to one scene. Throws only when the source
- * itself could not answer every query, so the caller can distinguish an outage
- * from a clean no-match.
- */
-export function createEpornerOpenLookup(
-  search: (query: string) => Promise<EpornerVideo[]>,
-  gate: { durationToleranceSec?: number; dateWindowDays: number },
-): (scene: MatchScene) => Promise<EpornerOpenMatch[]> {
-  return async (scene: MatchScene): Promise<EpornerOpenMatch[]> => {
-    if (!Number.isFinite(scene.durationSec)) return [];
-    const queries = buildQueries(scene);
-    const results = await Promise.allSettled(queries.map(search));
-    const successful = results.filter(
-      (result): result is PromiseFulfilledResult<EpornerVideo[]> => result.status === "fulfilled",
-    );
-    if (!successful.length) throw new Error("eporner open search unavailable");
-    const videos = [
-      ...new Map(
-        successful.flatMap(({ value }) => value).map((video) => [String(video.url ?? ""), video]),
-      ).values(),
-    ];
-    const match = matchEpornerOpen(scene, videos, gate);
-    return match ? [{ video: match.video, identityTier: match.identityTier }] : [];
   };
 }
 
