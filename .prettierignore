@@ -7,9 +7,12 @@ test/fixtures/
 # markup and styles.css is a single 12KB line. Rewriting them is ~1,000 lines
 # of noise and no correctness.
 #
-# NOTE: eslint.config.js ignores `public/**` as well, so these assets are read
-# by neither tool. Covering them means browser globals for ESLint and a rewrite
-# of vendored UI for Prettier - a change of its own, not a config flip.
+# NOTE: Prettier and ESLint now split the directory rather than agree to both
+# skip it. The two .js files stay unread by Prettier, because reformatting
+# ported UI is the rewrite above, but eslint.config.js does parse them - a
+# syntax error in app.js or source-health.js would serve a dead dashboard.
+# index.html and styles.css remain read by neither tool: not JavaScript, and
+# not reformatable without rewriting vendored UI.
 public/
 
 # Written by npm, not by hand.
