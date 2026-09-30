@@ -1,86 +1,26 @@
-name: CodeRabbit PR Loop
+name: Enable Auto Merge
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
-
-  pull_request_review:
-    types: [submitted]
+    types:
+      - opened
+      - reopened
+      - ready_for_review
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   enable-auto-merge:
-    if: >
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false
 
     runs-on: ubuntu-latest
 
     steps:
-      - name: Enable GitHub auto-merge
+      - name: Enable squash auto-merge
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           gh pr merge --auto --squash "$PR_URL"
-
-  trigger-coderabbit-autofix:
-    if: >
-      github.event_name == 'pull_request_review' &&
-      github.event.review.state == 'changes_requested' &&
-      (
-        github.event.review.user.login == 'coderabbitai[bot]' ||
-        github.event.review.user.login == 'coderabbitai'
-      )
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check whether Autofix was already requested for this commit
-        id: check
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const sha = pr.head.sha;
-            const marker = `<!-- coderabbit-autofix:${sha} -->`;
-
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                per_page: 100,
-              }
-            );
-
-            const alreadyRequested = comments.some(
-              comment => comment.body?.includes(marker)
-            );
-
-            core.setOutput(
-              "already_requested",
-              alreadyRequested ? "true" : "false"
-            );
-
-      - name: Trigger CodeRabbit Autofix
-        if: steps.check.outputs.already_requested != 'true'
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const sha = pr.head.sha;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: pr.number,
-              body: `@coderabbitai autofix
-
-            <!-- coderabbit-autofix:${sha} -->`,
-            });
