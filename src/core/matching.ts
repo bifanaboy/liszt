@@ -133,6 +133,11 @@ export function calendarDateUtc(year: number, month: number, day: number): numbe
   return time;
 }
 
+/** True when the text already carries an explicit UTC offset or zone marker. */
+function hasZoneDesignator(text: string): boolean {
+  return /(?:Z|z|[+-]\d{2}:?\d{2})$/.test(text.trim());
+}
+
 /**
  * Parse a timestamp to epoch milliseconds, or null.
  *
@@ -167,6 +172,17 @@ export function parseTimestamp(value: string | null | undefined): number | null 
   }
   const dayOnly = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (dayOnly) return calendarDateUtc(Number(dayOnly[1]), Number(dayOnly[2]), Number(dayOnly[3]));
+  // The `Date.parse` fallback, with one correction. For an ISO-8601 date-time
+  // that carries no offset - `2024-05-03T11:20:00.500`, a sub-second form the
+  // regex above does not cover - the spec says the value is LOCAL time. The
+  // zone-less branch above exists precisely because a local reading would make
+  // the window answer differently on the VPS than on a laptop, so the fallback
+  // must not reintroduce it: a zone-less ISO value is pinned to UTC first, and
+  // only a value that still will not parse falls through to the host default.
+  if (!hasZoneDesignator(text) && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(text)) {
+    const pinned = Date.parse(`${text}Z`);
+    if (Number.isFinite(pinned)) return pinned;
+  }
   const parsed = Date.parse(text);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -323,6 +339,22 @@ export function titleStem(value: string | null | undefined): string {
  */
 export const MATCH_DURATION_TOLERANCE_SEC = 2;
 
+/**
+ * The tolerance to actually apply.
+ *
+ * A caller-supplied tolerance reaches this from configuration, and a
+ * non-finite or negative one is not a stricter gate - it is a DISABLED one.
+ * `Math.abs(duration - scene) > NaN` is false, so every candidate passes the
+ * duration half, and the "duration is the one signal every rung can supply"
+ * invariant quietly stops holding while the logs still say a match was
+ * duration-gated. Falling back to the measured default is the safe direction:
+ * a misconfigured tolerance narrows the gate instead of removing it.
+ */
+function resolveTolerance(value: number | undefined): number {
+  if (value === undefined) return MATCH_DURATION_TOLERANCE_SEC;
+  return Number.isFinite(value) && value >= 0 ? value : MATCH_DURATION_TOLERANCE_SEC;
+}
+
 export interface PickOptions {
   /** Duration tolerance. Defaults to `MATCH_DURATION_TOLERANCE_SEC`. */
   durationToleranceSec?: number;
@@ -350,12 +382,55 @@ export interface PickResult {
 
 type Scored = { candidate: TubeCandidate; tier: IdentityTier; lag: number };
 
+/**
+ * A comparable view count, or null when the source did not give a real number.
+ *
+ * Sources render views in every shape imaginable - `"1.2M"`, `"12,345 views"`,
+ * `""` - and `Number()` turns those into `NaN`. `NaN` is the worst value to
+ * carry into a comparator: it is falsy, so an `if (views)` guard silently skips
+ * the tiebreak, and it poisons the NEXT comparison in the chain
+ * (`Infinity - Infinity` is `NaN` too, so an un-dated pair returns `NaN` from
+ * `rank` and `Array.prototype.sort` treats that as "equal" - the survivor of a
+ * stem group then depends on input order rather than on the ranking). So the
+ * value is normalised once, here, and an unreadable count becomes `null` -
+ * which the comparator ranks BELOW any real count instead of collapsing to a
+ * number that happens to be undefined.
+ */
+function viewCount(candidate: TubeCandidate): number | null {
+  const raw = candidate.views;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string") return null;
+  // Strip grouping separators and any trailing unit word, then require digits.
+  const digits = raw.replace(/[,\s]/g, "").replace(/(?:views?|k|m)$/i, "");
+  if (!/^\d+(\.\d+)?$/.test(digits)) return null;
+  const value = Number(digits);
+  if (!Number.isFinite(value)) return null;
+  // `1.2M` / `12k` shorthand, which several sources use.
+  const suffix = /(k|m)$/i.exec(raw.trim());
+  if (suffix) return value * (/^m$/i.test(suffix[1] as string) ? 1_000_000 : 1_000);
+  return value;
+}
+
 /** The tiebreak chain: identity tier, then views, then lag, then URL. */
 function rank(scene: SceneIdentity, left: Scored, right: Scored): number {
   if (left.tier !== right.tier) return right.tier - left.tier;
-  const views = Number(right.candidate.views || 0) - Number(left.candidate.views || 0);
-  if (views) return views;
-  if (left.lag !== right.lag) return left.lag - right.lag;
+  const leftViews = viewCount(left.candidate);
+  const rightViews = viewCount(right.candidate);
+  // Documented view evidence beats none: a candidate the source counted
+  // outranks one the source said nothing about, rather than the pair falling
+  // through to a URL comparison. `rank` is negative when LEFT is better, so the
+  // side with no count is the one that loses. Two candidates with no count are
+  // genuinely un-ordered on this signal, so the chain continues.
+  if (leftViews !== rightViews) {
+    if (leftViews === null) return 1;
+    if (rightViews === null) return -1;
+    return rightViews - leftViews;
+  }
+  // Two un-dated candidates are equally un-dated, so `Infinity` on both sides
+  // must compare EQUAL rather than returning NaN.
+  if (left.lag !== right.lag && Number.isFinite(left.lag) && Number.isFinite(right.lag)) {
+    return left.lag - right.lag;
+  }
   return String(left.candidate.url || "").localeCompare(String(right.candidate.url || ""));
 }
 
@@ -380,7 +455,7 @@ export function pickMatch(
   candidates: TubeCandidate[],
   options: PickOptions,
 ): PickResult | null {
-  const tolerance = options.durationToleranceSec ?? MATCH_DURATION_TOLERANCE_SEC;
+  const tolerance = resolveTolerance(options.durationToleranceSec);
   if (!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) return null;
 
   const release = parseTimestamp(scene.releaseDate);
@@ -396,14 +471,23 @@ export function pickMatch(
         continue;
       }
     }
+    // A candidate whose title stems to NOTHING is not a candidate. Every such
+    // title hashes to the same empty key, so they would collapse into one stem
+    // group and one of them - whichever the comparator happened to prefer -
+    // would take the group's slot. Worse, a titled candidate that loses the
+    // rank to a blank one is then discarded with it. The gate can still measure
+    // duration and date without a title, so the honest outcome is "this rung
+    // cannot rank it", which is what returning null for the stem expresses.
+    const stem = titleStem(candidate.title);
+    if (!stem) continue;
     const uploaded = parseTimestamp(candidate.added);
     const scored: Scored = {
       candidate,
       tier: identityTier(scene, candidate.title),
       lag: release === null || uploaded === null ? Number.POSITIVE_INFINITY : uploaded - release,
     };
-    const current = bestByStem.get(titleStem(candidate.title));
-    if (!current || rank(scene, scored, current) < 0) bestByStem.set(titleStem(candidate.title), scored);
+    const current = bestByStem.get(stem);
+    if (!current || rank(scene, scored, current) < 0) bestByStem.set(stem, scored);
   }
 
   const best = [...bestByStem.values()].sort((left, right) => rank(scene, left, right))[0];

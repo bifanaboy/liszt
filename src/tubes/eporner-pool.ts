@@ -50,6 +50,7 @@ import {
   type TubeCandidate,
 } from "../core/matching.ts";
 import { createExpiringCache, epornerEmbedUrl, epornerVideoId, epornerWatchUrl, validEpornerEmbedUrl, validEpornerUrl, type EpornerVideo } from "./eporner.ts";
+import { mapWithConcurrency, resolveFetchConcurrency } from "../core/concurrency.ts";
 import { classifyError } from "../core/fetcher.ts";
 import type { PoolVideo, SqliteStore } from "../core/store/sqlite.ts";
 import type { Fetcher } from "../sources/types.ts";
@@ -193,11 +194,22 @@ export function parseProfileListing(html: string, now: Date): ProfileEntry[] {
       stripTags(tag.match(/title=["']([^"']+)["']/i)?.[1] ?? "");
     if (/^(?:watch|video|eporner|hd)$/i.test(title)) title = "";
 
-    // The card's meta line sits after the anchor, so read a slice of HTML that
-    // starts here. The duration is a `title="Duration"` span holding `MM:SS`.
-    const slice = source.slice(match.index, match.index + 1200);
+    // The card's meta line sits after the anchor, so a slice of HTML starting
+    // here is needed to reach it. The slice is TRUNCATED AT THE NEXT CARD
+    // first: the duration span belongs to this card, but a date anywhere in the
+    // next 1200 bytes may well belong to the NEXT card, and a card that borrows
+    // its neighbour's date is indexed under a date that is confidently wrong -
+    // which then fails the window gate for the wrong reason, or worse, passes it.
+    // The fallback length bound is only for the last card on the page.
+    const cardStart = match.index;
+    const nextCard = source.indexOf('<div class="video_container', cardStart + 1);
+    const sliceEnd =
+      nextCard === -1
+        ? Math.min(source.length, cardStart + CARD_SLICE_CHARS)
+        : nextCard;
+    const slice = source.slice(cardStart, sliceEnd);
     const durationSec = parseClockDuration(
-      slice.match(/title=["']Duration["'][^>]*>([^<]+)</i)?.[1] ?? null,
+      slice.match(/title=["']Duration["'][^>]*>([^<]+)/i)?.[1] ?? null,
     );
     // A date is best-effort: the live listing carries none, but if one ever
     // appears we still capture it rather than discarding the evidence.
@@ -223,6 +235,9 @@ export function profileListingUrl(account: string, page = 1): string {
 }
 
 export const POOL_FULL_REWALK_KEY = "pool:last-full-rewalk";
+
+/** How far past an anchor to read when a page has no further card marker. */
+const CARD_SLICE_CHARS = 1200;
 
 export interface PoolIndexDeps {
   store: SqliteStore;
@@ -311,6 +326,11 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
       report.fullRewalk = fullRewalk;
 
       const seen = new Set<string>();
+      // True only when the walk reached the genuine END of the listing. Every
+      // heuristic stop below - nothing new, past the window, past the watermark,
+      // a short page - leaves it false, and that distinction decides whether the
+      // prune-by-absence below is allowed to delete anything.
+      let reachedEnd = false;
       for (let page = 1; page <= maxPages; page += 1) {
         const url = profileListingUrl(uploader, page);
         let entries: ProfileEntry[];
@@ -325,11 +345,15 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
           // and must surface as one, or a broken account would look healthy.
           if (classifyError(error) === "definitive") {
             report.endOfListing = true;
+            reachedEnd = true;
             break;
           }
           throw error;
         }
-        if (!entries.length) break;
+        if (!entries.length) {
+          reachedEnd = true;
+          break;
+        }
 
         let oldest = Number.POSITIVE_INFINITY;
         let newRows = 0;
@@ -374,9 +398,25 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
         // carries no dates, correctness comes from ABSENCE: a row the walk did
         // not see has been deleted upstream. The date-keyed prune is kept for
         // any row that did acquire a date, so both paths stay honest.
-        report.pruned =
-          store.prunePoolMissing(uploader, seen) +
-          store.prunePoolUploader(uploader, new Date(windowStartMs).toISOString());
+        //
+        // ONLY ON A COMPLETE WALK. Prune-by-absence reads "not seen" as "deleted",
+        // and on a truncated walk "not seen" means "we stopped looking" - the
+        // window stop, the watermark stop, the nothing-new stop, a short page,
+        // or the maxPages ceiling. Deleting on that basis removes the entire
+        // un-walked tail of the account in one pass, and because the rows are
+        // gone the next walk has nothing left to stop on. `reachedEnd` is the
+        // only thing that makes absence mean absence.
+        if (reachedEnd) {
+          report.pruned =
+            store.prunePoolMissing(uploader, seen) +
+            store.prunePoolUploader(uploader, new Date(windowStartMs).toISOString());
+        } else {
+          log("eporner pool: re-walk truncated, skipping the absence prune", {
+            uploader,
+            pagesFetched: report.pagesFetched,
+            seen: seen.size,
+          });
+        }
       }
       report.watermark = store.poolWatermark(uploader);
     } catch (error) {
@@ -414,6 +454,8 @@ export interface PoolLookupOptions {
   maxHydrations?: number;
   /** Bound the rows examined per account, newest first. */
   maxConsidered?: number;
+  /** Concurrent `video/id` hydrations. Defaults to the shared pool's setting. */
+  fetchConcurrency?: number;
 }
 
 /** Why the pool rung produced no link. Recorded, not swallowed. */
@@ -556,6 +598,8 @@ export interface PoolGatherDeps {
   log(message: string, fields?: Record<string, unknown>): void;
   maxHydrations?: number;
   maxConsidered?: number;
+  /** Concurrent `video/id` hydrations. Defaults to the shared pool's setting. */
+  fetchConcurrency?: number;
 }
 
 /**
@@ -577,6 +621,7 @@ export async function gatherPoolSurvivors(
   const maxHydrations = deps.maxHydrations ?? 40;
   /** Bound the rows examined per account, newest first. */
   const maxConsidered = deps.maxConsidered ?? 750;
+  const fetchConcurrency = resolveFetchConcurrency(deps.fetchConcurrency);
 
   const releaseMs = Date.parse(scene.releaseDate);
   // The SQL narrowing is a symmetric superset of the real asymmetric window,
@@ -596,7 +641,11 @@ export async function gatherPoolSurvivors(
     // already newest-first, so the newest rows come first and the cap keeps the
     // scan bounded.
     const dated = store.poolVideosInWindow(uploader, from, to);
-    const undated = store.poolVideosUndated(uploader);
+    // The cap is pushed into SQL. Undated rows are the working set and the
+    // account can hold thousands of them; materialising all of them and
+    // discarding most in JavaScript made the per-scene cost scale with the
+    // account's whole history rather than with the budget.
+    const undated = store.poolVideosUndated(uploader, maxConsidered);
     const datedIds = new Set(dated.map((row) => row.id));
     const rows = [...dated, ...undated.filter((row) => !datedIds.has(row.id))];
     let examined = 0;
@@ -619,7 +668,17 @@ export async function gatherPoolSurvivors(
       capped: queue.length,
     });
   }
-  const hydrated = await Promise.all(queue.map((video) => hydrate(video, { store, fetcher, now })));
+  // Hydration is the only network cost in this rung, and it is bounded TWICE:
+  // by how many rows are queued (`maxHydrations`) and by how many are in flight
+  // at once. `Promise.all` over the whole queue honoured the first and ignored
+  // the second - a 40-way burst of `video/id` requests from a single scene,
+  // from a client whose stated invariant is that every fan-out draws from ONE
+  // process-wide pool. `mapWithConcurrency` is that pool.
+  const hydrated = await mapWithConcurrency(
+    queue,
+    (video) => hydrate(video, { store, fetcher, now }),
+    fetchConcurrency,
+  );
   const candidates = hydrated
     .filter(
       (video): video is EpornerVideo =>
@@ -649,7 +708,19 @@ export function createPoolLookup(options: PoolLookupOptions) {
 
     const gathered = await gatherPoolSurvivors(
       scene,
-      { store, fetcher, uploaders, durationToleranceSec, dateWindowDays, log },
+      {
+        store,
+        fetcher,
+        uploaders,
+        durationToleranceSec,
+        dateWindowDays,
+        log,
+        ...(options.maxHydrations !== undefined ? { maxHydrations: options.maxHydrations } : {}),
+        ...(options.maxConsidered !== undefined ? { maxConsidered: options.maxConsidered } : {}),
+        ...(options.fetchConcurrency !== undefined
+          ? { fetchConcurrency: options.fetchConcurrency }
+          : {}),
+      },
       now,
     );
     const { candidates, considered, durationPassed } = gathered;

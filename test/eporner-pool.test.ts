@@ -19,9 +19,34 @@ import {
   profileListingUrl,
   preFilter,
   fullRewalkDue,
+  indexPool,
 } from "../src/tubes/eporner-pool.ts";
 import { makeMatchScene } from "./helpers.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
+import { FetchError } from "../src/core/fetcher.ts";
+import type { Fetcher } from "../src/sources/types.ts";
+
+/** A fetcher serving canned pages per page number; 404s end a walk. */
+function textFetcher(pages: Record<number, string>): Fetcher {
+  return {
+    fetch: async (url: string) => {
+      const page = Number(/uploaded-videos\/(\d+)\/?$/.exec(url)?.[1] ?? 1);
+      const body = pages[page];
+      if (body === undefined) return new Response("not found", { status: 404 });
+      return new Response(body, { status: 200, headers: { "content-type": "text/html" } });
+    },
+    text: async (url: string) => {
+      const page = Number(/uploaded-videos\/(\d+)\/?$/.exec(url)?.[1] ?? 1);
+      const body = pages[page];
+      if (body === undefined) {
+        // A 404 is how a newest-first walk legitimately ends.
+        throw new FetchError(`GET ${url} -> 404`, "definitive", 404);
+      }
+      return body;
+    },
+    json: async <T>() => ({} as T),
+  };
+}
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "eporner-profile.html");
 const NOW = new Date("2026-03-10T00:00:00Z");
@@ -184,4 +209,123 @@ test("a full re-walk is due on the first run and then only after the cadence", (
   assert.equal(fullRewalkDue(null, NOW, 7), true);
   assert.equal(fullRewalkDue("2026-03-09T00:00:00Z", NOW, 7), false);
   assert.equal(fullRewalkDue("2026-03-01T00:00:00Z", NOW, 7), true);
+});
+
+test("the undated working set is ordered newest-first and capped in SQL", () => {
+  // `maxConsidered` in the rung silently assumed newest-first order, which was
+  // never asserted in SQL - so the cap cut an arbitrary subset of the account
+  // rather than its oldest videos. The walk inserts newest-first, so `rowid`
+  // order is newest-first, and saying so explicitly is the whole fix.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    for (const id of ["newest", "middle", "oldest"]) {
+      store.upsertPoolVideo({
+        id, uploader: "Vovick17", title: id, added: null,
+        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+      });
+    }
+    const all = store.poolVideosUndated("Vovick17");
+    assert.deepEqual(all.map((row) => row.id), ["newest", "middle", "oldest"]);
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["newest", "middle"],
+      "the cap keeps the newest, not an arbitrary subset",
+    );
+    assert.deepEqual(store.poolVideosUndated("Vovick17", 0), []);
+    // A dated row is not in this set at all.
+    store.setPoolHydration("middle", "Vovick17", 600, "2026-03-05 00:00:00", "2026-03-10T00:00:00.000Z");
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17").map((row) => row.id),
+      ["newest", "oldest"],
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("a truncated re-walk never prunes by absence", async () => {
+  // Prune-by-absence reads "not seen" as "deleted upstream". On a walk that
+  // stopped early - past the window, past the watermark, a short page, or the
+  // maxPages ceiling - "not seen" means "we stopped looking", and deleting on
+  // that basis removes the whole un-walked tail of the account in one pass.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  /** A card whose only date is the given one, or none at all. */
+  const card = (id: string, date?: string): string =>
+    `<div class="mb"><a href="/video-${id}/slug/"><img alt="Scene ${id}" /></a>` +
+    `<p class="mbstats">${date ?? ""}<span class="mbtim" title="Duration">10:00</span></p></div>`;
+  const page = (ids: string[], date?: string): string => ids.map((id) => card(id, date)).join("\n");
+  const index = (pages: Record<number, string>) =>
+    indexPool({
+      store,
+      fetcher: textFetcher(pages),
+      now: NOW,
+      uploaders: ["Vovick17"],
+      windowDays: 90,
+      fullRewalkDays: 7,
+      log: () => {},
+    });
+
+  try {
+    // Last complete walk left five rows behind.
+    for (const id of ["a", "b", "c", "d", "e"]) {
+      store.upsertPoolVideo({
+        id, uploader: "Vovick17", title: id, added: null,
+        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+      });
+    }
+
+    // COMPLETE walk: page 1 is full (a short page is itself a stop), and page 2
+    // answers 404, so the end of the listing was genuinely reached. `d` and `e`
+    // were deleted upstream, and saying so is the whole point of the re-walk.
+    const complete = await index({ 1: page(["a", "b", "c", "f", "g", "h", "i", "j", "k", "l", "m", "n"]) });
+    assert.equal(complete.ok, true);
+    assert.equal(complete.uploaders[0]!.endOfListing, true);
+    assert.equal(complete.uploaders[0]!.pruned, 2, "d and e were genuinely deleted upstream");
+    assert.equal(store.poolVideoCount(), 12);
+
+    // TRUNCATED walk: every card is dated far in the past, so the window stop
+    // fires on page 1 and the rest of the account is never looked at.
+    for (const id of ["o", "p", "q"]) {
+      store.upsertPoolVideo({
+        id, uploader: "Vovick17", title: id, added: null,
+        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+      });
+    }
+    const truncated = await index({
+      1: page(["a", "b", "c", "f", "g", "h", "i", "j", "k", "l", "m", "n"], "Mar 1, 2019"),
+      2: page(["o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"], "Mar 1, 2019"),
+    });
+    assert.equal(truncated.ok, true);
+    assert.equal(truncated.uploaders[0]!.endOfListing, false, "the walk stopped early, not at the end");
+    assert.equal(truncated.uploaders[0]!.pagesFetched, 1);
+    assert.equal(truncated.uploaders[0]!.pruned, 0, "nothing may be deleted on a truncated walk");
+    assert.equal(
+      store.poolVideoCount(),
+      15,
+      "o, p and q survive: they were never looked at, not deleted upstream",
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("a card's date is read from its own card, not its neighbour's", () => {
+  // The meta line was read from a fixed 1200-byte window past the anchor, so a
+  // date in the NEXT card could be indexed against THIS one - a confidently
+  // wrong date, which then fails (or passes) the window for the wrong reason.
+  const html =
+    `<div class="video_container"><div class="mb"><a href="/video-AAAA1111/first/"><img alt="First" /></a>` +
+    `<p class="mbstats"><span class="mbtim" title="Duration">10:00</span></p></div></div>` +
+    `<div class="video_container"><div class="mb"><a href="/video-BBBB2222/second/"><img alt="Second" /></a>` +
+    `<p class="mbstats">Jan 2, 2021<span class="mbtim" title="Duration">20:00</span></p></div></div>`;
+  const entries = parseProfileListing(html, NOW);
+  assert.equal(entries.length, 2);
+  assert.equal(entries[0]!.id, "AAAA1111");
+  assert.equal(entries[0]!.added, null, "the first card has no date of its own to read");
+  assert.equal(entries[0]!.durationSec, 600);
+  assert.equal(entries[1]!.id, "BBBB2222");
+  assert.equal(entries[1]!.added, "2021-01-02", "the second card reads its own date");
+  assert.equal(entries[1]!.durationSec, 1200);
 });

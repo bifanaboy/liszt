@@ -21,11 +21,13 @@ import {
   identityTier,
   matchTokens,
   pickMatch,
+  parseTimestamp,
   repairMojibake,
   titleStem,
   toIsoUtc,
   withinDateWindow,
   type IdentityTier,
+  type PickResult,
   type TubeCandidate,
 } from "../src/core/matching.ts";
 import { matchEpornerOpen } from "../src/tubes/eporner.ts";
@@ -54,7 +56,15 @@ const candidate = (over: Partial<TubeCandidate> = {}): TubeCandidate => ({
   ...over,
 });
 
-const tierOf = (tiers: readonly IdentityTier[]) => tiers.length;
+/**
+ * The identity tier a pick actually reported.
+ *
+ * This used to be `tiers.length`, called as `tierOf([picked.identityTier])` - so
+ * the assertion was `1 === 1` and passed no matter what tier came back. It was
+ * guarding the ranking chain (the winner here is decided by views, which only
+ * matters if both sides are the same tier) while checking nothing at all.
+ */
+const tierOf = (picked: PickResult | null): IdentityTier | null => picked?.identityTier ?? null;
 
 test("accepts a candidate inside the duration band and the window", () => {
   const picked = pickMatch(scene, [candidate()], WINDOW);
@@ -113,6 +123,117 @@ test("deferring the date half is explicit and is reported back as deferred", () 
   const picked = pickMatch(scene, [candidate({ added: null })], { dateWindowDays: null });
   assert.ok(picked, "a card with no date can still be RANKED");
   assert.equal(picked.dateWindowApplied, false, "but the result must not read as an admission");
+});
+
+test("a zone-less ISO timestamp with sub-seconds is pinned to UTC", () => {
+  // The zone-less branch exists because `Date.parse` reads such a value as LOCAL
+  // time, which would make the window answer differently on the VPS than on a
+  // laptop. A `.500` fraction falls past that branch's regex, so the `Date.parse`
+  // fallback is where the host default used to sneak back in.
+  const at10 = Date.parse("2026-03-05T10:00:00Z");
+  const at10half = Date.parse("2026-03-05T10:00:00.500Z");
+  assert.equal(parseTimestamp("2026-03-05T10:00:00.500"), at10half);
+  assert.equal(parseTimestamp("2026-03-05T10:00:00"), at10);
+  assert.equal(parseTimestamp("2026-03-05 10:00:00"), at10);
+  // An explicit offset is honoured, not second-guessed into UTC.
+  assert.equal(parseTimestamp("2026-03-05T12:00:00+02:00"), at10);
+  assert.equal(parseTimestamp("2026-03-05T10:00:00.000Z"), at10);
+  assert.equal(toIsoUtc("2026-03-05 10:00:00"), "2026-03-05T10:00:00.000Z");
+  assert.equal(toIsoUtc("2026-03-05T10:00:00.500"), "2026-03-05T10:00:00.500Z");
+  // Unrelated shapes are unchanged, including the ones that must stay unparsed.
+  assert.equal(parseTimestamp("2026-19-07T10:00:00"), null);
+  assert.equal(parseTimestamp("not a date"), null);
+});
+
+test("a non-finite tolerance narrows the gate, never disables it", () => {
+  // `Math.abs(duration - scene) > NaN` is false, so a NaN tolerance let every
+  // candidate through the duration half - the one signal every rung supplies -
+  // while the logs still claimed the winner was duration-gated.
+  const naive = pickMatch(scene, [candidate({ duration: 999_999 })], {
+    ...WINDOW,
+    durationToleranceSec: Number.NaN,
+  });
+  assert.equal(naive, null, "a NaN tolerance must not admit anything");
+
+  const negative = pickMatch(scene, [candidate({ duration: 1419 })], {
+    ...WINDOW,
+    durationToleranceSec: -5,
+  });
+  assert.ok(negative, "a negative tolerance falls back to the measured default band, not to no gate");
+  assert.equal(
+    pickMatch(scene, [candidate({ duration: 1421 })], { ...WINDOW, durationToleranceSec: -5 }),
+    null,
+    "and the default band still rejects",
+  );
+
+  const zero = pickMatch(scene, [candidate({ duration: 1418 })], {
+    ...WINDOW,
+    durationToleranceSec: 0,
+  });
+  assert.ok(zero, "zero is a legitimate tolerance: exact duration only");
+  assert.equal(pickMatch(scene, [candidate({ duration: 1419 })], { ...WINDOW, durationToleranceSec: 0 }), null);
+});
+
+test("a title that stems to nothing is not a candidate", () => {
+  // Every blank stem hashes to the same key, so blank-titled candidates used to
+  // collapse into one group and take the slot - discarding a titled candidate
+  // that lost the rank to them.
+  assert.equal(titleStem(""), "");
+  assert.equal(titleStem("   "), "");
+  assert.equal(titleStem("https://example.test/watch?v=1"), "");
+  const blank = pickMatch(scene, [candidate({ title: "" })], WINDOW);
+  assert.equal(blank, null, "a blank title cannot outrank or occupy a stem slot");
+  // And it cannot displace a real candidate either.
+  const kept = pickMatch(
+    scene,
+    [candidate({ title: "", views: 10_000_000 }), candidate({ title: "Marfe takes it deep" })],
+    WINDOW,
+  );
+  assert.ok(kept);
+  assert.equal(kept.candidate.title, "Marfe takes it deep");
+});
+
+test("an unreadable view count never reorders the ranking", () => {
+  // `Number("1.2M")` is NaN, and NaN is falsy - so the views tiebreak was
+  // skipped silently, and `Infinity - Infinity` in the next comparison made
+  // `rank` return NaN, which `sort` treats as "equal". The survivor then
+  // depended on input order.
+  const parsed = pickMatch(scene, [candidate({ views: "1.2M", url: "https://www.eporner.com/video-a/" })], WINDOW);
+  assert.ok(parsed, "an abbreviated count is still a count");
+  // A real count still beats no count: unknown is not zero.
+  const ranked = pickMatch(
+    scene,
+    [
+      candidate({ title: "Marfe takes it deep", views: "", url: "https://www.eporner.com/video-none/" }),
+      candidate({ title: "Marfe takes it deep", views: "12,345", url: "https://www.eporner.com/video-some/" }),
+    ],
+    WINDOW,
+  );
+  assert.ok(ranked);
+  assert.equal(ranked.candidate.url, "https://www.eporner.com/video-some/");
+  // Abbreviations parse in the direction the sources write them.
+  assert.equal(
+    pickMatch(
+      scene,
+      [
+        candidate({ title: "Marfe takes it deep", views: "2k", url: "https://www.eporner.com/video-k/" }),
+        candidate({ title: "Marfe takes it deep", views: "1500", url: "https://www.eporner.com/video-n/" }),
+      ],
+      WINDOW,
+    )?.candidate.url,
+    "https://www.eporner.com/video-k/",
+  );
+  // Two undated-but-otherwise-equal candidates must produce a total order, not NaN.
+  const settled = pickMatch(
+    scene,
+    [
+      candidate({ title: "Marfe takes it deep extra", views: "1.2M", url: "https://www.eporner.com/video-zz/" }),
+      candidate({ title: "Marfe takes it deep extra take", views: "1.2M", url: "https://www.eporner.com/video-aa/" }),
+    ],
+    WINDOW,
+  );
+  assert.ok(settled);
+  assert.equal(settled.candidate.url, "https://www.eporner.com/video-aa/", "URL is the final, always-total tiebreak");
 });
 
 // ------------------------------------------------------------- identity tier
@@ -241,7 +362,16 @@ test("distinct stems from different uploaders are now ranked, not rejected", () 
   const picked = pickMatch(scene, [a, b], WINDOW);
   assert.ok(picked);
   assert.equal(picked.candidate.url, b.url, "views decide between equal tiers");
-  assert.equal(tierOf([picked.identityTier]), 1);
+  // Both titles contain the scene's own wording, so both are tier 3 and the
+  // views tiebreak is what actually picked the winner. Asserting the tier is
+  // what makes the previous line mean what it says.
+  assert.equal(
+    tierOf(picked),
+    3,
+    "the scene title appears verbatim in both candidates",
+  );
+  assert.equal(identityTier(scene, a.title), tierOf(picked));
+  assert.equal(identityTier(scene, b.title), tierOf(picked));
 });
 
 // ------------------------------------------------------------- open-search rung

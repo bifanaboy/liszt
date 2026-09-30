@@ -95,13 +95,29 @@ export function createLinkVerifier({
     if (!response.ok) {
       return { status: "inconclusive", reason: `eporner lookup returned HTTP ${response.status}` };
     }
+    // The anti-bot distinction, and it is the reason a 200 is not automatically
+    // an answer. eporner's edge answers a challenge with HTTP 200 and a body that
+    // is NOT the API's JSON - an HTML interstitial, a JS challenge, a captcha
+    // page. Reading that as "the API says this video does not exist" strikes a
+    // live link, and two such strikes move it into `deadVideoUrls` for good. So
+    // the content type is checked BEFORE the body is trusted: only a genuine
+    // JSON response is allowed to speak for the API.
+    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (contentType && !contentType.includes("json")) {
+      return {
+        status: "inconclusive",
+        reason: `eporner lookup returned a non-JSON body (${contentType}); treating as an anti-bot wall, not a deletion`,
+      };
+    }
     let video: unknown;
     try {
       video = await response.json();
     } catch (error) {
       return { status: "inconclusive", reason: (error as Error).message };
     }
-    // The API answers an unknown id with an empty array, never a 404.
+    // The API answers an unknown id with an empty array, never a 404. With the
+    // content type already confirmed as JSON, that empty array is the API's own
+    // answer and is definitive.
     if (Array.isArray(video) && video.length === 0) {
       return { status: "dead", reason: "eporner video/id lookup found no record" };
     }
@@ -198,7 +214,12 @@ export async function reverifyLinks(
       videoUrls: live,
       deadVideoUrls: newDead.length ? [...scene.deadVideoUrls, ...newDead] : scene.deadVideoUrls,
     };
-    if (!live.length && newDead.length) updated.videoCheckedAt = null;
+    // Whenever the scene ends the pass with NO live link it has to re-enter
+    // normal resolution, whichever reason emptied the set. Gating this on
+    // `newDead.length` was wrong for the `fatal` path: a link filtered out as
+    // already-proven-dead leaves `live` empty with nothing newly dead, so the
+    // scene kept its `videoCheckedAt` and never re-entered resolution again.
+    if (!live.length) updated.videoCheckedAt = null;
     changed.push(updated);
   }
   const changedById = new Map(changed.map((scene) => [scene.id, scene]));
