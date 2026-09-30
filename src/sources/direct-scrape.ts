@@ -40,6 +40,8 @@ export interface DirectScrapeOptions {
   parseVideoPage(html: string, entry: ListingEntry, base: string): RawScene;
   /** Hard bound on listing pages walked. */
   maxPages?: number;
+  /** Hard bound on listing entries with no date, hydrated to recover one. */
+  maxUndatedHydrations?: number;
 }
 
 /** A named, calm status for a lane that needs operator configuration. */
@@ -137,6 +139,7 @@ export function createDirectScrapeStudio(options: DirectScrapeOptions): SourceAd
     parseListing,
     parseVideoPage,
     maxPages = 40,
+    maxUndatedHydrations,
   } = options;
 
   return {
@@ -172,23 +175,78 @@ export function createDirectScrapeStudio(options: DirectScrapeOptions): SourceAd
         pageUrl = next && hasRecent ? next : undefined;
       }
 
-      // Only pages whose listing date is inside the window get hydrated.
-      const queue = [...listings.values()].filter((entry) => {
+      // Pages whose listing date is inside the window are hydrated, PLUS entries
+      // the listing could not date at all.
+      //
+      // Dropping undated entries before hydration was the bug: `parseVideoPage`
+      // reads the date from the page's own JSON-LD, so a listing whose card
+      // markup omits the date was filtered out precisely for being unknown, and
+      // the one source that could have supplied it was never asked.
+      const windowed = [...listings.values()].filter((entry) => {
         if (!entry.releaseDate) return false;
         const date = new Date(`${entry.releaseDate}T00:00:00Z`);
         return date >= earliest && date <= ctx.now;
       });
+      // The undated remainder is BOUNDED. The walk is bounded by `maxPages`
+      // rather than by the window, so a listing that lost its date markup
+      // entirely would otherwise turn one cycle into a thousand fetches. The
+      // walk visits newest-first, so the head of this list is the part most
+      // likely to be in the window anyway.
+      const undated = [...listings.values()].filter((entry) => !entry.releaseDate);
+      const undatedCap = Math.max(0, maxUndatedHydrations ?? 200);
+      const queue = [...windowed, ...undated.slice(0, undatedCap)];
+      if (undated.length > undatedCap) {
+        ctx.log(`${name}: undated listing entries exceed the hydration cap`, {
+          undated: undated.length,
+          cap: undatedCap,
+        });
+      }
       if (!queue.length) {
         // An empty window is only trusted when the listing itself was readable
         // and carried entries; otherwise the scrape failed silently upstream.
         return { scenes: [], verifiedEmpty: listings.size > 0 };
       }
 
-      const scenes = await ctx.mapWithConcurrency(queue, async (entry) => {
-        const html = await fetchHtml(entry.releaseUrl, ctx, allowedHosts, name);
-        return parseVideoPage(html, entry, base);
+      // One failed video page must not take the whole lane's scenes with it.
+      // `mapWithConcurrency` rejects the entire call as soon as one task
+      // rejects, so a single 500 or a one-off timeout discarded every record the
+      // other N-1 pages had already produced. Failures are collected per entry
+      // instead, and a lane that lost records says so - a fully failed walk
+      // still reports `verifiedEmpty: false`, which is what makes sync retain
+      // the last-good rows rather than treating the outage as an empty studio.
+      const failed: { url: string; error: string }[] = [];
+      const settled = await ctx.mapWithConcurrency(queue, async (entry) => {
+        try {
+          const html = await fetchHtml(entry.releaseUrl, ctx, allowedHosts, name);
+          return parseVideoPage(html, entry, base);
+        } catch (error) {
+          failed.push({ url: entry.releaseUrl, error: (error as Error).message });
+          return null;
+        }
       });
-      return { scenes, verifiedEmpty: scenes.length === 0 };
+      if (failed.length) {
+        ctx.log(`${name}: ${failed.length}/${queue.length} page(s) failed hydration`, {
+          firstError: failed[0]?.error,
+          firstUrl: failed[0]?.url,
+        });
+      }
+      // The hydrated date is authoritative: the listing may have carried a date
+      // the page contradicts, and an undated entry that stayed undated after
+      // hydration has no window position at all.
+      const scenes = settled.filter((scene): scene is RawScene => {
+        if (!scene) return false;
+        const date = dateOnly(scene.releaseDate);
+        if (!date) return false;
+        const at = new Date(`${date}T00:00:00Z`);
+        return at >= earliest && at <= ctx.now;
+      });
+      // `verifiedEmpty` is only claimed when the walk actually covered the
+      // window and found nothing in it. Reaching this line with no scenes means
+      // every hydrated page landed outside the window or failed, which is not
+      // evidence that the studio released nothing - so sync is told to retain
+      // the last-good rows. The genuinely-empty case returned above, from the
+      // queue check, where the listing itself is the evidence.
+      return { scenes, verifiedEmpty: false };
     },
   };
 }

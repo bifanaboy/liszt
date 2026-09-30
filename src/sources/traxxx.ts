@@ -270,6 +270,31 @@ export function createTraxxxClient(
     }
   }
 
+  /**
+   * A count field, read strictly.
+   *
+   * `Number(body.total) || 0` was a false-empty: a MISSING or renamed `total`
+   * became `0`, and `0` is not a harmless placeholder here. It is the page
+   * count, so a real `0` ends the walk after one page, and the unfiltered total
+   * is the baseline the entity-filter guard compares against - with one side
+   * silently `0` the guard has nothing to compare and cannot fire. A response
+   * that stopped carrying the field is a shape change, so it throws.
+   */
+  function requiredCount(value: unknown, field: string): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`traxxx response has no usable "${field}" field`);
+    }
+    return Math.floor(parsed);
+  }
+
+  /** The same read, but a missing field falls back rather than throwing. */
+  function optionalCount(value: unknown): number | null {
+    if (value === undefined || value === null || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : null;
+  }
+
   function page(
     kind: TraxxxEntityKind,
     slug: string,
@@ -291,8 +316,8 @@ export function createTraxxxClient(
       }
       return {
         scenes: body.scenes as TraxxxSceneRecord[],
-        total: Number(body.total) || 0,
-        limit: Number(body.limit) || limit,
+        total: requiredCount(body.total, "total"),
+        limit: optionalCount(body.limit) ?? limit,
       } satisfies TraxxxScenePage;
     });
   }
@@ -305,7 +330,7 @@ export function createTraxxxClient(
         url.searchParams.set("limit", "1");
         const body = (await requestJson(url.href)) as { total?: unknown } | null;
         if (!body || typeof body !== "object") throw new Error("traxxx returned an invalid response");
-        return Number(body.total) || 0;
+        return requiredCount(body.total, "total");
       }),
     async getScene(id) {
       const value = String(id);

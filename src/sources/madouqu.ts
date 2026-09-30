@@ -43,24 +43,35 @@ export const STUDIO_CATEGORIES = [
 
 export type StudioCategory = (typeof STUDIO_CATEGORIES)[number];
 
+/**
+ * Classifier patterns.
+ *
+ * NO `g` FLAG, ANYWHERE IN THIS TABLE. `RegExp.prototype.test` on a global regex
+ * reads and advances `lastIndex` on the shared instance, so the second call on
+ * the same input starts from the first call's end offset and returns false.
+ * With a module-level constant that means classification alternates
+ * admit/exclude for identical text - the same post would flip verdict on every
+ * poll, and the flip is invisible because each call looks correct in isolation.
+ * `hits()` and the exclusion loop below both call `.test()`.
+ */
 const POSITIVE_PATTERNS: [string, RegExp][] = [
-  ["肛交", /肛交/g],
-  ["肛", /肛/g],
-  ["後庭", /後庭/g],
-  ["后庭", /后庭/g],
-  ["菊", /菊(?:花|穴|門|门)?|爆菊/g],
-  ["屁眼", /屁眼/g],
-  ["開肛", /開肛/g],
-  ["开肛", /开肛/g],
-  ["anal", /\banal\b/gi],
+  ["肛交", /肛交/],
+  ["肛", /肛/],
+  ["後庭", /後庭/],
+  ["后庭", /后庭/],
+  ["菊", /菊(?:花|穴|門|门)?|爆菊/],
+  ["屁眼", /屁眼/],
+  ["開肛", /開肛/],
+  ["开肛", /开肛/],
+  ["anal", /\banal\b/i],
 ];
 const REVIEW_PATTERNS: [string, RegExp][] = [
-  ["雙穴", /雙穴/g],
-  ["双穴", /双穴/g],
-  ["雙洞", /雙洞/g],
-  ["双洞", /双洞/g],
-  ["兩洞齊開", /兩洞齊開/g],
-  ["两洞齐开", /两洞齐开/g],
+  ["雙穴", /雙穴/],
+  ["双穴", /双穴/],
+  ["雙洞", /雙洞/],
+  ["双洞", /双洞/],
+  ["兩洞齊開", /兩洞齊開/],
+  ["两洞齐开", /两洞齐开/],
 ];
 const EXCLUSION_PATTERNS: [string, RegExp][] = [
   ["enema", /灌肠|灌腸/],
@@ -84,14 +95,33 @@ const PENETRATION_PATTERNS: RegExp[] = [
   /\banal\b/i,
 ];
 
+/**
+ * Decode one numeric HTML entity. `String.fromCodePoint` THROWS a RangeError
+ * outside 0..0x10FFFF (and on a surrogate), and a title is attacker-controlled
+ * text from a remote source, so an out-of-range entity would abort the whole
+ * poll instead of degrading one character. An undecodable entity is dropped.
+ */
+function decodeCodePoint(code: number): string {
+  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return "";
+  // A lone surrogate is a code point the spec permits but no character exists
+  // for, and splicing one into a title makes the string invalid UTF-16 - which
+  // then propagates into the store, the JSON log line and the CSV export.
+  if (code >= 0xd800 && code <= 0xdfff) return "";
+  try {
+    return String.fromCodePoint(code);
+  } catch {
+    return "";
+  }
+}
+
 /** Small HTML entity decoder sufficient for WordPress rendered title/body text. */
 export function decodeRenderedHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([\da-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code: string) => decodeCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_, code: string) => decodeCodePoint(parseInt(code, 16)))
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
@@ -207,7 +237,11 @@ export function parsePost(
   const title = decodeRenderedHtml(post.title?.rendered);
   const body = decodeRenderedHtml(post.content?.rendered);
   const codeMatch = `${title}\n${body}`.match(/(?:番號|番号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9._-]*)/);
-  const sourceSceneId = String(post.id ?? "");
+  // `id` is the identity, but it is not guaranteed: without a fallback every
+  // id-less post collapses onto the empty key `""`, and they then overwrite each
+  // other in the dedupe map AND in the store's upsert. The permalink slug and
+  // then the permalink itself are stable per post, so either is a usable key.
+  const sourceSceneId = String(post.id ?? post.slug ?? post.link ?? "");
   const releaseUrl = String(post.link ?? "");
   return {
     sourceSceneId,
@@ -353,6 +387,15 @@ export function createMadouquStudio({
             continue;
           }
           const scene = parsePost(post, category, verdict, { sourceUrl: postsUrl, base });
+          if (!scene.sourceSceneId) {
+            // No id, no slug and no permalink: there is nothing stable to key
+            // this record on, and emitting it would collide with every other
+            // keyless post. Skipped, loudly, rather than silently clobbered.
+            ctx.log(`madouqu: skipped a post with no stable identity`, {
+              category: category.name,
+            });
+            continue;
+          }
           if (!scene.releaseDate) continue;
           const date = new Date(`${scene.releaseDate}T00:00:00Z`);
           if (Number.isNaN(date.getTime()) || date < earliest || date > ctx.now) continue;

@@ -179,8 +179,14 @@ export function parseMaximoVideoPage(html: string, entry: ListingEntry): RawScen
   }
   if (!performers.length && !listed.length) fieldProvenance.performers = "unavailable";
 
+  // Identity is the FULL origin plus path, not the path alone. Two Maximo
+  // mirror hosts carry the same path structure, so a pathname-only key let a
+  // record from one host overwrite the other in the store - last host walked
+  // won, and the other mirror's record was lost with no trace.
+  const sceneId = maximoSceneId(entry.releaseUrl);
+
   return {
-    sourceSceneId: new URL(entry.releaseUrl).pathname.replace(/^\/+|\/+$/g, ""),
+    sourceSceneId: sceneId,
     title,
     releaseDate,
     performers: merged,
@@ -195,9 +201,15 @@ export function parseMaximoVideoPage(html: string, entry: ListingEntry): RawScen
       source: "Maximo Garcia",
       sourceUrl: entry.releaseUrl,
       recordUrl: entry.releaseUrl,
-      sourceSceneId: new URL(entry.releaseUrl).pathname.replace(/^\/+|\/+$/g, ""),
+      sourceSceneId: sceneId,
     },
   };
+}
+
+/** `<host>/<path>`, the store key for one Maximo Garcia release page. */
+export function maximoSceneId(releaseUrl: string): string {
+  const url = new URL(releaseUrl);
+  return `${url.host}${url.pathname.replace(/\/+$/, "")}`;
 }
 
 /**

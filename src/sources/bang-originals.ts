@@ -48,6 +48,10 @@ export function parseListing(html: string, base: string): ListingEntry[] {
     throw new Error("Bang! Originals listing has an unexpected structured response");
   }
 
+  // The card date is read as UTC on purpose. `Mon, 3 Mar 2025` with no zone is
+  // host-local under `new Date(...)`, so the release date - and with it the
+  // whole window - would move with the machine's `TZ`. `" UTC"` pins it, which
+  // is also the convention the pool index already relies on.
   const datesByUrl = new Map<string, string>();
   for (const card of html.split('<div class="video_container').slice(1)) {
     const url = card.match(/href="([^"]*\/video\/[^"]+)"/)?.[1];
@@ -65,13 +69,32 @@ export function parseListing(html: string, base: string): ListingEntry[] {
     throw new Error("Bang! Originals listing carries no per-card dates");
   }
 
-  return (items as { url?: unknown }[]).flatMap(({ url }) => {
-    if (typeof url !== "string") return [];
-    const absolute = new URL(url, base);
-    if (absolute.origin !== base || !absolute.pathname.startsWith("/video/")) return [];
+  // A structured item with no card date is a SHAPE CHANGE, not a record to skip.
+  // The previous `flatMap` dropped it silently, and a dropped record is
+  // indistinguishable downstream from "the studio released nothing that week" -
+  // which is exactly the failure mode the retention rule exists to catch, and
+  // which it cannot catch if the lane quietly empties its own queue. So the
+  // invariant is enforced here: every listed item must be datable, or the walk
+  // fails and sync keeps the last-good rows.
+  const entries: ListingEntry[] = [];
+  const undated: string[] = [];
+  for (const item of items as { url?: unknown }[]) {
+    if (typeof item.url !== "string") continue;
+    const absolute = new URL(item.url, base);
+    if (absolute.origin !== base || !absolute.pathname.startsWith("/video/")) continue;
     const releaseDate = datesByUrl.get(absolute.href);
-    return releaseDate ? [{ releaseUrl: absolute.href, releaseDate }] : [];
-  });
+    if (!releaseDate) {
+      undated.push(absolute.href);
+      continue;
+    }
+    entries.push({ releaseUrl: absolute.href, releaseDate });
+  }
+  if (undated.length) {
+    throw new Error(
+      `Bang! Originals listing has ${undated.length} item(s) with no readable card date (first: ${undated[0]})`,
+    );
+  }
+  return entries;
 }
 
 interface BangVideoObject {
