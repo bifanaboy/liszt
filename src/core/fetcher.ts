@@ -55,27 +55,40 @@ export class HttpFetcher implements Fetcher {
   }
 
   async fetch(url: string, options: FetchOptions = {}): Promise<Response> {
-    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const signal = options.signal
-      ? AbortSignal.any([options.signal, timeoutSignal])
-      : timeoutSignal;
-    const init: RequestInit = {
-      method: options.method ?? "GET",
-      // A studio listing that answers a non-browser user agent with a 403 is a
-      // source outage, not a reason to emit partial scenes.
-      redirect: "manual",
-      signal,
-      headers: { "user-agent": this.userAgent, ...(options.headers ?? {}) },
-    };
-    if (options.body !== undefined) init.body = options.body;
+    // Validation and signal construction live INSIDE the try. `AbortSignal
+    // .timeout` throws a RangeError for a non-positive or non-finite delay, and
+    // building that signal outside the try meant a bad `timeoutMs` escaped as a
+    // raw RangeError rather than a classified FetchError - a shape the callers
+    // that read `classifyError` do not handle, so a config typo read as an
+    // unhandled crash instead of a failed request.
     try {
+      const requested = options.timeoutMs ?? this.defaultTimeoutMs;
+      const timeoutMs = Number.isFinite(requested) && requested > 0 ? requested : this.defaultTimeoutMs;
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
+      const signal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+      const init: RequestInit = {
+        method: options.method ?? "GET",
+        // A studio listing that answers a non-browser user agent with a 403 is a
+        // source outage, not a reason to emit partial scenes.
+        redirect: "manual",
+        signal,
+        headers: { "user-agent": this.userAgent, ...(options.headers ?? {}) },
+      };
+      if (options.body !== undefined) init.body = options.body;
       return await globalThis.fetch(url, init);
     } catch (error) {
+      // A caller-supplied abort is a DIFFERENT event from our own deadline, and
+      // conflating them sends the wrong diagnosis into the logs: a shutdown
+      // reads as a source timeout, and a source timeout reads as a shutdown.
+      if (options.signal?.aborted) {
+        throw new FetchError(`request to ${url} was aborted by the caller`, "inconclusive");
+      }
       const name = (error as { name?: string }).name;
       const message =
         name === "TimeoutError" || name === "AbortError"
-          ? `request to ${url} timed out after ${timeoutMs}ms`
+          ? `request to ${url} timed out after ${options.timeoutMs ?? this.defaultTimeoutMs}ms`
           : `request to ${url} failed: ${(error as Error).message}`;
       throw new FetchError(message, "inconclusive");
     }

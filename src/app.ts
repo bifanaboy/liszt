@@ -172,13 +172,21 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     log.info("shutting down", { signal });
-    scheduler.stop();
     clearInterval(maintenance);
-    server.close(() => {
-      store.close();
-      process.exit(0);
-    });
-    setTimeout(() => process.exit(0), 5_000).unref?.();
+    // The scheduler is stopped and its in-flight cycle AWAITED before the store
+    // closes, otherwise the cycle is still writing to a handle that is about to
+    // be closed underneath it. The 5s timer below is the backstop for a cycle
+    // that never settles.
+    void scheduler
+      .stop()
+      .catch((error) => log.error("scheduler stop failed", { error: (error as Error).message }))
+      .then(() => {
+        server.close(() => {
+          store.close();
+          process.exit(0);
+        });
+        setTimeout(() => process.exit(0), 5_000).unref?.();
+      });
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
