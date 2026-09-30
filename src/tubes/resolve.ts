@@ -299,7 +299,12 @@ export async function resolveLinks({
     if (scene.videoUrls.length > 0) return false;
     return Number.isFinite(scene.durationSec) && (scene.durationSec ?? 0) > 0;
   });
-  const queue = limit ? eligible.slice(0, limit) : eligible;
+  // `limit ? ... : ...` treated a limit of `0` as "no limit", which is the
+  // opposite of what a caller passing 0 means, and passed a negative value
+  // straight to `slice`, which counts from the end - so `-5` resolved the LAST
+  // five scenes instead of none. `undefined` is the only "unbounded" value.
+  const bounded = limit === undefined ? undefined : Math.max(0, Math.floor(limit));
+  const queue = bounded === undefined ? eligible : eligible.slice(0, bounded);
   const rejections = emptyRejections();
   // Shared and mutated in place: `mapWithConcurrency` interleaves scenes, and a
   // per-scene counter could not be summed without racing.

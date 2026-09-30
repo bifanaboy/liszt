@@ -15,6 +15,7 @@ import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { NullLogger } from "../src/core/logger.ts";
 import { HttpFetcher } from "../src/core/fetcher.ts";
 import { fixedClock } from "../src/sources/types.ts";
+import type { Scene } from "../src/core/schema.ts";
 import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
 import type { RawScene, SourceAdapter, SourceResult } from "../src/sources/types.ts";
 
@@ -135,8 +136,71 @@ test("a failed poll keeps the source's last-good in-window rows", async () => {
   store.close();
 });
 
-test("a repeat sync converges instead of duplicating", async () => {
+test("a repeat poll preserves resolved links, dead links and the re-verify watermark", async () => {
+  // The bug this covers: `upsertScene` REPLACES `scene_links` from the scene it
+  // is handed, and the scene a metadata poll builds knows nothing about
+  // playback - so every poll erased every resolved link and every struck one.
+  // The resolver's writes survived only for the scenes it happened to change in
+  // the same cycle, which is not a property anyone could rely on.
   const store = new SqliteStore(":memory:");
+  store.migrate();
+  const sync = buildSync(store, [adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))]);
+
+  await sync("first");
+  const resolved: Scene = {
+    ...(store.getScene("good:1") as Scene),
+    videoUrls: [
+      {
+        source: "eporner",
+        url: "https://www.eporner.com/video-live/",
+        verifiedAt: "2026-03-05T00:00:00.000Z",
+        verifyFailures: 0,
+      },
+    ],
+    deadVideoUrls: [
+      {
+        source: "eporner",
+        url: "https://www.eporner.com/video-dead/",
+        deadAt: "2026-03-06T00:00:00.000Z",
+        deadReason: "eporner video/id lookup found no record",
+      },
+    ],
+    videoCheckedAt: "2026-03-05T00:00:00.000Z",
+    videoMatching: {
+      lane: "eporner-pool",
+      matchedAt: "2026-03-05T00:00:00.000Z",
+      rule: "duration+window",
+      confidence: "high",
+    },
+  };
+  store.upsertScene(resolved);
+
+  // Two more polls. One would have been enough to show the loss; two also shows
+  // the state is stable rather than decaying.
+  await sync("second");
+  await sync("third");
+
+  const after = store.getScene("good:1") as Scene;
+  assert.deepEqual(
+    after.videoUrls.map((link) => link.url),
+    ["https://www.eporner.com/video-live/"],
+    "a resolved link survives a metadata poll",
+  );
+  assert.deepEqual(
+    after.deadVideoUrls.map((link) => link.url),
+    ["https://www.eporner.com/video-dead/"],
+    "a struck link stays struck, and its history is not deleted either",
+  );
+  assert.equal(
+    after.videoCheckedAt,
+    "2026-03-05T00:00:00.000Z",
+    "videoCheckedAt is carried forward, so re-verify still rotates over the genuinely stalest links",
+  );
+  assert.equal(after.videoMatching?.lane, "eporner-pool");
+  store.close();
+});
+
+test("a repeat sync converges instead of duplicating", async () => {  const store = new SqliteStore(":memory:");
   store.migrate();
   const sync = buildSync(store, [adapter("good", async () => ({ scenes: [raw("1"), raw("2")], verifiedEmpty: false }))]);
 
@@ -412,14 +476,37 @@ test("normaliseScene builds the <source>:<scene> identity and keeps provenance",
 });
 
 test("a sub-label becomes its own label identity", () => {
-  const scene = normaliseScene(
-    adapter("madouqu", async () => ({ scenes: [], verifiedEmpty: true }), null),
+  // The sub-label is part of the KEY, not just of the label fields. madouqu
+  // cross-lists the same post into several categories, so with a bare
+  // `<source>:<scene>` key those records collided on one row and every category
+  // but the last one walked was silently lost.
+  const madouqu = adapter("madouqu", async () => ({ scenes: [], verifiedEmpty: true }), null);
+  const peach = normaliseScene(
+    madouqu,
     raw("123", { studioId: "madouqu-peach", studio: "Peach" }),
     new Date(NOW),
   );
-  assert.equal(scene.id, "madouqu:123");
-  assert.equal(scene.labelId, "madouqu-peach");
-  assert.equal(scene.label, "Peach");
+  const jelly = normaliseScene(
+    madouqu,
+    raw("123", { studioId: "madouqu-jelly-91", studio: "Jelly/91" }),
+    new Date(NOW),
+  );
+  assert.equal(peach.id, "madouqu:madouqu-peach:123");
+  assert.equal(peach.labelId, "madouqu-peach");
+  assert.equal(peach.label, "Peach");
+  assert.notEqual(peach.id, jelly.id, "the same post under two sub-labels is two records");
+});
+
+test("a single-label source keeps the two-part key", () => {
+  // Widening the key must not churn every existing row of every lane that
+  // never emits a sub-label.
+  const scene = normaliseScene(
+    adapter("lancelot-styles-evolution", async () => ({ scenes: [], verifiedEmpty: true })),
+    raw("4683299", { studioCode: "LS-1" }),
+    new Date(NOW),
+  );
+  assert.equal(scene.id, "lancelot-styles-evolution:4683299");
+  assert.equal(scene.labelId, "lancelot-styles-evolution");
 });
 
 test("single-flight collapses concurrent cycles into one run", async () => {

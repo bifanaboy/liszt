@@ -3,8 +3,8 @@
  * migrations applied in a transaction, and typed repository functions.
  *
  * WAL plus a busy timeout are not optional: the server writes on a 30-minute
- * timer while `npm run sync` may run concurrently against the same file, and
- * both are meant to touch it.
+ * timer while a one-off cycle (a forced `POST /api/refresh`, `npm run calibrate`)
+ * runs concurrently against the same file, and both are meant to touch it.
  */
 import { DatabaseSync } from "node:sqlite";
 import { readdirSync, readFileSync } from "node:fs";
@@ -218,9 +218,13 @@ export class SqliteStore {
           parsed.videoMatching ? JSON.stringify(parsed.videoMatching) : null,
         );
 
-      // Links are owned by the resolver, not the metadata upsert: rewrite them
-      // only from the scene's own in-memory link set so a stale read can never
-      // resurrect a struck URL.
+      // Links are owned by the resolver, not the metadata fields: they are
+      // REPLACED wholesale from the scene this call is handed, never merged.
+      // So every caller must hand over a scene read at the moment it decided
+      // what the links are. `sync.normaliseScene` carries the stored set
+      // forward for exactly that reason - a metadata poll that handed over an
+      // empty set would erase every resolved and every dead link, and one that
+      // handed over a stale set could resurrect a struck URL.
       this.db.prepare("DELETE FROM scene_links WHERE scene_id = ?").run(parsed.id);
       const insert = this.db.prepare(
         `INSERT INTO scene_links (scene_id, kind, source, url, verified_at, verify_failures, dead_at, dead_reason)
@@ -275,6 +279,32 @@ export class SqliteStore {
       | undefined;
     if (!row) return null;
     return linkRowToScene(row, this.linksFor([id]).get(id) ?? []);
+  }
+
+  /**
+   * Many scenes at once, links included, keyed by id. Missing ids are absent
+   * from the map rather than mapped to null.
+   *
+   * This exists so the metadata upsert can carry a scene's existing links
+   * forward in ONE round trip. `upsertScene` rewrites `scene_links` from the
+   * scene it is handed, so a caller that omits them erases them; polling 500
+   * scenes must not need 500 separate reads to avoid that.
+   */
+  getScenesByIds(ids: string[]): Map<string, Scene> {
+    const out = new Map<string, Scene>();
+    const unique = [...new Set(ids)];
+    // Chunked well under SQLite's bound-variable limit, which a wide window
+    // with a large per_page can reach.
+    for (let offset = 0; offset < unique.length; offset += 500) {
+      const chunk = unique.slice(offset, offset + 500);
+      const placeholders = chunk.map(() => "?").join(",");
+      const rows = this.db
+        .prepare(`SELECT * FROM scenes WHERE id IN (${placeholders})`)
+        .all(...chunk) as unknown as SceneRow[];
+      const links = this.linksFor(rows.map((row) => row.id));
+      for (const row of rows) out.set(row.id, linkRowToScene(row, links.get(row.id) ?? []));
+    }
+    return out;
   }
 
   /** Scenes in `[from, to]` inclusive, newest first. Links resolved in one query. */
@@ -439,15 +469,23 @@ export class SqliteStore {
   /**
    * Look a session up and slide its expiry forward. A row past `now` is
    * deleted on read, so an expired cookie can never be revived.
+   *
+   * The sweep is scoped to THIS token rather than `expires_at <= ?` across the
+   * whole table. A full-table delete inside a transaction taken on the request
+   * path takes a write lock and a full scan on every single authenticated page
+   * load, so session verification was the most expensive read in the app. The
+   * expired row this token would otherwise revive is still removed explicitly,
+   * so the "expired cookie cannot come back" property is unchanged; the rest of
+   * the table is the `purgeExpiredSessions` job's business, and it already runs
+   * on a timer.
    */
   touchSession(tokenHash: string, now: string, expiresAt: string): boolean {
-    return this.transaction(() => {
-      this.db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
-      const result = this.db
-        .prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ? AND expires_at > ?")
-        .run(expiresAt, tokenHash, now);
-      return Number(result.changes) > 0;
-    });
+    const result = this.db
+      .prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ? AND expires_at > ?")
+      .run(expiresAt, tokenHash, now);
+    if (Number(result.changes) > 0) return true;
+    this.db.prepare("DELETE FROM sessions WHERE token_hash = ? AND expires_at <= ?").run(tokenHash, now);
+    return false;
   }
 
   deleteSession(tokenHash: string): void {
@@ -509,12 +547,25 @@ export class SqliteStore {
    * on the duration band alone and lets hydration supply the date. Dropping them
    * instead would discard the entire working set, since the window can never be
    * evaluated without it. See `tubes/eporner-pool.ts`.
+   *
+   * ORDERED AND CAPPED. The walk inserts newest-first, so `rowid` order IS
+   * newest-first - but that was an accident of SQLite's scan order with nothing
+   * asserting it, and `maxConsidered` in the rung silently assumed it. With no
+   * `ORDER BY` the rows arrived in whatever order the query plan produced, so
+   * the cap cut an arbitrary subset of the account rather than its oldest videos.
+   * `ORDER BY rowid` makes the claim explicit, and the cap bounds the scan in
+   * SQL rather than after materialising every undated row.
    */
-  poolVideosUndated(uploader: string): PoolVideo[] {
-    return this.db
-      .prepare("SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL")
-      .all(uploader)
-      .map(rowToPoolVideo);
+  poolVideosUndated(uploader: string, limit?: number): PoolVideo[] {
+    const sql =
+      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL ORDER BY rowid ASC" +
+      (limit === undefined ? "" : " LIMIT ?");
+    const rows = (
+      limit === undefined
+        ? this.db.prepare(sql).all(uploader)
+        : this.db.prepare(sql).all(uploader, Math.max(0, Math.floor(limit)))
+    ) as Record<string, unknown>[];
+    return rows.map(rowToPoolVideo);
   }
 
   /** Every indexed video for an uploader, hydrated or not. */

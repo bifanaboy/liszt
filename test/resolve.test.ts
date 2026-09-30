@@ -306,3 +306,28 @@ test("a deferred lane produces zero links and never enters the ladder", async ()
   assert.equal(result.considered, 0);
   assert.equal(result.matched, 0);
 });
+
+test("limit bounds the queue, and 0 is a limit rather than no limit", async () => {
+  // `limit ? eligible.slice(0, limit) : eligible` read 0 as "unbounded" and
+  // passed a negative straight to `slice`, which counts from the END - so -1
+  // resolved the LAST scene instead of none. `undefined` is the only unbounded
+  // value.
+  const scenes = Array.from({ length: 4 }, (_, index) =>
+    makeScene({ id: `test:${index}`, durationSec: 900, title: `Scene ${index}` }),
+  );
+  const options = {
+    now,
+    mapWithConcurrency: async <T, R>(items: T[], task: (item: T, index: number) => Promise<R>) =>
+      Promise.all(items.map((item, index) => task(item, index))),
+    matcherFor: () => ({ matcher: "sxyprn", creatorStudio: false }),
+    poolLookup: null,
+    sxyprnLookup: async () => [sxyprnHit()],
+    openLookup: null,
+  };
+
+  assert.equal((await resolveLinks({ scenes, ...options })).considered, 4, "undefined is unbounded");
+  assert.equal((await resolveLinks({ scenes, ...options, limit: 2 })).considered, 2);
+  assert.equal((await resolveLinks({ scenes, ...options, limit: 0 })).considered, 0, "0 means none, not all");
+  assert.equal((await resolveLinks({ scenes, ...options, limit: -1 })).considered, 0, "never from the end");
+  assert.equal((await resolveLinks({ scenes, ...options, limit: 99 })).considered, 4, "clamped by the queue");
+});

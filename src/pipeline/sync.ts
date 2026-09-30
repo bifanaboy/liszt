@@ -93,13 +93,44 @@ function recordSourceFailure(
 }
 
 /**
- * Map one raw record to the canonical scene. The id is
- * `<source-id>:<source-scene-id>`; a sub-label (`studioId`/`studio`) becomes
- * `labelId`/`label`, and provenance is always present.
+ * The upsert key for one raw record: `<source-id>:<source-scene-id>`.
+ *
+ * The sub-label joins the key whenever it differs from the source id. A source
+ * that emits several labels can emit the SAME post under more than one of them
+ * (madouqu cross-lists posts into Madou, Jelly/91 and others), and with the
+ * bare two-part key those records collided on one row - the last category
+ * processed won and the other label's record was lost. Single-label sources
+ * keep the historical two-part key, so existing rows stay put.
  */
-export function normaliseScene(adapter: SourceAdapter, raw: RawScene, now: Date): Scene {
+export function sceneKey(adapter: SourceAdapter, raw: RawScene): string {
   const labelId = raw.studioId ?? adapter.id;
-  const id = `${adapter.id}:${raw.sourceSceneId}`;
+  return labelId === adapter.id
+    ? `${adapter.id}:${raw.sourceSceneId}`
+    : `${adapter.id}:${labelId}:${raw.sourceSceneId}`;
+}
+
+/**
+ * Map one raw record to the canonical scene, keyed by `sceneKey`; a sub-label
+ * (`studioId`/`studio`) becomes `labelId`/`label`, and provenance is always
+ * present.
+ *
+ * `previous` is the already-stored record for the same key, when there is one.
+ * The resolver-OWNED fields - live links, dead links, `videoCheckedAt` and
+ * `videoMatching` - are carried from it verbatim and are never derived from a
+ * source poll: a metadata source knows nothing about playback, so a scene built
+ * without them would hand `upsertScene` an empty link set and erase every
+ * resolved and every dead link on every poll. The same carry-over keeps
+ * `videoCheckedAt` intact, so re-verify still rotates over the genuinely
+ * stalest links instead of restarting the rotation each cycle.
+ */
+export function normaliseScene(
+  adapter: SourceAdapter,
+  raw: RawScene,
+  now: Date,
+  previous?: Scene,
+): Scene {
+  const labelId = raw.studioId ?? adapter.id;
+  const id = sceneKey(adapter, raw);
   const provenance = raw.provenance;
   const candidate: Record<string, unknown> = {
     id,
@@ -113,6 +144,10 @@ export function normaliseScene(adapter: SourceAdapter, raw: RawScene, now: Date)
     durationSec: raw.durationSec ?? null,
     thumbnailUrl: raw.thumbnailUrl ?? "",
     tags: raw.tags ?? [],
+    videoUrls: previous?.videoUrls ?? [],
+    deadVideoUrls: previous?.deadVideoUrls ?? [],
+    videoCheckedAt: previous?.videoCheckedAt ?? null,
+    videoMatching: previous?.videoMatching ?? null,
     provenance: [
       {
         source: provenance?.source ?? raw.source ?? adapter.name,
@@ -235,9 +270,15 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             );
           }
           let count = 0;
+          // One bulk read, not one per record: the stored links have to reach
+          // `normaliseScene` so the metadata upsert preserves them.
+          const existing = store.getScenesByIds(
+            result.scenes.map((raw) => sceneKey(adapter, raw)),
+          );
           for (const raw of result.scenes) {
             try {
-              store.upsertScene(normaliseScene(adapter, raw, now));
+              const previous = existing.get(sceneKey(adapter, raw));
+              store.upsertScene(normaliseScene(adapter, raw, now, previous));
               count += 1;
             } catch (error) {
               log.warn("sync: skipped an invalid record", {
