@@ -1,44 +1,40 @@
 /**
- * The HTTP surface, at the two boundaries that matter:
+ * The HTTP surface, at the boundaries that matter now that the auth subsystem is
+ * deleted:
  *
- *  - `GET /health` is PUBLIC and answers a constant. A platform health check
- *    needs a 2xx, and Render treats anything else as a failed deploy - which is
- *    why it cannot be `/api/health`, since that one is auth-gated and answers
- *    401. The body is deliberately contentless: "the process is serving" is the
- *    entire claim.
- *  - `authDisabled` is NOT honoured in production. The composition root already
- *    refuses to boot in that state, so reaching the handler with both set means a
- *    misconfigured deploy, and the only safe reading of that is "keep the gate".
+ *  - `GET /health` answers a constant. A platform health check needs a 2xx, and
+ *    Render treats anything else as a failed deploy. The body is deliberately
+ *    contentless: "the process is serving" is the entire claim, and nothing here
+ *    should leak now that the app is public.
+ *  - `/api/health` is a DIFFERENT route, and it is stateful. That is the whole
+ *    reason `/health` exists separately.
+ *  - There is no gate. `/login` and `/logout` are gone, so they fall through to
+ *    the normal unknown-path 404 - with no redirect and, critically, no
+ *    `set-cookie`. That is the regression guard for the deletion: a leftover
+ *    route that quietly sets a cookie would be invisible until it leaked.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { authGateEnabled, createHttpHandler, type HttpDeps } from "../src/serving/http.ts";
-import { loadConfig } from "../src/config.ts";
-import { createSessionService } from "../src/auth/session.ts";
-import { LoginThrottle } from "../src/auth/throttle.ts";
+import { DatabaseSync } from "node:sqlite";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHttpHandler, HEALTH_PATH, type HttpDeps } from "../src/serving/http.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { NullLogger } from "../src/core/logger.ts";
-import { isPublicPath } from "../src/auth/middleware.ts";
-
-const HASH = "scrypt$32768$8$1$c2FsdHNhbHRzYWx0c2E$" + Buffer.alloc(32).toString("base64");
 
 function deps(over: Partial<HttpDeps> = {}): HttpDeps {
   const store = new SqliteStore(":memory:");
   store.migrate();
   return {
-    config: loadConfig({ LISZT_AUTH_PASSWORD_HASH: HASH }),
     store,
     log: new NullLogger(),
-    sessions: createSessionService(store),
-    throttle: new LoginThrottle({ maxFailures: 10, lockoutMinutes: 15, now: () => 0 }),
     readModel: () => ({ generatedAt: "2026-03-04T00:00:00Z", scenes: [], sources: [], runs: [] }) as never,
     refresh: async () => undefined,
     isBusy: () => false,
     publicDir: new URL("../public", import.meta.url).pathname,
-    cookieSecure: false,
-    verifyPassword: async () => false,
     ...over,
   };
 }
@@ -58,11 +54,12 @@ async function withServer(
   return server;
 }
 
-test("GET /health is public, 2xx, and says nothing about the deployment", async () => {
+test("GET /health is 2xx, JSON, and says nothing about the deployment", async () => {
   const d = deps();
+  assert.equal(HEALTH_PATH, "/health", "Render's healthCheckPath must keep resolving");
   await withServer(d, async (base) => {
     const response = await fetch(`${base}/health`);
-    assert.equal(response.status, 200, "a health check that answers 401 fails the deploy");
+    assert.equal(response.status, 200, "a health check that answers non-2xx fails the deploy");
     assert.match(response.headers.get("content-type") ?? "", /application\/json/);
     const body = (await response.json()) as Record<string, unknown>;
     assert.deepEqual(body, { status: "ok" });
@@ -73,47 +70,115 @@ test("GET /health is public, 2xx, and says nothing about the deployment", async 
   d.store.close();
 });
 
-test("GET /api/health is still gated, and is a different route from /health", async () => {
+test("HEAD /health answers too, and is not a write primitive", async () => {
   const d = deps();
   await withServer(d, async (base) => {
-    const gated = await fetch(`${base}/api/health`);
-    assert.equal(gated.status, 401, "the stateful health report must not be public");
-    assert.equal(isPublicPath("GET", "/api/health"), false);
-    assert.equal(isPublicPath("GET", "/health"), true);
-    assert.equal(isPublicPath("GET", "/api/scenes"), false);
-    // A non-GET on the probe is not public: it must not be a write primitive.
-    assert.equal(isPublicPath("POST", "/health"), false);
-    // Login assets and the splash stay public.
-    assert.equal(isPublicPath("GET", "/login"), true);
-    assert.equal(isPublicPath("GET", "/login.js"), true);
-    assert.equal(isPublicPath("GET", "/"), false);
+    assert.equal((await fetch(`${base}/health`, { method: "HEAD" })).status, 200);
+    assert.equal(
+      (await fetch(`${base}/health`, { method: "POST" })).status,
+      405,
+      "only GET and HEAD reach the probe; anything else is a method error",
+    );
   });
   d.store.close();
 });
 
-test("authDisabled is a development opt-out, refused in production", () => {
-  const enabled = loadConfig({});
-  const disabled = loadConfig({ LISZT_AUTH_DISABLED: "true", LISZT_AUTH_PASSWORD_HASH: HASH });
-  assert.equal(authGateEnabled(enabled, "production"), true);
-  assert.equal(authGateEnabled(disabled, "development"), false, "local dev opt-out still works");
-  assert.equal(authGateEnabled(disabled, "test"), false);
-  assert.equal(
-    authGateEnabled(disabled, "production"),
-    true,
-    "fail closed: reaching here with both set is a misconfigured deploy",
-  );
+test("/api/health is a different route from /health", async () => {
+  const d = deps();
+  await withServer(d, async (base) => {
+    const stateful = await fetch(`${base}/api/health`);
+    assert.equal(stateful.status, 200);
+    const body = (await stateful.json()) as Record<string, unknown>;
+    assert.equal(body.ok, true);
+    assert.ok(typeof body.ts === "string", "the stateful report carries a timestamp");
+    assert.equal(
+      Object.keys(body).includes("status"),
+      false,
+      "the two routes must not be mistaken for each other",
+    );
+  });
+  d.store.close();
 });
 
-test("a disabled gate outside production logs a warning at construction", () => {
-  const lines: string[] = [];
-  const d = deps({
-    config: loadConfig({ LISZT_AUTH_DISABLED: "true" }),
-    log: Object.assign(new NullLogger(), {
-      warn: (message: string) => lines.push(message),
-    }) as never,
+test("no route is gated, and nothing sets a cookie", async () => {
+  const d = deps();
+  await withServer(d, async (base) => {
+    const routes = ["/api/scenes", "/api/sources", "/api/runs", "/api/health", "/"];
+    for (const route of routes) {
+      const response = await fetch(`${base}${route}`);
+      assert.equal(response.status, 200, `${route} is served to anyone who can reach the port`);
+      assert.equal(
+        response.headers.get("set-cookie"),
+        null,
+        `${route} must not set a cookie - the session layer is gone`,
+      );
+    }
+    const refresh = await fetch(`${base}/api/refresh`, { method: "POST" });
+    assert.equal(refresh.status, 202);
+    assert.equal(refresh.headers.get("set-cookie"), null);
   });
-  createHttpHandler(d);
-  assert.equal(lines.length, 1, "an unauthenticated surface is a deployment fact, logged once");
-  assert.match(lines[0] ?? "", /auth is disabled/);
   d.store.close();
+});
+
+test("the deleted auth routes are now plain 404s", async () => {
+  // The regression guard for the deletion. A leftover branch that still served
+  // `/login` would redirect, and one that still cleared a cookie would emit a
+  // `set-cookie` on a route that no longer has a session to clear.
+  const d = deps();
+  await withServer(d, async (base) => {
+    for (const [method, route] of [
+      ["GET", "/login"],
+      ["POST", "/login"],
+      ["GET", "/logout"],
+      ["POST", "/logout"],
+      ["GET", "/login.js"],
+      ["GET", "/login.css"],
+      ["GET", "/login.html"],
+    ] as const) {
+      const response = await fetch(`${base}${route}`, { method, redirect: "manual" });
+      // A GET on a path with no file behind it is a 404; any other method on an
+      // unrouted path is the generic 405. Both mean the same thing here: no
+      // route answered. What matters is that neither is a live endpoint.
+      assert.equal(
+        response.status,
+        method === "GET" ? 404 : 405,
+        `${method} ${route} must not be a route any more`,
+      );
+      assert.equal(response.headers.get("location"), null, `${route} must not redirect`);
+      assert.equal(response.headers.get("set-cookie"), null, `${route} must not set a cookie`);
+    }
+  });
+  d.store.close();
+});
+
+test("the sessions table is gone after migrating", () => {
+  // The migration must actually drop it, not merely stop writing to it: an
+  // unused table holding token hashes is exactly the kind of thing a later
+  // reader assumes is load-bearing. Checked against the file on disk with a
+  // second connection rather than through the store, so no query API is added
+  // to production code purely so a test can look inside it.
+  const path = join(tmpdir(), `liszt-migration-${process.pid}-${Date.now()}.db`);
+  try {
+    new SqliteStore(path).migrate();
+    const db = new DatabaseSync(path);
+    try {
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'")
+        .all();
+      assert.deepEqual(tables, [], "0002_drop_sessions.sql must remove the table");
+      const applied = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all();
+      assert.deepEqual(
+        applied.map((row) => Number((row as { version: number }).version)),
+        [1, 2],
+        "both migrations applied, in filename order",
+      );
+      // And migrating again is a no-op rather than a second drop attempt.
+      new SqliteStore(path).migrate();
+      assert.deepEqual(db.prepare("SELECT version FROM schema_migrations").all(), applied);
+    } finally {
+      db.close();
+    }
+  } finally {
+    for (const suffix of ["", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
+  }
 });

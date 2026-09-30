@@ -456,48 +456,6 @@ export class SqliteStore {
     }));
   }
 
-  // ---------------------------------------------------------------- sessions
-
-  createSession(tokenHash: string, createdAt: string, expiresAt: string): void {
-    this.db
-      .prepare(
-        "INSERT INTO sessions (token_hash, created_at, expires_at) VALUES (?, ?, ?) ON CONFLICT (token_hash) DO UPDATE SET expires_at = excluded.expires_at",
-      )
-      .run(tokenHash, createdAt, expiresAt);
-  }
-
-  /**
-   * Look a session up and slide its expiry forward. A row past `now` is
-   * deleted on read, so an expired cookie can never be revived.
-   *
-   * The sweep is scoped to THIS token rather than `expires_at <= ?` across the
-   * whole table. A full-table delete inside a transaction taken on the request
-   * path takes a write lock and a full scan on every single authenticated page
-   * load, so session verification was the most expensive read in the app. The
-   * expired row this token would otherwise revive is still removed explicitly,
-   * so the "expired cookie cannot come back" property is unchanged; the rest of
-   * the table is the `purgeExpiredSessions` job's business, and it already runs
-   * on a timer.
-   */
-  touchSession(tokenHash: string, now: string, expiresAt: string): boolean {
-    const result = this.db
-      .prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ? AND expires_at > ?")
-      .run(expiresAt, tokenHash, now);
-    if (Number(result.changes) > 0) return true;
-    this.db.prepare("DELETE FROM sessions WHERE token_hash = ? AND expires_at <= ?").run(tokenHash, now);
-    return false;
-  }
-
-  deleteSession(tokenHash: string): void {
-    this.db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
-  }
-
-  purgeExpiredSessions(now: string): number {
-    return Number(
-      this.db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now).changes,
-    );
-  }
-
   // ------------------------------------------------------------ pool_videos
 
   /**

@@ -69,17 +69,8 @@ export const Config = z.object({
   matchDateWindowDays: z.coerce.number().int().positive().default(7),
   poolFullRewalkDays: z.coerce.number().int().positive().default(7),
 
-  // Auth.
-  authPasswordHash: z.string().min(1).optional(),
-  authDisabled: z.boolean().default(false),
-  sessionTtlDays: z.coerce.number().int().positive().default(30),
-  loginMaxFailures: z.coerce.number().int().positive().default(10),
-  loginLockoutMinutes: z.coerce.number().int().positive().default(15),
-
   /** JSON-line logs to stderr. The CLI sets this so stdout stays a result. */
   logToStderr: z.boolean().default(false),
-  /** Reported to the read model so window arithmetic is deterministic in tests. */
-  nowOverride: z.string().optional(),
 });
 
 export type Config = z.infer<typeof Config>;
@@ -131,9 +122,11 @@ const optionalValue = (value: string | undefined): string | undefined => {
 };
 
 /**
- * Parse configuration from the environment, naming any failing field. The
- * auth hash is a separate, louder check: an unset hash in production is a
- * refusal to start, not a default.
+ * Parse configuration from the environment, naming any failing field.
+ *
+ * There is no credential and no production-only refusal any more. The app has
+ * no perimeter: it is a disposable public read model, and the only secret it
+ * ever had is gone.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const result = Config.safeParse({
@@ -156,19 +149,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,
     poolFullRewalkDays: env.LISZT_POOL_FULL_REWALK_DAYS,
-    authPasswordHash: optionalValue(env.LISZT_AUTH_PASSWORD_HASH),
-    authDisabled:
-      env.LISZT_AUTH_DISABLED === undefined
-        ? undefined
-        : bool("LISZT_AUTH_DISABLED", env.LISZT_AUTH_DISABLED, false),
-    sessionTtlDays: env.LISZT_SESSION_TTL_DAYS,
-    loginMaxFailures: env.LISZT_LOGIN_MAX_FAILURES,
-    loginLockoutMinutes: env.LISZT_LOGIN_LOCKOUT_MINUTES,
     logToStderr:
       env.LISZT_LOG_STDERR === undefined
         ? undefined
         : bool("LISZT_LOG_STDERR", env.LISZT_LOG_STDERR, false),
-    nowOverride: env.LISZT_NOW,
   });
   if (!result.success) {
     const detail = result.error.issues
@@ -179,20 +163,3 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return result.data;
 }
 
-/**
- * The production auth gate. Local development may opt out explicitly; a
- * production process with no hash, or with auth disabled, refuses to start.
- */
-export function assertAuthConfigured(config: Config, env: NodeJS.ProcessEnv = process.env): void {
-  if (env.NODE_ENV !== "production") return;
-  if (config.authDisabled) {
-    throw new Error(
-      "LISZT_AUTH_DISABLED is set while NODE_ENV=production. The app's password is the only perimeter it has; remove it.",
-    );
-  }
-  if (!config.authPasswordHash) {
-    throw new Error(
-      "LISZT_AUTH_PASSWORD_HASH is required in production. Generate one with `npm run auth:hash`.",
-    );
-  }
-}

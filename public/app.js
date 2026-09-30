@@ -118,7 +118,6 @@ function apply(data) {
 
 async function load() {
   const response = await fetch("/api/scenes", { cache: "no-store" });
-  if (response.status === 401) { window.location.href = "/login"; return; }
   if (!response.ok) throw new Error(`Server returned ${response.status}`);
   apply(await response.json());
 }

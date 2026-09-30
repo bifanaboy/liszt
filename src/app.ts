@@ -4,8 +4,8 @@
  *
  * The boot order matters and is deliberate:
  *
- *   1. Parse configuration and REFUSE to start without an auth hash in
- *      production - the password is the app's entire perimeter.
+ *   1. Parse configuration. There is no credential to check and nothing that
+ *      can refuse to start for a missing secret - the app has no perimeter.
  *   2. Open and migrate the store (WAL + busy timeout) before anything reads it.
  *   3. Build the ladder's lookups once: the pool index handle, the optional
  *      lazily-loaded sxyprn client, and the eporner open search.
@@ -16,10 +16,7 @@
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertAuthConfigured, loadConfig } from "./config.ts";
-import { verifyPassword } from "./auth/password.ts";
-import { createSessionService } from "./auth/session.ts";
-import { LoginThrottle } from "./auth/throttle.ts";
+import { loadConfig } from "./config.ts";
 import { HttpFetcher } from "./core/fetcher.ts";
 import { JsonLogger } from "./core/logger.ts";
 import { SqliteStore } from "./core/store/sqlite.ts";
@@ -36,11 +33,10 @@ import { createHttpServer } from "./serving/http.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(HERE, "..", "public");
-const HOUR_MS = 3_600_000;
+
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  assertAuthConfigured(config);
   const log = new JsonLogger(
     { app: "liszt" },
     config.logToStderr ? (line) => process.stderr.write(`${line}\n`) : undefined,
@@ -130,25 +126,13 @@ async function main(): Promise<void> {
     }
   });
 
-  const sessions = createSessionService(store, { ttlDays: config.sessionTtlDays });
-  const throttle = new LoginThrottle({
-    maxFailures: config.loginMaxFailures,
-    lockoutMinutes: config.loginLockoutMinutes,
-    now: () => Date.now(),
-  });
-
   const server = createHttpServer({
-    config,
     store,
     log,
-    sessions,
-    throttle,
     readModel: () => buildReadModel(store, config, new Date(), { refreshing: inFlight }),
     refresh: runCycle,
     isBusy: () => inFlight,
     publicDir: PUBLIC_DIR,
-    cookieSecure: process.env.NODE_ENV === "production",
-    verifyPassword,
   });
 
   await new Promise<void>((resolve) => {
@@ -157,16 +141,11 @@ async function main(): Promise<void> {
   log.info("listening", {
     port: config.port,
     host: config.listenAddr,
-    authDisabled: config.authDisabled,
+    // Worth saying once at boot rather than on every request: this process has
+    // no auth, no sessions and no secrets. Anyone who can reach the port can
+    // read the catalogue and trigger a refresh.
+    perimeter: "none",
   });
-
-  // Housekeeping: expired sessions and stale throttle entries.
-  sessions.purge(new Date());
-  const maintenance = setInterval(() => {
-    sessions.purge(new Date());
-    throttle.sweep();
-  }, HOUR_MS);
-  maintenance.unref?.();
 
   const scheduler = createScheduler({
     intervalMs: config.pollIntervalMinutes * 60_000,
@@ -182,7 +161,6 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     log.info("shutting down", { signal });
-    clearInterval(maintenance);
     // The scheduler is stopped and its in-flight cycle AWAITED before the store
     // closes, otherwise the cycle is still writing to a handle that is about to
     // be closed underneath it. The 5s timer below is the backstop for a cycle

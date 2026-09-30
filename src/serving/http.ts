@@ -1,38 +1,33 @@
 /**
- * The HTTP surface. Plain `node:http`, no framework: the route table is small
- * and the auth wrapper is the only cross-cutting concern.
+ * The HTTP surface. Plain `node:http`, no framework: the route table is small.
  *
- * Everything is gated except `GET /login`, `POST /login`, the login page's own
- * assets, and the bare `GET /health` liveness probe. `/api/health` stays gated:
- * it reports store and source state, and that is not something to publish.
- * `/health` returns a constant body and no data, which is all a platform health
- * check needs - and it is unauthenticated on purpose, because a health check
- * that answers 401 is a health check that fails, and Render only accepts 2xx.
+ * THERE IS NO PERIMETER. Every route below is served to anyone who can reach the
+ * port, including `POST /api/refresh`. That is the deliberate shape of this
+ * deployment - a disposable public read model with no user data, no credentials
+ * and no secrets - and the removed auth wrapper is what used to be the only
+ * thing standing in front of it.
  *
- * All responses are `no-store`, so the Cloudflare edge never caches the
- * catalogue, and static serving is path-traversal safe by construction: the
- * resolved target must stay inside `publicDir`.
+ * `/health` is the one route with a fixed body: a constant, no version, no host,
+ * no store state. It is Render's deploy gate, and a health check that leaked
+ * anything would leak it to whoever felt like asking.
+ *
+ * All responses are `no-store`, so no edge caches the catalogue, and static
+ * serving is path-traversal safe by construction: the resolved target must stay
+ * inside `publicDir`.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
-import {
-  authenticate,
-  attemptLogin,
-  isPublicPath,
-  unauthenticatedResponse,
-  HEALTH_PATH,
-} from "../auth/middleware.ts";
-import { clearSessionCookie, sessionCookie, type SessionService } from "../auth/session.ts";
-import type { LoginThrottle } from "../auth/throttle.ts";
-import { clientIp } from "../auth/throttle.ts";
-import type { Config } from "../config.ts";
 import type { Logger } from "../core/logger.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
 import type { ReadModel } from "./read-model.ts";
 
-const MAX_BODY_BYTES = 8 * 1024;
-const DAY_SECONDS = 86_400;
+/**
+ * Render's deploy gate. Answered before anything else touches store or source
+ * state, and the body is a constant: the process is up and serving, which is the
+ * entire claim.
+ */
+export const HEALTH_PATH = "/health";
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   ".html": "text/html; charset=utf-8",
@@ -47,42 +42,14 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 export interface HttpDeps {
-  config: Config;
   store: SqliteStore;
   log: Logger;
-  sessions: SessionService;
-  throttle: LoginThrottle;
   /** Build the read model, including the current refreshing flag. */
   readModel: () => ReadModel;
   /** Start or join the single in-flight sync cycle. */
   refresh: () => Promise<unknown>;
   isBusy: () => boolean;
   publicDir: string;
-  /** Set the `Secure` cookie attribute (true in production). */
-  cookieSecure: boolean;
-  /**
-   * The deployment environment, consulted before `authDisabled` is honoured.
-   * Defaults to `process.env.NODE_ENV`; injected so tests can cover the
-   * production case without mutating the process.
-   */
-  nodeEnv?: string;
-  /** Overridable so tests can count hash calls (throttle-before-hash). */
-  verifyPassword: (password: string, stored: string | undefined) => Promise<boolean>;
-}
-
-/**
- * Whether the auth gate runs. `authDisabled` is an explicit, deliberate opt-out
- * for local development, and it is deliberately NOT honoured in production: the
- * composition root already refuses to boot in that state, so reaching here with
- * `NODE_ENV=production` and the flag set means a misconfigured deploy, and the
- * only safe reading of it is "keep the gate closed".
- */
-export function authGateEnabled(
-  config: Config,
-  nodeEnv: string | undefined = process.env.NODE_ENV,
-): boolean {
-  if (!config.authDisabled) return true;
-  return nodeEnv === "production";
 }
 
 function send(res: ServerResponse, status: number, contentType: string, body: string | Buffer): void {
@@ -99,38 +66,12 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
   send(res, status, "application/json; charset=utf-8", JSON.stringify(value));
 }
 
-async function readBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const buffer = chunk as Buffer;
-    size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new Error("request body too large");
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
 
-function parseCredentials(raw: string, contentType: string | undefined): Record<string, unknown> {
-  const type = contentType ?? "";
-  if (type.includes("application/json")) {
-    try {
-      const parsed = JSON.parse(raw || "{}") as unknown;
-      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-    } catch {
-      return {};
-    }
-  }
-  const params = new URLSearchParams(raw);
-  const password = params.get("password");
-  return password === null ? {} : { password };
-}
 
 /** Resolve a URL path to a file inside `publicDir`, or null on traversal. */
 function staticTarget(publicDir: string, pathname: string): string | null {
   const root = resolve(publicDir);
-  const relative =
-    pathname === "/" ? "index.html" : pathname === "/login" ? "login.html" : pathname.replace(/^\/+/, "");
+  const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const target = resolve(join(root, relative));
   if (target !== root && !target.startsWith(root + sep)) return null;
   return target;
@@ -150,33 +91,8 @@ async function serveStatic(deps: HttpDeps, pathname: string, res: ServerResponse
   }
 }
 
-function loginPage(res: ServerResponse): void {
-  // A tiny redirect-free page kept inline so a missing public/login.html still
-  // yields a working splash rather than a 500.
-  send(
-    res,
-    200,
-    "text/html; charset=utf-8",
-    `<!doctype html><html><head><meta charset="utf-8"><title>Liszt</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/login.css"></head><body>
-<main class="login"><h1>Liszt</h1>
-<form method="post" action="/login"><label for="password">Password</label>
-<input id="password" name="password" type="password" autocomplete="current-password" autofocus>
-<button type="submit">Enter</button></form>
-<p class="error" role="alert"></p></main>
-<script src="/login.js"></script></body></html>\n`,
-  );
-}
 
 export function createHttpHandler(deps: HttpDeps): (request: IncomingMessage, response: ServerResponse) => void {
-  // Once, at construction: an unauthenticated surface is a deployment fact, not
-  // a per-request event, and logging it on every request would bury it.
-  if (!authGateEnabled(deps.config, deps.nodeEnv)) {
-    deps.log.warn("auth is disabled: every route is served without a session", {
-      hint: "LISZT_AUTH_DISABLED is set outside production; the app is readable by anyone who can reach the port",
-    });
-  }
   return (request, response) => {
     void handle(deps, request, response).catch((error) => {
       deps.log.error("request failed", { error: (error as Error).message });
@@ -191,58 +107,15 @@ async function handle(deps: HttpDeps, request: IncomingMessage, response: Server
   const url = new URL(request.url ?? "/", "http://localhost");
   const path = url.pathname;
 
-  // `POST /login` is public and is handled first: `isPublicPath` also matches
-  // `/login`, so checking the GET surface before this would shadow the form
-  // submission with a static file lookup.
-  if (path === "/login" && method === "POST") {
-    await handleLogin(deps, request, response);
-    return;
-  }
+  // Before anything that can touch the store or a source. `/health` must answer
+  // even while a sync holds the database, or a deploy would be declared failed
+  // by the very cycle it is waiting on.
   if (path === HEALTH_PATH && (method === "GET" || method === "HEAD")) {
-    // Constant on purpose: no version, no host, no store state, no source
-    // health. "The process is up and serving" is the entire claim, so there is
-    // nothing here for a scanner to learn and nothing to leak by accident.
     send(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
     return;
   }
-  if (isPublicPath(method, path)) {
-    if (path === "/login" && method === "GET") loginPage(response);
-    else await serveStatic(deps, path, response);
-    return;
-  }
 
-  const authEnabled = authGateEnabled(deps.config, deps.nodeEnv);
   const now = new Date();
-  const outcome = authEnabled
-    ? authenticate(
-        request,
-        {
-          sessions: deps.sessions,
-          throttle: deps.throttle,
-          passwordHash: deps.config.authPasswordHash,
-          config: deps.config,
-          verifyPassword: deps.verifyPassword,
-        },
-        now,
-      )
-    : { authenticated: true, token: null, ip: "local" };
-
-  if (!outcome.authenticated) {
-    unauthenticatedResponse(path, response);
-    return;
-  }
-
-  if (path === "/logout" && method === "POST") {
-    if (outcome.token) deps.sessions.revoke(outcome.token);
-    response.writeHead(302, {
-      location: "/login",
-      "set-cookie": clearSessionCookie(deps.cookieSecure),
-      "cache-control": "no-store",
-    });
-    response.end();
-    return;
-  }
-
   if (path === "/api/health" && method === "GET") {
     sendJson(response, 200, { ok: true, ts: now.toISOString() });
     return;
@@ -279,46 +152,6 @@ async function handle(deps: HttpDeps, request: IncomingMessage, response: Server
   sendJson(response, 405, { error: "method not allowed" });
 }
 
-async function handleLogin(
-  deps: HttpDeps,
-  request: IncomingMessage,
-  response: ServerResponse,
-): Promise<void> {
-  const raw = await readBody(request).catch(() => "");
-  const body = parseCredentials(raw, request.headers["content-type"] as string | undefined);
-  // The throttle is consulted inside attemptLogin BEFORE any scrypt work.
-  const result = await attemptLogin(body.password, clientIpOf(request), {
-    sessions: deps.sessions,
-    throttle: deps.throttle,
-    passwordHash: deps.config.authPasswordHash,
-    config: deps.config,
-    verifyPassword: deps.verifyPassword,
-  }, new Date());
-
-  if (!result.ok) {
-    const headers: Record<string, string> = { "cache-control": "no-store" };
-    if (result.retryAfterSeconds) headers["retry-after"] = String(result.retryAfterSeconds);
-    response.writeHead(result.status, headers);
-    response.end(JSON.stringify({ error: "invalid credentials" }));
-    return;
-  }
-  response.writeHead(302, {
-    location: "/",
-    "set-cookie": sessionCookie(result.token as string, {
-      maxAgeSeconds: deps.config.sessionTtlDays * DAY_SECONDS,
-      secure: deps.cookieSecure,
-    }),
-    "cache-control": "no-store",
-  });
-  response.end();
-}
-
-function clientIpOf(request: IncomingMessage): string {
-  return clientIp({
-    "cf-connecting-ip": request.headers["cf-connecting-ip"] as string | undefined,
-    socket: request.socket,
-  });
-}
 
 export function createHttpServer(deps: HttpDeps): Server {
   return createServer(createHttpHandler(deps));
