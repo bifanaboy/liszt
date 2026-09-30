@@ -27,6 +27,16 @@ User=liszt
 Group=liszt
 WorkingDirectory=/opt/liszt
 
+# Files this process creates are readable by it and nobody else.
+#
+# The default umask (0022) makes new files group- and world-READABLE, which for
+# this service means three things nobody wants: the SQLite database and its
+# `-wal`/`-shm` siblings are world-readable, so anything with a shell on the box
+# can read the whole catalogue; and the login page's own assets inherit it too.
+# 0077 is the value the unit's posture already implies - the service has one
+# user, one writable path, and no reason to share a byte.
+UMask=0077
+
 # The credential lives in a file, not an argument, so it never appears in
 # `ps` output or the journal.
 EnvironmentFile=/etc/liszt/liszt.env

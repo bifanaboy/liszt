@@ -141,6 +141,12 @@ ss -tlnp | grep 3000        # MUST be 127.0.0.1:3000, never 0.0.0.0
 #    JSON, auth is not wired and the app is exposed.
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/api/health
 
+# 1b. `/health` is the one route that IS public, and it must say nothing. It
+#     exists because a platform health check needs a 2xx, not because anything
+#     should be learnable without the password.
+curl -s http://127.0.0.1:3000/health
+# => {"status":"ok"}
+
 # 2. From another machine, the public hostname shows the password splash.
 curl -s -o /dev/null -w '%{http_code}\n' https://liszt.<domain>/
 
@@ -209,12 +215,29 @@ are what a backup protects.
 
 ```sh
 mkdir -p /var/backups/liszt
+# The unit runs as `liszt`, so the directory has to be writable by it - and by
+# nobody else, since the backup is the whole dead-link history and run ledger.
+chown liszt:liszt /var/backups/liszt
+chmod 700 /var/backups/liszt
 cat >/etc/systemd/system/liszt-backup.service <<'EOF'
 [Unit]
 Description=Liszt catalogue backup
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'sqlite3 /var/lib/liszt/liszt.db ".backup /var/backups/liszt-$(date +%%F).db" && find /var/backups/liszt -name "liszt-*.db" -mtime +30 -delete'
+# Explicitly NOT root. A oneshot with no User= runs as root, which is more
+# privilege than a `sqlite3 .backup` needs: it can read the database because it
+# runs as the same user that owns it, and it should not be able to write anywhere
+# else on the box. UMask matches the main unit so the backup file is not
+# world-readable either.
+User=liszt
+Group=liszt
+UMask=0077
+ExecStart=/bin/sh -c 'sqlite3 /var/lib/liszt/liszt.db ".backup /var/backups/liszt/liszt-$(date +%%F).db" && find /var/backups/liszt -name "liszt-*.db" -mtime +30 -delete'
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/liszt /var/lib/liszt
 EOF
 cat >/etc/systemd/system/liszt-backup.timer <<'EOF'
 [Unit]
@@ -352,6 +375,7 @@ and a re-run.
 - [ ] `LISZT_AUTH_PASSWORD_HASH` set, generated on the box
 - [ ] `ss -tlnp` shows `127.0.0.1:3000`, never `0.0.0.0`
 - [ ] `/api/health` returns **401** unauthenticated
+- [ ] `/health` returns 200 and exactly `{"status":"ok"}` - no version, no store state
 - [ ] `/etc/liszt/liszt.env` is `640 root:liszt`; tunnel token `600`
 - [ ] Neither file, nor their contents, is in git
 - [ ] Cloudflare rate limit engaged on `/login`

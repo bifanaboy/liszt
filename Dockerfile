@@ -28,8 +28,12 @@ EXPOSE 3000
 
 # The app binds 127.0.0.1 by design, so a container must be run with
 # --network=host (or a published port plus a bind change) to be reachable.
-# Liveness is gated, so a 401 here is the CORRECT and expected response.
+#
+# `/health` is the unauthenticated liveness probe: a constant 200 with no data.
+# The previous check used `/api/health` and treated 401 as healthy, which was
+# correct but inverted - it reported UNHEALTHY whenever auth was off, so the one
+# misconfiguration that should have been loudest was the quietest.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "src/app.ts"]

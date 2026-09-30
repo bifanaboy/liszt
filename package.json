@@ -13,11 +13,10 @@
     "test": "node --test test/**/*.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "node --watch src/app.ts",
-    "start": "node src/app.ts",
-    "sync": "node src/cli/sync.ts",
-    "calibrate": "node src/cli/calibrate.ts",
-    "auth:hash": "node src/cli/hash-password.ts",
+    "dev": "node --watch --env-file-if-exists=.env src/app.ts",
+    "start": "node --env-file-if-exists=.env src/app.ts",
+    "calibrate": "node --env-file-if-exists=.env src/cli/calibrate.ts",
+    "auth:hash": "node --env-file-if-exists=.env src/cli/hash-password.ts",
     "build:docker": "docker build -t liszt ."
   },
   "dependencies": {

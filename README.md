@@ -29,7 +29,6 @@ Node 24+. No build step: TypeScript runs through Node's native type stripping.
 | --- | --- |
 | `npm run dev` | Watch-mode server. |
 | `npm start` | Server. |
-| `npm run sync` | One cycle, JSON result on stdout, JSON logs on stderr. |
 | `npm run calibrate` | Pool-match measurement. See [Calibration](#calibration). |
 | `npm run auth:hash` | Password hash for `LISZT_AUTH_PASSWORD_HASH`. |
 | `npm test` | The suite. Fixture-driven, never live network. |
@@ -199,7 +198,10 @@ perimeter, so the details matter:
 - `POST /login` and `POST /logout` are POST-only plus `SameSite=Lax`, which is
   the CSRF defence. This also covers `POST /api/refresh`.
 - `/api/health` is gated: a public liveness endpoint tells a scanner exactly what
-  is running, and it is not evidence that the sources are healthy.
+  is running, and it is not evidence that the sources are healthy. The one
+  public route, `/health`, is a constant `{"status":"ok"}` with no store or
+  source state in it, because a platform health check needs a 2xx and a 401
+  there reads as a failed deploy.
 
 ---
 
@@ -209,7 +211,8 @@ perimeter, so the details matter:
 | --- | --- | --- |
 | `/login` | GET / POST | The password splash. |
 | `/logout` | POST | Revoke the session row. |
-| `/api/health` | GET | Liveness only. Gated. |
+| `/health` | GET | Liveness only. **Public**, and deliberately contentless. |
+| `/api/health` | GET | Liveness. Gated. |
 | `/api/scenes` | GET | Read model: scenes, sources, window stats, last run. |
 | `/api/sources` | GET | Per-source health. |
 | `/api/runs` | GET | Recent run ledger. |

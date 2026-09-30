@@ -14,15 +14,21 @@ services:
     region: oregon
     buildCommand: npm ci --omit=dev
     startCommand: node src/app.ts
-    healthCheckPath: /api/health
-    # /api/health is gated on purpose, so a 401 IS a healthy response. Render
-    # treats only 2xx as healthy, hence a probe that accepts 401.
+    # `/health` is the unauthenticated liveness probe: a constant 200. It must
+    # NOT be `/api/health` - that one is auth-gated, answers 401, and Render
+    # treats anything but 2xx as a failed deploy.
+    healthCheckPath: /health
     autoDeploy: false
     disk:
       name: liszt-data
       mountPath: /data
       sizeGB: 1
     envVars:
+      # `node:sqlite` is a built-in, experimental from Node 22.5 and stable
+      # from 24. Render's default image has moved major before; pin the one
+      # this app actually requires rather than tracking the default.
+      - key: NODE_VERSION
+        value: "24.0.0"
       - key: NODE_ENV
         value: production
       - key: PORT
