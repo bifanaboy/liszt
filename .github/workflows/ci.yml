@@ -31,8 +31,13 @@ jobs:
       # ~100, and a permanently red check would block every deploy rather than
       # gate them. `.prettierrc` pins the width to the house style and
       # `.prettierignore` holds out what must not be reformatted - the
-      # byte-captured `test/fixtures` the parser tests assert on, the ported
+      # byte-captured `test/fixtures` the parser tests assert on, the vendored
       # `public/` assets, `package-lock.json`. It passes now, so it gates.
+      #
+      # It gates Markdown and YAML too, so `README.md` and `render.yaml` are in
+      # scope. Render will not deploy while a required check fails, so an
+      # unformatted docs-only edit blocks a deploy exactly as a broken build
+      # would. That is deliberate: a gate nobody runs is not a gate.
       - run: npm run format:check
 
       # `npm test` alone cannot catch a glob that matched nothing: the runner

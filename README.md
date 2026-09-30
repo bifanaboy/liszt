@@ -41,8 +41,20 @@ Formatting is Prettier at `printWidth: 100`, the column the code was already
 written to, and `format:check` runs in CI. `.prettierignore` holds back what must
 not be rewritten: `test/fixtures` are byte-captured responses from live pages that
 the parser tests assert on exactly; `public/` is the ported dashboard UI as it
-arrived, with a one-line 12KB `styles.css` — `npm run lint` still checks its
-JavaScript; and `package-lock.json` is npm's to write.
+arrived, with a one-line 12KB `styles.css`; and `package-lock.json` is npm's to
+write.
+
+That leaves the shipped dashboard assets with **no automated check at all** —
+`eslint.config.js` ignores `public/**` too, because the port is verbatim codex
+UI. Nothing in CI reads those bytes. Covering them is real work, not a config
+flip: ESLint would need the browser globals (a `globals` dependency plus an
+environment block), and Prettier would rewrite ported markup the repo has never
+claimed to hand-maintain. Treat `public/` as vendored.
+
+`format:check` also covers Markdown and YAML — `README.md`, `render.yaml` and
+the workflow file are all in scope. Since Render will not deploy while a
+required check fails, an unformatted docs-only edit blocks deploys exactly as a
+broken build does. Run `npm run format` before pushing any of them.
 
 ---
 
