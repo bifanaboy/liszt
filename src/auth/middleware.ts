@@ -1,9 +1,11 @@
 /**
  * The HTTP auth wrapper.
  *
- * Coverage: everything is gated EXCEPT `GET /login` and its assets.
- * `/api/health` is gated too - a public liveness endpoint tells a scanner
- * exactly what is running, and it is not evidence that the sources are healthy.
+ * Coverage: everything is gated EXCEPT `GET /login` and its assets, and
+ * `GET /health`. `/api/health` is gated - it reports store and source state -
+ * while `/health` is a bare liveness probe: a fixed 200 with a constant body,
+ * no data about what is running. That is the whole of what a platform health
+ * check needs, and it answers a question no scanner can extract value from.
  *
  * Responses: an unauthenticated `/` redirects to `/login`; an unauthenticated
  * `/api/*` returns JSON 401 so the UI can tell "session expired" from
@@ -33,10 +35,14 @@ export interface AuthOutcome {
 
 const LOGIN_ASSETS = new Set(["/login.css", "/login.js", "/favicon.ico"]);
 
+/** The unauthenticated liveness probe, and the platform health-check path. */
+export const HEALTH_PATH = "/health";
+
 /** True when a path is reachable without a session. */
 export function isPublicPath(method: string, path: string): boolean {
   if (path === "/login") return true;
-  return method === "GET" && LOGIN_ASSETS.has(path);
+  if (method !== "GET" && method !== "HEAD") return false;
+  return LOGIN_ASSETS.has(path) || path === HEALTH_PATH;
 }
 
 /**

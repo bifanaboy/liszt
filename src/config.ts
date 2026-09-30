@@ -84,9 +84,36 @@ export const Config = z.object({
 
 export type Config = z.infer<typeof Config>;
 
-const bool = (value: string | undefined, fallback: boolean): boolean => {
+/**
+ * Strict boolean parsing for the environment.
+ *
+ * The previous form was `value === "1" || value.toLowerCase() === "true"`,
+ * which is an OPEN list with an invisible default: everything not in it - `yes`,
+ * `on`, `enabled`, and `treu` - silently became `false`. For a flag whose
+ * `false` value DISABLES a control (boot sync, stderr logging) that failure is
+ * invisible; for one whose `false` value enables a hole (`LISZT_AUTH_DISABLED`)
+ * it is the opposite. So the list is closed and anything unrecognised is a
+ * configuration error, which is the treatment every other field in this module
+ * already gets.
+ */
+const BOOL_TRUE = new Set(["1", "true", "yes", "on"]);
+const BOOL_FALSE = new Set(["0", "false", "no", "off", ""]);
+
+export class ConfigValueError extends Error {
+  constructor(key: string, value: string) {
+    super(
+      `Invalid configuration: ${key}="${value}" is not a boolean (use one of ${[...BOOL_TRUE].join(", ")} / ${[...BOOL_FALSE].slice(0, 4).join(", ")})`,
+    );
+    this.name = "ConfigValueError";
+  }
+}
+
+const bool = (key: string, value: string | undefined, fallback: boolean): boolean => {
   if (value === undefined) return fallback;
-  return value === "1" || value.toLowerCase() === "true";
+  const normalised = value.trim().toLowerCase();
+  if (BOOL_TRUE.has(normalised)) return true;
+  if (BOOL_FALSE.has(normalised)) return false;
+  throw new ConfigValueError(key, value);
 };
 
 const list = (value: string | undefined): string[] | undefined => {
@@ -115,7 +142,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: env.LISZT_DB_PATH,
     windowDays: env.LISZT_WINDOW_DAYS,
     pollIntervalMinutes: env.LISZT_POLL_INTERVAL_MINUTES,
-    bootSync: env.LISZT_BOOT_SYNC === undefined ? undefined : bool(env.LISZT_BOOT_SYNC, true),
+    bootSync:
+      env.LISZT_BOOT_SYNC === undefined ? undefined : bool("LISZT_BOOT_SYNC", env.LISZT_BOOT_SYNC, true),
     fetchConcurrency: env.LISZT_FETCH_CONCURRENCY,
     fetchTimeoutMs: env.LISZT_FETCH_TIMEOUT_MS,
     sxyprnTimeoutMs: env.LISZT_SXYPRN_TIMEOUT_MS,
@@ -130,12 +158,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     poolFullRewalkDays: env.LISZT_POOL_FULL_REWALK_DAYS,
     authPasswordHash: optionalValue(env.LISZT_AUTH_PASSWORD_HASH),
     authDisabled:
-      env.LISZT_AUTH_DISABLED === undefined ? undefined : bool(env.LISZT_AUTH_DISABLED, false),
+      env.LISZT_AUTH_DISABLED === undefined
+        ? undefined
+        : bool("LISZT_AUTH_DISABLED", env.LISZT_AUTH_DISABLED, false),
     sessionTtlDays: env.LISZT_SESSION_TTL_DAYS,
     loginMaxFailures: env.LISZT_LOGIN_MAX_FAILURES,
     loginLockoutMinutes: env.LISZT_LOGIN_LOCKOUT_MINUTES,
     logToStderr:
-      env.LISZT_LOG_STDERR === undefined ? undefined : bool(env.LISZT_LOG_STDERR, false),
+      env.LISZT_LOG_STDERR === undefined
+        ? undefined
+        : bool("LISZT_LOG_STDERR", env.LISZT_LOG_STDERR, false),
     nowOverride: env.LISZT_NOW,
   });
   if (!result.success) {

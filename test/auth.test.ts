@@ -1,9 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assertAuthConfigured, loadConfig } from "../src/config.ts";
-import { hashPassword, parsePasswordHash, verifyPassword } from "../src/auth/password.ts";
-import { createSessionService, SESSION_COOKIE, sessionCookie, tokenHash } from "../src/auth/session.ts";
-import { LoginThrottle } from "../src/auth/throttle.ts";
+import {
+  hashPassword,
+  parsePasswordHash,
+  scryptMemoryBytes,
+  verifyPassword,
+  SCRYPT_MAXMEM_CEILING,
+  SCRYPT_PARAMS,
+} from "../src/auth/password.ts";
+import { createSessionService, readCookie, SESSION_COOKIE, sessionCookie, tokenHash } from "../src/auth/session.ts";
+import { clientIp, LoginThrottle } from "../src/auth/throttle.ts";
 import { attemptLogin, type AuthDeps } from "../src/auth/middleware.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 
@@ -132,4 +139,85 @@ test("the server refuses to start without a hash in production", () => {
   assert.doesNotThrow(() => assertAuthConfigured(withHash, { NODE_ENV: "production" }));
   const disabled = loadConfig({ LISZT_AUTH_DISABLED: "true", LISZT_AUTH_PASSWORD_HASH: "x" });
   assert.throws(() => assertAuthConfigured(disabled, { NODE_ENV: "production" }));
+});
+
+test("boolean env values are parsed strictly, not by anything-not-true", () => {
+  // The old rule was `value === "1" || value === "true"`, so `yes`, `on` and
+  // `treu` all silently became FALSE. For LISZT_BOOT_SYNC that is invisible; for
+  // LISZT_AUTH_DISABLED it flips the meaning of the flag entirely.
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: "1" }).bootSync, true);
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: "true" }).bootSync, true);
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: "TRUE" }).bootSync, true);
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: " yes " }).bootSync, true);
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: "0" }).bootSync, false);
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: "no" }).bootSync, false);
+  assert.equal(loadConfig({ LISZT_BOOT_SYNC: "off" }).bootSync, false);
+  assert.throws(() => loadConfig({ LISZT_BOOT_SYNC: "treu" }), /LISZT_BOOT_SYNC/);
+  assert.throws(() => loadConfig({ LISZT_AUTH_DISABLED: "maybe" }), /LISZT_AUTH_DISABLED/);
+  assert.throws(() => loadConfig({ LISZT_LOG_STDERR: "2" }), /LISZT_LOG_STDERR/);
+  // Unset still means the default, not an error.
+  assert.equal(loadConfig({}).bootSync, true);
+});
+
+test("the client IP is only taken from the header when the tunnel sent it", () => {
+  // The header chooses the throttle's key, so an attacker who can send it can
+  // pick a fresh key on every request and never accumulate a lockout. Shape
+  // validation alone does not help - every address the attacker invents is
+  // well-formed. The trust comes from WHO SENT IT: only the local Cloudflare
+  // connector can, and it only appears on a loopback peer.
+  const fromTunnel = { "cf-connecting-ip": "203.0.113.7", socket: { remoteAddress: "127.0.0.1" } };
+  assert.equal(clientIp(fromTunnel), "203.0.113.7");
+  assert.equal(clientIp({ ...fromTunnel, socket: { remoteAddress: "::1" } }), "203.0.113.7");
+
+  // Direct to the port: the peer is the client, and the header is theirs to lie about.
+  assert.equal(
+    clientIp({ "cf-connecting-ip": "198.51.100.1", socket: { remoteAddress: "203.0.113.9" } }),
+    "203.0.113.9",
+  );
+
+  // Shape validation, for the trusted path: the old regex accepted hex soup.
+  assert.equal(clientIp({ "cf-connecting-ip": "deadbeef", socket: { remoteAddress: "127.0.0.1" } }), "127.0.0.1");
+  assert.equal(clientIp({ "cf-connecting-ip": "1.2.3", socket: { remoteAddress: "127.0.0.1" } }), "127.0.0.1");
+  assert.equal(clientIp({ "cf-connecting-ip": "::1", socket: { remoteAddress: "127.0.0.1" } }), "::1");
+  // A zone index is a real address on the wire, but two spellings of one key.
+  assert.equal(clientIp({ "cf-connecting-ip": "fe80::1%eth0", socket: { remoteAddress: "127.0.0.1" } }), "fe80::1");
+  assert.equal(clientIp({ socket: { remoteAddress: "127.0.0.1" } }), "127.0.0.1");
+  assert.equal(clientIp({}), "unknown");
+  assert.equal(clientIp({ socket: { remoteAddress: "not-an-ip" } }), "unknown");
+
+  // One address, one key: `::ffff:` and a zone index must not mint a fresh
+  // counter for the same client.
+  assert.equal(
+    clientIp({ socket: { remoteAddress: "::ffff:203.0.113.9" } }),
+    "203.0.113.9",
+  );
+  assert.equal(clientIp({ socket: { remoteAddress: "fe80::1%eth0" } }), "fe80::1");
+});
+
+test("a malformed cookie is no session, not a 500", () => {
+  // `decodeURIComponent` throws on a bad percent escape, and a cookie is
+  // client-supplied - so `%` used to take the request handler down.
+  assert.equal(readCookie(`${SESSION_COOKIE}=%`, SESSION_COOKIE), null);
+  assert.equal(readCookie(`${SESSION_COOKIE}=%E0%A4%A`, SESSION_COOKIE), null);
+  assert.equal(readCookie(`${SESSION_COOKIE}=abc%`, SESSION_COOKIE), null);
+  assert.equal(readCookie(`other=1; ${SESSION_COOKIE}=%zz; more=2`), null);
+  // A usable duplicate later in the header is still found.
+  assert.equal(readCookie(`${SESSION_COOKIE}=%; ${SESSION_COOKIE}=good-token`), "good-token");
+  assert.equal(readCookie(`${SESSION_COOKIE}=good-token`), "good-token");
+  assert.equal(readCookie(undefined), null);
+  assert.equal(readCookie("nothing-here"), null);
+});
+
+test("a scrypt hash whose cost exceeds the memory ceiling is rejected, not thrown on", async () => {
+  // The stored hash carries its own cost parameters, and the old parser accepted
+  // N up to 2^20 with r up to 32 - 4 GiB against a 64 MiB budget. `scrypt`
+  // throws in that case, so `verifyPassword` threw instead of returning false
+  // and the login endpoint answered 500 instead of 401.
+  const impossible = "scrypt$1048576$32$1$c2FsdHNhbHRzYWx0c2E$" + Buffer.alloc(32).toString("base64");
+  assert.equal(parsePasswordHash(impossible), null, "rejected at parse, so a boot check stays meaningful");
+  assert.equal(await verifyPassword("anything", impossible), false);
+  // The shipped parameters are comfortably inside the ceiling.
+  assert.ok(scryptMemoryBytes(SCRYPT_PARAMS.N, SCRYPT_PARAMS.r, SCRYPT_PARAMS.p) <= SCRYPT_MAXMEM_CEILING);
+  assert.equal(await verifyPassword("nope", "scrypt$0$8$1$c2FsdA$AA"), false);
+  assert.equal(await verifyPassword("nope", "scrypt$8$8$1$c2FsdA$AA"), false);
 });

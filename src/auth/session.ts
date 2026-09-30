@@ -81,13 +81,30 @@ export function createSessionService(
   };
 }
 
-/** Read the session token out of a `Cookie` header. */
+/**
+ * Read the session token out of a `Cookie` header.
+ *
+ * The decode is guarded because a cookie value is CLIENT-SUPPLIED and
+ * `decodeURIComponent` throws a `URIError` on a malformed percent escape - so
+ * a request carrying `liszt_session=%` took the whole handler down with an
+ * uncaught throw, turning a bad cookie into a 500 on every request that carried
+ * one. A value that will not decode is treated as absent: there is no
+ * legitimate session token that is not valid percent-encoding, and "no
+ * session" is the correct reading of a corrupt one.
+ */
 export function readCookie(header: string | undefined, name = SESSION_COOKIE): string | null {
   if (!header) return null;
   for (const part of header.split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    if (part.slice(0, index).trim() === name) return decodeURIComponent(part.slice(index + 1).trim());
+    if (part.slice(0, index).trim() !== name) continue;
+    const raw = part.slice(index + 1).trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      // Keep scanning: a duplicate header can still carry a usable value.
+      continue;
+    }
   }
   return null;
 }

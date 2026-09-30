@@ -2,10 +2,12 @@
  * The HTTP surface. Plain `node:http`, no framework: the route table is small
  * and the auth wrapper is the only cross-cutting concern.
  *
- * Everything is gated except `GET /login`, `POST /login`, and the login page's
- * own assets. `/api/health` is gated too: a public liveness endpoint tells a
- * scanner exactly what is running, and it is not evidence that the sources are
- * healthy.
+ * Everything is gated except `GET /login`, `POST /login`, the login page's own
+ * assets, and the bare `GET /health` liveness probe. `/api/health` stays gated:
+ * it reports store and source state, and that is not something to publish.
+ * `/health` returns a constant body and no data, which is all a platform health
+ * check needs - and it is unauthenticated on purpose, because a health check
+ * that answers 401 is a health check that fails, and Render only accepts 2xx.
  *
  * All responses are `no-store`, so the Cloudflare edge never caches the
  * catalogue, and static serving is path-traversal safe by construction: the
@@ -19,6 +21,7 @@ import {
   attemptLogin,
   isPublicPath,
   unauthenticatedResponse,
+  HEALTH_PATH,
 } from "../auth/middleware.ts";
 import { clearSessionCookie, sessionCookie, type SessionService } from "../auth/session.ts";
 import type { LoginThrottle } from "../auth/throttle.ts";
@@ -57,8 +60,29 @@ export interface HttpDeps {
   publicDir: string;
   /** Set the `Secure` cookie attribute (true in production). */
   cookieSecure: boolean;
+  /**
+   * The deployment environment, consulted before `authDisabled` is honoured.
+   * Defaults to `process.env.NODE_ENV`; injected so tests can cover the
+   * production case without mutating the process.
+   */
+  nodeEnv?: string;
   /** Overridable so tests can count hash calls (throttle-before-hash). */
   verifyPassword: (password: string, stored: string | undefined) => Promise<boolean>;
+}
+
+/**
+ * Whether the auth gate runs. `authDisabled` is an explicit, deliberate opt-out
+ * for local development, and it is deliberately NOT honoured in production: the
+ * composition root already refuses to boot in that state, so reaching here with
+ * `NODE_ENV=production` and the flag set means a misconfigured deploy, and the
+ * only safe reading of it is "keep the gate closed".
+ */
+export function authGateEnabled(
+  config: Config,
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): boolean {
+  if (!config.authDisabled) return true;
+  return nodeEnv === "production";
 }
 
 function send(res: ServerResponse, status: number, contentType: string, body: string | Buffer): void {
@@ -146,6 +170,13 @@ function loginPage(res: ServerResponse): void {
 }
 
 export function createHttpHandler(deps: HttpDeps): (request: IncomingMessage, response: ServerResponse) => void {
+  // Once, at construction: an unauthenticated surface is a deployment fact, not
+  // a per-request event, and logging it on every request would bury it.
+  if (!authGateEnabled(deps.config, deps.nodeEnv)) {
+    deps.log.warn("auth is disabled: every route is served without a session", {
+      hint: "LISZT_AUTH_DISABLED is set outside production; the app is readable by anyone who can reach the port",
+    });
+  }
   return (request, response) => {
     void handle(deps, request, response).catch((error) => {
       deps.log.error("request failed", { error: (error as Error).message });
@@ -167,13 +198,20 @@ async function handle(deps: HttpDeps, request: IncomingMessage, response: Server
     await handleLogin(deps, request, response);
     return;
   }
+  if (path === HEALTH_PATH && (method === "GET" || method === "HEAD")) {
+    // Constant on purpose: no version, no host, no store state, no source
+    // health. "The process is up and serving" is the entire claim, so there is
+    // nothing here for a scanner to learn and nothing to leak by accident.
+    send(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
+    return;
+  }
   if (isPublicPath(method, path)) {
     if (path === "/login" && method === "GET") loginPage(response);
     else await serveStatic(deps, path, response);
     return;
   }
 
-  const authEnabled = !deps.config.authDisabled;
+  const authEnabled = authGateEnabled(deps.config, deps.nodeEnv);
   const now = new Date();
   const outcome = authEnabled
     ? authenticate(
