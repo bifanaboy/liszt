@@ -917,6 +917,8 @@ test("the pool rung refuses a winner whose title names nobody", async () => {
     // It was counted as considered and it cleared duration - the gate is what
     // rejected it, not the cheap filters.
     assert.equal(match?.durationPassed, 1);
+    assert.equal(match?.fallbackCandidates.length, 1);
+    assert.equal(match?.fallbackCandidates[0]?.views, 6118);
   } finally {
     store.close();
   }

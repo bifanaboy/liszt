@@ -6,9 +6,13 @@
  * matcher lane, in order:
  *
  *   1. eporner trusted pool   (rung 1, the hot path)
- *   2. sxyprn                 (search, gate the card, then re-fetch and re-gate)
+ *   2. sxyprn                 (search cards, verify details, then gate identity)
  *
- * A rung that finds nothing hands the scene to the next one. The eporner
+ * A rung that finds nothing hands the scene to the next one. If both tubes
+ * answer without an identity-backed match, the terminal fallback picks the
+ * highest-view date-and-duration survivor across both and flags it `low`.
+ * Errors are not clean no-matches: their candidate lists are empty, but the
+ * other tube can still supply the fallback. The eporner
  * open-search rung that used to sit at position 3 is DELETED, and the reason is
  * not that it misbehaved but that it could not do its job: the eporner v2 search
  * API takes `query, per_page, page, thumbsize, order, gay, lq, format` and no
@@ -27,24 +31,27 @@
  * actually answered. A scene that was never matched still has `videoCheckedAt`
  * stamped so the read model can say when it was last looked at.
  *
- * `confidence` is the winner's IDENTITY TIER, not a date measurement. `low`
- * means the winner carried no identity evidence at all - the decoy path, and
- * exactly the set of links worth eyeballing by hand. A tier of 3, 2 or 1 all
- * read `high`, because a first-name-only match is a real match and flagging it
- * as suspect would swamp the signal.
+ * A named winner is `high` when its identity tier is 1, 2 or 3; tier 1 is a
+ * first-name match and remains useful evidence. The terminal fallback is always
+ * `low`, because views can rank survivors but cannot establish identity. Those
+ * are the links worth checking by hand.
  *
- * The safety rule is inherited unchanged for the implementation currently in
- * this file: a missing link is preferable to a wrong link. A rung writes no URL
- * that did not clear the shared gate, and a URL already in `deadVideoUrls` is
- * never re-added. The plan's proposed terminal fallback - link an unnameable
- * survivor as `low` after every tube has run - is a separate, still-unconfirmed
- * decision and is deliberately NOT implemented here. Until that decision is
- * made, a scene with no named candidate remains unlinked.
+ * The high-confidence safety rule is unchanged: a rung writes a high-confidence
+ * URL only when it clears the shared identity gate. The explicit exception is
+ * the terminal fallback: after all tubes have run, it picks the highest-view
+ * date-and-duration survivor and marks it `low`, so the guess stays visible.
+ * A URL already in `deadVideoUrls` is never re-added.
  */
 import { validSxyprnUrl, type SxyprnMatch } from "./sxyprn.ts";
 import { toMatchScene, type MatchScene, type Rung } from "./types.ts";
 import type { PoolMatch } from "./eporner-pool.ts";
-import type { IdentityTier } from "../core/matching.ts";
+import {
+  identityTier,
+  pickHighestViews,
+  pickMatch,
+  type IdentityTier,
+  type TubeCandidate,
+} from "../core/matching.ts";
 import type { Scene, VideoLink, VideoLinkSource } from "../core/schema.ts";
 
 const RULE_SHAPE =
@@ -52,6 +59,8 @@ const RULE_SHAPE =
 
 export const POOL_RULE = `trusted-pool: ${RULE_SHAPE}`;
 export const SXYPRN_RULE = `sxyprn: ${RULE_SHAPE}; post details verified, not the search card`;
+export const LOW_CONFIDENCE_RULE =
+  "terminal fallback: highest view count among all date-and-duration survivors; no tube named the scene";
 
 /** `low` is the decoy path: a winner with no identity evidence. */
 function confidenceFor(tier: IdentityTier | undefined): "high" | "low" {
@@ -79,7 +88,7 @@ export interface ResolveResult {
   scene: Scene;
   changed: boolean;
   matched: boolean;
-  rung: Rung | "none" | null;
+  rung: Rung | "fallback" | "none" | null;
   /** The winner's identity tier, or null when nothing matched. */
   tier: IdentityTier | null;
 }
@@ -123,16 +132,34 @@ function linkFor(source: VideoLinkSource, url: string, now: Date): VideoLink {
   return { source, url, verifiedAt: now.toISOString(), verifyFailures: 0 };
 }
 
+interface CandidateChoice {
+  link: VideoLink;
+  tier: IdentityTier;
+}
+
+interface FallbackCandidate {
+  source: VideoLinkSource;
+  candidate: TubeCandidate;
+  tier: IdentityTier;
+}
+
+interface RungAttempt {
+  winner: CandidateChoice | null;
+  leftovers: FallbackCandidate[];
+}
+
+const emptyAttempt = (): RungAttempt => ({ winner: null, leftovers: [] });
+
 async function tryPool(
   scene: MatchScene,
   dead: Set<string>,
   deps: ResolveDeps,
   rejections: RungRejections,
-): Promise<{ link: VideoLink; tier: IdentityTier } | null> {
+): Promise<RungAttempt> {
   // A rung that is not CONFIGURED is not a rung that errored. Returning here
   // before the counters matter keeps "this source is switched off" from being
   // reported as an outage, which would otherwise make every run look degraded.
-  if (!deps.poolLookup) return null;
+  if (!deps.poolLookup) return emptyAttempt();
   rejections.attempted += 1;
   let match: PoolMatch | null;
   try {
@@ -140,8 +167,15 @@ async function tryPool(
   } catch (error) {
     rejections.errored += 1;
     logRungFailure(deps, "eporner-pool", error);
-    return null;
+    return emptyAttempt();
   }
+  const leftovers = (match?.fallbackCandidates ?? [])
+    .filter((candidate) => candidate.url && !dead.has(candidate.url))
+    .map((candidate) => ({
+      source: "eporner-pool" as const,
+      candidate,
+      tier: identityTierFor(scene, candidate.title),
+    }));
   // The pool rung reports a zeroed match rather than null when it ran and found
   // nothing, so a rejected count is always available and never inferred.
   if (match?.rejected === "date" || match?.rejected === "duration") {
@@ -149,13 +183,43 @@ async function tryPool(
     rejections.date += match.rejectedByDate;
     rejections.unknownDate += match.unknownDate;
     rejections.noMatch += 1;
-    return null;
+    return { winner: null, leftovers };
   }
-  if (!match || !match.url || dead.has(match.url)) {
+  if (match?.url && !dead.has(match.url) && match.identityTier > 0) {
+    return {
+      winner: {
+        link: linkFor("eporner-pool", match.url, deps.now),
+        tier: match.identityTier,
+      },
+      leftovers: [],
+    };
+  }
+  if (!match || !match.url || dead.has(match.url) || match.identityTier === 0) {
     rejections.noMatch += 1;
-    return null;
+    // Tests and injected callers may return an older-style winning row without
+    // the survivor array. Retain that concrete row for the fallback instead of
+    // silently losing the only evidence the rung returned.
+    if (match?.url && !dead.has(match.url) && !leftovers.length) {
+      leftovers.push({
+        source: "eporner-pool",
+        candidate: {
+          url: match.url,
+          title: match.title,
+          views: null,
+        },
+        tier: match.identityTier,
+      });
+    }
+    return { winner: null, leftovers };
   }
-  return { link: linkFor("eporner-pool", match.url, deps.now), tier: match.identityTier };
+  return { winner: null, leftovers };
+}
+
+function identityTierFor(scene: MatchScene, title: string): IdentityTier {
+  // Keep the fallback's tier accurate for the run ledger even though the final
+  // confidence is forced low. The identity signal has already failed to produce
+  // a high-confidence winner, and the fallback rule remains visibly distinct.
+  return identityTier(scene, title);
 }
 
 /**
@@ -190,8 +254,8 @@ async function trySxyprn(
   dead: Set<string>,
   deps: ResolveDeps,
   rejections: RungRejections,
-): Promise<{ link: VideoLink; tier: IdentityTier } | null> {
-  if (!deps.sxyprnLookup) return null;
+): Promise<RungAttempt> {
+  if (!deps.sxyprnLookup) return emptyAttempt();
   rejections.attempted += 1;
   let matches: SxyprnMatch[];
   try {
@@ -199,20 +263,45 @@ async function trySxyprn(
   } catch (error) {
     rejections.errored += 1;
     logRungFailure(deps, "sxyprn", error);
-    return null;
+    return emptyAttempt();
   }
-  if (!matches.length) {
-    rejections.noMatch += 1;
-    return null;
-  }
-  const found = matches.find(
+  const usable = matches.filter(
     (candidate) => validSxyprnUrl(candidate.url) && !dead.has(candidate.url),
   );
-  if (!found) {
-    rejections.noMatch += 1;
-    return null;
+  const named = usable.filter((candidate) => candidate.identityTier > 0);
+  if (named.length) {
+    // Reuse the shared rank chain for named results: identity tier, views, lag,
+    // URL. These candidates have already passed the rung's date and duration
+    // filters, so the second pick widens only to their largest observed delta
+    // and defers date; it cannot admit anything new, it only orders survivors.
+    const maxDelta = Math.max(
+      ...named.map((candidate) => Math.abs(candidate.duration - (scene.durationSec ?? 0))),
+    );
+    const best = pickMatch(scene, named, {
+      durationToleranceSec: maxDelta,
+      dateWindowDays: null,
+      requireIdentity: true,
+    });
+    const found = named.find((candidate) => candidate.url === best?.candidate.url);
+    if (found) {
+      return {
+        winner: {
+          link: linkFor("sxyprn", found.url, deps.now),
+          tier: found.identityTier,
+        },
+        leftovers: [],
+      };
+    }
   }
-  return { link: linkFor("sxyprn", found.url, deps.now), tier: found.identityTier };
+  const leftovers = usable
+    .filter((candidate) => candidate.identityTier === 0)
+    .map((candidate) => ({
+      source: "sxyprn" as const,
+      candidate,
+      tier: candidate.identityTier,
+    }));
+  rejections.noMatch += 1;
+  return { winner: null, leftovers };
 }
 
 /**
@@ -236,9 +325,23 @@ export async function resolveScene(
   const matchScene = buildMatchScene(scene, deps.creatorStudio);
   const dead = new Set(scene.deadVideoUrls.map((link) => link.url));
 
-  const winner =
-    (await tryPool(matchScene, dead, deps, rejections)) ??
-    (await trySxyprn(matchScene, dead, deps, rejections));
+  const pool = await tryPool(matchScene, dead, deps, rejections);
+  const sxyprn = pool.winner ? emptyAttempt() : await trySxyprn(matchScene, dead, deps, rejections);
+  let winner = pool.winner ?? sxyprn.winner;
+  let usedFallback = false;
+
+  if (!winner) {
+    const leftovers = [...pool.leftovers, ...sxyprn.leftovers];
+    const candidate = pickHighestViews(leftovers.map((entry) => entry.candidate));
+    const fallback = leftovers.find((entry) => entry.candidate === candidate);
+    if (candidate?.url && fallback) {
+      winner = {
+        link: linkFor(fallback.source, candidate.url, deps.now),
+        tier: fallback.tier,
+      };
+      usedFallback = true;
+    }
+  }
 
   if (!winner) {
     return {
@@ -251,8 +354,16 @@ export async function resolveScene(
   }
 
   const { link, tier } = winner;
-  const rung: Rung = link.source === "sxyprn" ? "sxyprn" : "eporner-pool";
-  const rule = rung === "eporner-pool" ? POOL_RULE : SXYPRN_RULE;
+  const rung: Rung | "fallback" = usedFallback
+    ? "fallback"
+    : link.source === "sxyprn"
+      ? "sxyprn"
+      : "eporner-pool";
+  const rule = usedFallback
+    ? LOW_CONFIDENCE_RULE
+    : rung === "eporner-pool"
+      ? POOL_RULE
+      : SXYPRN_RULE;
   return {
     scene: {
       ...scene,
@@ -262,7 +373,7 @@ export async function resolveScene(
         lane: link.source,
         matchedAt: deps.now.toISOString(),
         rule,
-        confidence: confidenceFor(tier),
+        confidence: usedFallback ? "low" : confidenceFor(tier),
       },
     },
     changed: true,
@@ -305,8 +416,8 @@ export interface ResolveLinksOptions {
  * performer to match at all, which meant a scene whose upstream data happens to
  * be missing its cast list could never be linked, however obviously its video
  * was. A performer-less scene is still eligible here - it is the RUNGS that
- * require identity, not the queue - but until the terminal-fallback decision is
- * confirmed it remains unlinked when no candidate can name it.
+ * require identity, not the queue - and if no tube can name it the terminal
+ * fallback may still provide a clearly flagged low-confidence link.
  */
 export async function resolveLinks({
   scenes,

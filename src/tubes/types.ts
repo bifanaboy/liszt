@@ -1,20 +1,19 @@
 /**
  * The playback-link types, and the shape the ladder resolves into.
  *
- * The safety rule, in its current form: **a missing link is preferable to a
- * wrong link.** Every rung returns either a link that cleared the shared gate -
- * duration band, upload window, and a title that identifies the scene - or
- * nothing at all, and a rung with nothing hands the scene to the next tube.
+ * The safety rule: **a missing high-confidence link is preferable to a wrong
+ * high-confidence link.** Each tube returns candidates that cleared duration
+ * and date; a title that identifies the scene makes a high-confidence match,
+ * while an unnamed candidate can only be linked by the terminal fallback.
  *
- * The plan proposes one exception: after every tube declines, link the
- * most-watched near-miss, flagged `low`. That decision remains unconfirmed, so
- * this exception is NOT implemented; until it is, a scene no tube can name
- * stays unlinked.
+ * The terminal fallback runs only after every tube has declined to produce a
+ * named match. It selects the highest-view date-and-duration survivor across
+ * all tubes and flags the link `low`, so popularity is never mistaken for
+ * identity.
  *
  * This replaced the older wording here, which said there was no
- * partial-confidence path at all. That statement is still true of the current
- * implementation. `RungOutcome` keeps the confidence field for the pending
- * decision, but no current rung writes a link without identity evidence.
+ * partial-confidence path at all. `RungOutcome`'s confidence field is how a
+ * reader distinguishes named matches from the explicit fallback.
  */
 import type { Scene } from "../core/schema.ts";
 

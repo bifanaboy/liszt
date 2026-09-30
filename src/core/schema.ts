@@ -53,8 +53,8 @@ export type DeadVideoLink = z.infer<typeof DeadVideoLink>;
  * `low` means tier 0 - the candidate's title carried no evidence naming the
  * performer or reusing the scene's own wording. Those are the legacy links
  * worth eyeballing by hand; the current ladder's identity gate does not create
- * them. The proposed terminal low-confidence fallback remains unconfirmed and
- * is not implemented. Tiers 1, 2 and 3 all read `high`, because a
+ * them; the terminal fallback now creates them only after all tubes have
+ * declined to produce a named match. Tiers 1, 2 and 3 all read `high`, because a
  * first-name-only match is a real match and flagging those as suspect would
  * swamp the signal.
  *

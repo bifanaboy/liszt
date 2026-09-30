@@ -289,10 +289,10 @@ async function main(): Promise<void> {
       }
     }
 
-    // A performer-less scene is ELIGIBLE under the current rule - it simply
-    // ranks on fewer signals - so calibration must include it. Filtering it out
-    // here would measure a stricter gate than the one that ships, and would
-    // hide exactly the tier-0 decoy risk the histogram exists to catch.
+    // A performer-less scene is still eligible for date+duration survivor
+    // measurement and for the terminal fallback, even though no candidate can
+    // clear the identity gate. Filtering it out here would hide both the
+    // low-confidence coverage and the scenes with no possible named match.
     const eligible = matchScenes.filter(
       (scene) => Number.isFinite(scene.durationSec) && (scene.durationSec ?? 0) > 0,
     );
@@ -324,6 +324,7 @@ async function main(): Promise<void> {
         const picked = pickMatch(scene, inWindow, {
           durationToleranceSec: tolerance,
           dateWindowDays: windowDays,
+          requireIdentity: true,
         });
         // The delta set is collected from the DATE-filtered candidates only. An
         // upload outside the window is not a near-miss at this duration, it is a

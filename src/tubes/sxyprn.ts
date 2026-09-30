@@ -5,8 +5,9 @@
  * `sxyprn` client (browser impersonation) when that package is installed. From
  * a datacenter IP sxyprn frequently answers 403 behind Cloudflare, so this rung
  * is the one most likely to be unavailable in production; the client is
- * therefore lazily loaded and circuit-broken in `sxyprn-client.ts`, and a
- * failure here simply lets the ladder record an error and stop.
+ * therefore lazily loaded and circuit-broken in `sxyprn-client.ts`. A failure
+ * is recorded, and any trusted-pool survivors already collected remain
+ * available to the ladder's cross-tube fallback.
  *
  * MEASURED, and the reason "most likely to be unavailable" is stated as a
  * concern rather than a fact. From a workstation IP the client answers fine: a
@@ -27,26 +28,31 @@
  * like `21 hours ago` or `Yesterday`, which is not a timestamp and is not
  * treated as one. So the date half cannot run on a card at all.
  *
- *   card pass  - duration filter, then rank by identity tier to decide which
- *                posts are worth fetching. `dateWindowDays: null`, because the
- *                date is not testable here. This pass CANNOT admit anything and
- *                is not treated as an admission.
- *   detail pass - the POST's own title, duration and schema.org `uploadDate`,
- *                with the real window. THIS is the pass that admits, and no
- *                URL reaches the store without clearing it.
+ *   card pass  - duration filter, then rank identity-named cards first and
+ *                fill the bounded detail slice with other duration survivors.
+ *                `dateWindowDays: null`, because the date is not testable here.
+ *                This pass CANNOT admit anything and is not treated as an
+ *                admission.
+ *   detail pass - the POST's own title, duration, schema.org `uploadDate` and
+ *                views. THIS is the authoritative date+duration survivor set.
+ *                A title that names the scene is a high-confidence match; an
+ *                unnamed survivor is returned to the ladder's terminal
+ *                fallback, which can use its views only after every tube has
+ *                failed to produce a named match.
  *
- * An unverified search card is never exposed as playback either: every accepted
- * hit is fetched and re-gated against the post itself, because a card can
- * advertise a title, duration or date the post contradicts.
+ * An unverified search card is never exposed as playback: every survivor is
+ * fetched and checked against the post itself, because a card can advertise a
+ * title, duration or date the post contradicts.
  *
  * The codex `sxyprn-overrides.js` hardcoded URL map is deliberately absent. It
  * was a workaround for opaque titles, and the rebuild dropped it: a link that
  * cannot clear the measured gate is not written.
  */
 import {
+  identityTier,
   pickMatch,
   parseTimestamp,
-  titleStem,
+  withinDateWindow,
   type IdentityTier,
   type TubeCandidate,
 } from "../core/matching.ts";
@@ -59,6 +65,8 @@ export interface SxyprnCard {
   url?: string;
   title?: string;
   durationSeconds?: number | string;
+  /** View count exposed by the card and verified again on the post detail. */
+  views?: number | string;
   isExternal?: boolean;
   author?: unknown;
   /** A rendered relative label (`21 hours ago`). Not a timestamp; not parsed. */
@@ -118,18 +126,23 @@ export interface SxyprnLookupOptions {
   cacheTtlMs?: number;
 }
 
-/** One accepted post: its URL, and the evidence that admitted it. */
+/** One verified date-and-duration survivor, including identity and view evidence. */
 export interface SxyprnMatch {
   url: string;
   identityTier: IdentityTier;
   lagDays: number | null;
+  title: string;
+  duration: number;
+  added: string;
+  views: number | string | null;
 }
 
 /**
- * Build the sxyprn lookup bound to one scene. Returns [] when nothing clears the
- * gate; throws only when the source itself could not answer, so the caller can
- * tell "the source is down" from "the source found nothing" and move down the
- * ladder without recording a false negative.
+ * Build the sxyprn lookup bound to one scene. Returns every date-and-duration
+ * survivor from the bounded detail slice, with its identity tier and view count.
+ * Throws only when the source itself could not answer, so the caller can tell
+ * "the source is down" from "the source found nothing" and move down the ladder
+ * without recording a false negative.
  */
 export function createSxyprnLookup({
   client,
@@ -180,31 +193,52 @@ export function createSxyprnLookup({
 
     // The card pass. `dateWindowDays: null` is the whole point: a card has no
     // real date, so the date half is deferred rather than faked from
-    // `relativeDate`. Identity is carried as the scene code so a title that
-    // quotes the studio's own code still ranks at the top tier.
+    // `relativeDate`. This pass cannot gate identity: a card may omit the
+    // performer that its post detail supplies, and unnamed cards still need to
+    // reach the bounded leftover set for the terminal fallback.
     const identity = { ...scene, sceneCode: code };
     const mapped: (TubeCandidate & { isExternal: boolean })[] = [...allCandidates.values()].map(
       (item) => ({
         url: String(item.url ?? ""),
         title: String(item.title ?? ""),
         duration: Number(item.durationSeconds),
+        views: item.views ?? null,
         isExternal: item.isExternal ?? false,
         ...(item.author ? { author: item.author } : {}),
       }),
     );
     const picked = pickMatch(identity, mapped, { dateWindowDays: null, durationToleranceSec });
-    if (!picked) return [];
-    // Fetch the same-video siblings of the winner too, then prefer real
-    // uploads over embeds: a card is cheap to check and an embed is a link to
-    // someone else's file.
-    const sameStem = mapped.filter(
-      (item) =>
-        titleStem(item.title) === titleStem(picked.candidate.title) &&
-        item.url !== picked.candidate.url,
-    );
-    const ranked = [picked.candidate as TubeCandidate & { isExternal: boolean }, ...sameStem].sort(
-      (left, right) => Number(left.isExternal) - Number(right.isExternal),
-    );
+    // Detail-verify every duration-surviving card in the bounded slice, not
+    // only the winner's title-stem siblings. Once the pool and the named sxyprn
+    // pass both decline, the terminal fallback compares leftovers across ALL
+    // tubes by views; omitting other card stems here would make that comparison
+    // a popularity contest over an arbitrary title group.
+    const durationSurvivors = mapped.filter((item) => {
+      const duration = Number(item.duration);
+      return (
+        Number.isFinite(duration) &&
+        Math.abs(duration - (scene.durationSec ?? 0)) <= (durationToleranceSec ?? 1)
+      );
+    });
+    if (!durationSurvivors.length) return [];
+    const cardViews = (candidate: TubeCandidate): number => {
+      const raw = candidate.views;
+      if (typeof raw === "number") return Number.isFinite(raw) ? raw : -1;
+      if (typeof raw !== "string") return -1;
+      const value = Number(raw.replace(/[,\s]/g, ""));
+      return Number.isFinite(value) ? value : -1;
+    };
+    const ranked = [
+      ...(picked ? [picked.candidate as TubeCandidate & { isExternal: boolean }] : []),
+      ...durationSurvivors
+        .filter((item) => item.url !== picked?.candidate.url)
+        .sort(
+          (left, right) =>
+            Number(left.isExternal) - Number(right.isExternal) ||
+            cardViews(right) - cardViews(left) ||
+            String(left.url).localeCompare(String(right.url)),
+        ),
+    ];
 
     // The detail pass. The posts are fetched concurrently (each pays a browser-
     // impersonated request, so serial would multiply the ladder's latency by
@@ -230,13 +264,12 @@ export function createSxyprnLookup({
 
     // Two counters, deliberately: `verifiedPosts` counts posts the source could
     // ANSWER, and is what distinguishes "sxyprn is down" from "sxyprn found
-    // nothing". `accepted` counts posts that then cleared the gate. Conflating
-    // them would report a healthy source as a dead one whenever the gate
-    // rejected every candidate.
+    // nothing". `verified` counts posts that cleared the date+duration filter,
+    // including unnamed survivors reserved for fallback. Conflating the two
+    // would report a healthy source as dead whenever the filter rejected all.
     let verifiedPosts = 0;
     const verified: SxyprnMatch[] = [];
     for (let index = 0; index < slice.length; index += 1) {
-      if (verified.length >= maxMatches) break;
       const item = slice[index] as TubeCandidate & { isExternal: boolean };
       const outcome = fetched[index];
       // A post we could not fetch is never exposed as playback, and is not
@@ -245,36 +278,38 @@ export function createSxyprnLookup({
       const detail = outcome.detail;
       verifiedPosts += 1;
       // Verify the POST's own title, duration and date, not the search card's:
-      // a card can advertise any of the three wrongly. This is also where the
-      // identity gate applies, and the placement is deliberate: the card pass
-      // above is NOT gated, because a search card routinely omits the
-      // performer from a title the post itself carries, and gating there would
-      // refuse to fetch the very post that would have proved the match. The
-      // detail pass is the one that admits, so it is the one that requires a
-      // candidate it can name.
-      const accepted = pickMatch(
-        identity,
-        [
-          {
-            url: String(item.url ?? ""),
-            title: detail.title ?? "",
-            duration: Number(detail.durationSeconds ?? item.duration),
-            added: detail.uploadDate ?? null,
-            views: detail.views ?? null,
-          },
-        ],
-        { dateWindowDays, durationToleranceSec, requireIdentity: true },
-      );
-      if (validSxyprnUrl(detail.url) && detail.url === item.url && detail.streamUrl && accepted) {
+      // a card can advertise any of the three wrongly. This is the authoritative
+      // survivor set for the terminal fallback. Identity decides which
+      // survivors are high confidence; it does not remove date+duration
+      // survivors from the low-confidence candidate pool.
+      const title = String(detail.title ?? "");
+      const duration = Number(detail.durationSeconds ?? item.duration);
+      const datePass =
+        withinDateWindow(scene.releaseDate, detail.uploadDate ?? null, dateWindowDays) === true;
+      const durationPass =
+        Number.isFinite(duration) &&
+        Number.isFinite(scene.durationSec) &&
+        Math.abs(duration - (scene.durationSec ?? 0)) <= (durationToleranceSec ?? 1);
+      if (
+        validSxyprnUrl(detail.url) &&
+        detail.url === item.url &&
+        detail.streamUrl &&
+        datePass &&
+        durationPass
+      ) {
         verified.push({
           url: detail.url as string,
-          identityTier: accepted.identityTier,
+          identityTier: identityTier(identity, title),
           lagDays: lagInDays(scene.releaseDate, detail.uploadDate),
+          title,
+          duration,
+          added: String(detail.uploadDate ?? ""),
+          views: detail.views ?? null,
         });
       }
     }
     if (!verifiedPosts) throw new Error("sxyprn post verification unavailable");
-    return verified.slice(0, maxMatches);
+    return verified;
   };
 }
 

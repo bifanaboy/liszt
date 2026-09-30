@@ -5,8 +5,8 @@
  *   - duration band accepts and rejects at the boundary
  *   - the upload window accepts, rejects, and is asymmetric
  *   - an UNKNOWN date is a rejection, never a pass
- *   - identity ORDERS survivors, and a candidate with no identity at all is
- *     still eligible - the case the old identity gate blocked outright
+ *   - identity orders survivors by default, while `requireIdentity` makes an
+ *     unnamed set a no-match for the high-confidence tube rungs
  *   - views break ties within a tier, lag and URL break them after that
  *   - a repost never competes with its own original
  *
@@ -20,6 +20,7 @@ import {
   MATCH_DURATION_TOLERANCE_SEC,
   identityTier,
   matchTokens,
+  pickHighestViews,
   pickMatch,
   parseTimestamp,
   repairMojibake,
@@ -737,11 +738,40 @@ test("the gate judges a STEM GROUP on its best member, in either input order", (
   assert.equal(pickMatch(scene, [decoyGroup], gate), null, "an all-unnamed group is a no-match");
 });
 
+test("the terminal fallback selects by views alone and breaks ties stably", () => {
+  const quiet = candidate({
+    title: "unrelated clip",
+    url: "https://example.test/z",
+    views: 1,
+  });
+  const popular = candidate({
+    title: "another unrelated clip",
+    url: "https://example.test/y",
+    views: 90_000,
+  });
+  const unknown = candidate({
+    title: "unreadable views",
+    url: "https://example.test/a",
+    views: null,
+  });
+  assert.equal(
+    pickHighestViews([quiet, popular, unknown]),
+    popular,
+    "view count dominates title identity and an unknown count",
+  );
+
+  const tieZ = { ...quiet, url: "https://example.test/z", views: 5 };
+  const tieA = { ...quiet, url: "https://example.test/a", views: 5 };
+  assert.equal(pickHighestViews([tieZ, tieA]), tieA, "a tie uses URL for a stable result");
+  assert.equal(pickHighestViews([unknown]), unknown, "one unknown-view survivor remains usable");
+  assert.equal(pickHighestViews([]), null);
+});
+
 test("a performer-less scene cannot clear the gate, and that is reported not guessed", () => {
   // No performers and no scene code means every candidate scores tier 0, so the
   // gate has nothing to admit. The honest answer is a no-match the ladder can
-  // route on - not a rank on views dressed up as a match. The one path allowed
-  // to link such a scene is the ladder's terminal fallback, flagged `low`.
+  // route on - not a rank on views dressed up as a high-confidence match. The
+  // ladder's terminal fallback can still link an eligible survivor, flagged `low`.
   const noCast = { ...scene, performers: [] };
   const titled = candidate({ title: "Whatever the uploader called it" });
   assert.equal(pickMatch(noCast, [titled], { ...WINDOW, requireIdentity: true }), null);

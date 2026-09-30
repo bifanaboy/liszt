@@ -316,6 +316,7 @@ test("a pool match dated outside the window is refused end to end", async () => 
         rejectedByDate: 1,
         unknownDate: 0,
         hydrationCapped: false,
+        fallbackCandidates: [],
         rejected: "date",
       }),
     },
@@ -353,6 +354,7 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
         rejectedByDate: 0,
         unknownDate: 0,
         hydrationCapped: false,
+        fallbackCandidates: [],
         rejected: null,
       }),
     },
@@ -389,6 +391,7 @@ test("a tier-0 winner is recorded as LOW CONFIDENCE for eyeballing", async () =>
         rejectedByDate: 0,
         unknownDate: 0,
         hydrationCapped: false,
+        fallbackCandidates: [],
         rejected: null,
       }),
     },
@@ -425,6 +428,7 @@ test("deferred lanes still produce ZERO links after the gate rewrite", async () 
       rejectedByDate: 0,
       unknownDate: 0,
       hydrationCapped: false,
+      fallbackCandidates: [],
       rejected: null,
     };
   };

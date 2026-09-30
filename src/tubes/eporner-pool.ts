@@ -578,6 +578,8 @@ export interface PoolMatch {
   unknownDate: number;
   /** True when the hydration cap dropped otherwise-qualifying survivors. */
   hydrationCapped: boolean;
+  /** Date-and-duration survivors retained for the terminal low-confidence fallback. */
+  fallbackCandidates: TubeCandidate[];
   /** Set when the rung found nothing; null when it linked. */
   rejected: PoolRejection | null;
 }
@@ -593,13 +595,14 @@ export interface PoolMatch {
  * everything else is examined and left to `createPoolLookup` to reject after
  * hydration.
  *
- * The old title-identity pre-filter is deliberately gone. It was what made
- * hydration cheap, and it is also exactly what the identity-as-ranking-signal
- * change retires - filtering on identity here would re-introduce the gate the
- * plan removed, one rung earlier. The cost is bounded and was measured rather
- * than assumed: over 1,005 indexed pool videos the +-2s band holds a mean of
- * 3.1 videos, a median of 2, a p99 of 10 and a maximum of 13, so the survivor
- * set stays well inside the `maxHydrations` cap.
+ * Identity is deliberately NOT pre-filtered here. The actual identity gate runs
+ * after hydration, date narrowing and title-stem collapse; applying it earlier
+ * would judge a repost group member-by-member rather than on the group's best
+ * title. Keeping all date+duration survivors also supplies the terminal
+ * low-confidence fallback if no tube returns a named match. The cost is bounded
+ * and was measured rather than assumed: over 1,005 indexed pool videos the
+ * +-2s band holds a mean of 3.1 videos, a median of 2, a p99 of 10 and a maximum
+ * of 13, so the survivor set stays well inside the `maxHydrations` cap.
  */
 export function preFilter(
   scene: MatchScene,
@@ -862,7 +865,9 @@ export async function gatherPoolSurvivors(
 
 /**
  * Build the pool rung. Every scene with a positive duration is eligible; a
- * performer-less scene is eligible too, it simply ranks on one fewer signal.
+ * performer-less scene can still contribute date+duration survivors to the
+ * terminal fallback, but cannot receive a high-confidence pool match without
+ * identity evidence.
  */
 export function createPoolLookup(options: PoolLookupOptions) {
   const { store, fetcher, uploaders, durationToleranceSec, dateWindowDays, log } = options;
@@ -929,15 +934,27 @@ export function createPoolLookup(options: PoolLookupOptions) {
       unknownDate,
       hydrationCapped: gathered.capped,
     };
-    // `eligible` has already passed the date half above. A null pick here means
-    // that no candidate could be ranked - under `requireIdentity`, the usual
-    // reason is that every stem group was unnamed. Do not misreport that as a
-    // date rejection: the counters already know exactly how many date checks
-    // failed, and an identity failure is a clean no-match after those checks.
-    if (!match) return { ...emptyMatch, ...counts, rejected: "none" };
+    // If no candidates passed the date half, preserve that rejection in the
+    // rung result. Otherwise a null pick means that no candidate could be
+    // ranked - under `requireIdentity`, usually because every stem group was
+    // unnamed. Do not misreport THAT as a date rejection: the counters already
+    // know exactly how many date checks failed.
+    if (!match)
+      return {
+        ...emptyMatch,
+        ...counts,
+        fallbackCandidates: eligible,
+        rejected: eligible.length ? "none" : "date",
+      };
 
     const videoId = epornerVideoId(match.candidate.url);
-    if (!videoId) return { ...emptyMatch, ...counts, rejected: "none" };
+    if (!videoId)
+      return {
+        ...emptyMatch,
+        ...counts,
+        fallbackCandidates: eligible,
+        rejected: "none",
+      };
     return {
       url: epornerWatchUrl(videoId),
       embedUrl: epornerEmbedUrl(videoId),
@@ -947,6 +964,7 @@ export function createPoolLookup(options: PoolLookupOptions) {
       identityTier: match.identityTier,
       lagDays: lagInDays(scene.releaseDate, match.candidate.added),
       ...counts,
+      fallbackCandidates: eligible,
       rejected: null,
     };
   };
@@ -975,5 +993,6 @@ const emptyMatch: PoolMatch = {
   rejectedByDate: 0,
   unknownDate: 0,
   hydrationCapped: false,
+  fallbackCandidates: [],
   rejected: "none",
 };

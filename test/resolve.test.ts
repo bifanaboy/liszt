@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveScene, resolveLinks } from "../src/tubes/resolve.ts";
+import { LOW_CONFIDENCE_RULE, resolveScene, resolveLinks } from "../src/tubes/resolve.ts";
 import { makeScene } from "./helpers.ts";
 import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
 
@@ -33,6 +33,7 @@ const poolMatch = (over: Partial<PoolMatch> = {}): PoolMatch => ({
   rejectedByDate: 0,
   unknownDate: 0,
   hydrationCapped: false,
+  fallbackCandidates: [],
   rejected: null,
   ...over,
 });
@@ -42,11 +43,23 @@ const poolMiss = (over: Partial<PoolMatch> = {}): PoolMatch =>
   poolMatch({ url: "", embedUrl: "", videoId: "", title: "", rejected: "date", ...over });
 
 const sxyprnHit = (
-  over: Partial<{ url: string; identityTier: 0 | 1 | 2 | 3; lagDays: number | null }> = {},
+  over: Partial<{
+    url: string;
+    identityTier: 0 | 1 | 2 | 3;
+    lagDays: number | null;
+    title: string;
+    duration: number;
+    added: string;
+    views: number | string | null;
+  }> = {},
 ) => ({
   url: "https://sxyprn.com/post/6ab1a9bec8445.html",
   identityTier: 2 as const,
   lagDays: 0 as number | null,
+  title: "Marfe takes it deep",
+  duration: 900,
+  added: "2026-03-05T00:00:00.000Z",
+  views: 1200,
   ...over,
 });
 
@@ -87,19 +100,82 @@ test("confidence is the identity tier: only tier 0 reads low", async () => {
   }
 });
 
-test("a winner with no identity evidence at all is the decoy path, and is flagged", async () => {
-  // Nothing in the title names the performer. It won on views, so it is the
-  // one class of match a human has to eyeball - and `low` is how it is found.
+test("without a named match, the highest-view survivor across both tubes is linked low", async () => {
+  // The low-confidence choice is deliberately made only after both tubes have
+  // declined to produce a named match. The pool has a date+duration survivor
+  // with 900 views; sxyprn has one with 12,000, so the survivor from the second
+  // tube wins the cross-tube comparison.
   const result = await resolveScene(scene, {
     matcher: "sxyprn+eporner",
     creatorStudio: false,
     now,
-    poolLookup: async () => poolMatch({ identityTier: 0, title: "unrelated clip", lagDays: 2 }),
-    sxyprnLookup: null,
+    poolLookup: async () =>
+      poolMatch({
+        url: "",
+        rejected: "none",
+        fallbackCandidates: [
+          {
+            title: "unrelated pool clip",
+            duration: 900,
+            added: "2026-03-05T10:00:00Z",
+            views: 900,
+            url: "https://www.eporner.com/video-pool-low/",
+          },
+        ],
+      }),
+    sxyprnLookup: async () => [
+      sxyprnHit({
+        identityTier: 0,
+        title: "unrelated sxyprn clip",
+        duration: 900,
+        added: "2026-03-05T10:00:00Z",
+        views: 12_000,
+        url: "https://sxyprn.com/post/6ab1a9bec8446.html",
+      }),
+    ],
   });
   assert.equal(result.matched, true);
+  assert.equal(result.rung, "fallback");
   assert.equal(result.scene.videoMatching?.confidence, "low");
+  assert.equal(result.scene.videoMatching?.rule, LOW_CONFIDENCE_RULE);
+  assert.equal(result.scene.videoUrls[0]?.source, "sxyprn");
+  assert.equal(result.scene.videoUrls[0]?.url, "https://sxyprn.com/post/6ab1a9bec8446.html");
   assert.equal(result.tier, 0);
+});
+
+test("an identity-backed sxyprn result beats a more-viewed pool fallback", async () => {
+  const result = await resolveScene(scene, {
+    matcher: "sxyprn+eporner",
+    creatorStudio: false,
+    now,
+    poolLookup: async () =>
+      poolMatch({
+        url: "",
+        rejected: "none",
+        fallbackCandidates: [
+          {
+            title: "unrelated viral clip",
+            duration: 900,
+            added: "2026-03-05T10:00:00Z",
+            views: 10_000_000,
+            url: "https://www.eporner.com/video-viral/",
+          },
+        ],
+      }),
+    sxyprnLookup: async () => [
+      sxyprnHit({
+        identityTier: 1,
+        title: "Marfe compilation",
+        duration: 900,
+        added: "2026-03-05T10:00:00Z",
+        views: 1,
+      }),
+    ],
+  });
+  assert.equal(result.rung, "sxyprn");
+  assert.equal(result.scene.videoMatching?.confidence, "high");
+  assert.equal(result.scene.videoUrls[0]?.source, "sxyprn");
+  assert.equal(result.tier, 1);
 });
 
 test("rung 2 runs when the pool misses, and a rung that errors leaves the scene unlinked", async () => {
@@ -372,7 +448,9 @@ test("onProgress reports the queue once, then one step per completion, in order"
     // The first two resolve and the rest miss, so `matched` is asserted
     // against a counter that is genuinely mid-flight rather than all-or-nothing.
     sxyprnLookup: async (candidate) =>
-      candidate.id === "test:0" || candidate.id === "test:1" ? [sxyprnHit()] : [],
+      candidate.id === "test:0" || candidate.id === "test:1"
+        ? [sxyprnHit({ title: candidate.title })]
+        : [],
     onProgress: (done, total, matched) => seen.push({ done, total, matched }),
   });
   assert.equal(result.considered, 4);

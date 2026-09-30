@@ -36,22 +36,24 @@
  * tube" rather than "give up".
  *
  * The residual risk is named rather than hidden: a gated no-match is a MISSING
- * link, and missing links are the failure this rule trades into view. That is
- * the intended direction, and the measured cost is stated - over the 115
- * linkable scenes in the calibration corpus, only 7 have any candidate whose
- * title names the performer at all, so the gate alone would drop the link count
- * from 30 to about 7. Growing the tube hierarchy is what raises it again.
+ * high-confidence link, and the measured cost is stated - over the 115
+ * linkable scenes in the calibration corpus, only 7 had any trusted-pool
+ * candidate whose title named the performer at all. The terminal fallback now
+ * keeps date-and-duration survivors from every tube available as visibly low
+ * confidence links, rather than silently dropping every scene outside those 7.
  *
  * THE MMDD PROXY IS GONE. `mmddCode` / `hasDateEvidence` / the
  * `LISZT_POOL_REQUIRE_DATE_EVIDENCE` knob existed only to make identity
- * stricter. With identity demoted to a tiebreak they have no purpose, and they
- * measured as completely inert besides - the trusted pool's retitles carry no
- * date code at all.
+ * stricter. They measured as completely inert besides - the trusted pool's
+ * retitles carry no date code at all - and date already has its own upload
+ * window filter. Identity is now a gate again, but that does not make a date
+ * token an identity signal.
  *
  * THE FALSIFIED STAGES ARE STILL ABSENT and must not be re-added: studio-in-
  * title, thumbnail similarity, tag-based search, and fuzzy title similarity.
- * Duration and date are filters, never evidence of a match; identity orders
- * survivors, it never invents one.
+ * Duration and date are filters, never evidence of a match; identity gates a
+ * high-confidence result and ranks the named survivors. Only the explicit
+ * terminal fallback may use views after no tube produced a named result.
  */
 const DECORATION_WORDS = new Set(["new", "watch", "download"]);
 
@@ -448,9 +450,9 @@ export interface PickOptions {
    * A performer-less scene is NOT excluded by this: with no performers and no
    * scene code, every candidate scores tier 0, so the gate returns no-match for
    * a scene whose video could not have been named anyway. The ladder, not this
-   * flag, is where a performer-less scene is decided. Until the proposed
-   * terminal fallback is confirmed, a scene that no tube can name stays
-   * unlinked.
+   * flag, is where a performer-less scene is decided: if no tube can name it,
+   * the terminal fallback may still link its most-viewed eligible survivor and
+   * mark it `low`.
    */
   requireIdentity?: boolean;
 }
@@ -492,6 +494,39 @@ function viewCount(candidate: TubeCandidate): number | null {
   const suffix = /(k|m)$/i.exec(raw.trim());
   if (suffix) return value * (/^m$/i.test(suffix[1] as string) ? 1_000_000 : 1_000);
   return value;
+}
+
+/**
+ * Pick the largest known view count, with a stable URL tie-break.
+ *
+ * This is intentionally NOT `pickMatch`: the terminal fallback runs only after
+ * every identity-gated rung declined, and its rule is explicitly views-first
+ * across the survivors from ALL tubes. Re-applying identity-tier ranking here
+ * would quietly turn the fallback back into a named match and let an older,
+ * lower-view candidate win. Unknown counts rank below any real count; when all
+ * counts are unknown, URL order makes the result deterministic.
+ */
+export function pickHighestViews(candidates: readonly TubeCandidate[]): TubeCandidate | null {
+  let best: TubeCandidate | null = null;
+  let bestViews: number | null = null;
+  for (const candidate of candidates) {
+    const views = viewCount(candidate);
+    if (best === null) {
+      best = candidate;
+      bestViews = views;
+      continue;
+    }
+    const wins =
+      (views !== null && bestViews === null) ||
+      (views !== null && bestViews !== null && views > bestViews) ||
+      (views === bestViews &&
+        String(candidate.url ?? "").localeCompare(String(best.url ?? "")) < 0);
+    if (wins) {
+      best = candidate;
+      bestViews = views;
+    }
+  }
+  return best;
 }
 
 /** The tiebreak chain: identity tier, then views, then lag, then URL. */
