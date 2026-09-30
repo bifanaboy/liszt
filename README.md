@@ -37,12 +37,12 @@ There is no password and nothing to configure to start it. See
 [No perimeter](#no-perimeter) for why, and [Deployment](#deployment) for the one
 supported target.
 
-`npm run format:check` currently fails on most of the repository: there is no
-`.prettierrc` and the code is hand-written to roughly 100 columns, while Prettier
-defaults to 80. It is **not** in CI, deliberately — a permanently red required
-check stops Render deploying at all, which is worse than not gating on it. Fixing
-it is its own change, and it has to exclude `test/fixtures`: those HTML files are
-captured from live pages and the parser tests assert on their exact bytes.
+Formatting is Prettier at `printWidth: 100`, the column the code was already
+written to, and `format:check` runs in CI. `.prettierignore` holds back what must
+not be rewritten: `test/fixtures` are byte-captured responses from live pages that
+the parser tests assert on exactly; `public/` is the ported dashboard UI as it
+arrived, with a one-line 12KB `styles.css` — `npm run lint` still checks its
+JavaScript; and `package-lock.json` is npm's to write.
 
 ---
 
@@ -337,9 +337,9 @@ Four consequences of that blueprint worth knowing before the first deploy:
   Render's 30s default the platform would `SIGKILL` the process mid-write to the
   SQLite file on every single deploy.
 - **CI gates the deploy.** `.github/workflows/ci.yml` runs
-  `typecheck → lint → test`, and Render waits on it. Without that workflow
-  Render detects zero checks and never deploys again. `format:check` is
-  deliberately not in the list — see above.
+  `typecheck → lint → format:check → test`, and Render waits on it. Without that
+  workflow Render detects zero checks and never deploys again. `format:check` is
+  in that list only because it now passes; it was held out while it could not.
 
 After deploying, confirm the disk actually mounted: `liszt.db`, `liszt.db-wal`
 and `liszt.db-shm` under `/data`. Trigger one sync, restart the service, and

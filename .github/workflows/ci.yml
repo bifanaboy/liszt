@@ -26,15 +26,14 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
 
-      # `format:check` is deliberately NOT here. It fails on 53 files at
-      # `a39abc1` - it has never passed - because the repo has no `.prettierrc`
-      # and the code is hand-written to ~100 columns while Prettier defaults to
-      # 80. Including it would leave this check permanently red, and Render does
-      # not deploy while a required check fails, so it would block every deploy
-      # rather than gate them. Making it pass is its own change, separate from a
-      # critical-fix PR, and it has to exclude `test/fixtures` regardless: those
-      # HTML files are captured from live pages and the parser tests assert on
-      # their exact bytes.
+      # This gate was absent because it could never pass: the repo had no
+      # `.prettierrc`, so prettier defaulted to 80 against code written to
+      # ~100, and a permanently red check would block every deploy rather than
+      # gate them. `.prettierrc` pins the width to the house style and
+      # `.prettierignore` holds out what must not be reformatted - the
+      # byte-captured `test/fixtures` the parser tests assert on, the ported
+      # `public/` assets, `package-lock.json`. It passes now, so it gates.
+      - run: npm run format:check
 
       # `npm test` alone cannot catch a glob that matched nothing: the runner
       # reports "tests 0" and exits 0. TAP's plan line is what makes that
