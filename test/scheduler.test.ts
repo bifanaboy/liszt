@@ -75,18 +75,39 @@ test("stop() gives up on a wedged cycle instead of hanging shutdown", async () =
   scheduler.start();
   await new Promise((resolve) => setTimeout(resolve, 20));
   const startedAt = Date.now();
-  await scheduler.stop();
+  const clean = await scheduler.stop();
   assert.ok(Date.now() - startedAt < 1000, "the bounded wait held");
+  // AND it says so. The caller closes the SQLite store on `true`, so resolving
+  // `true` here would pull the handle out from under a live writer.
+  assert.equal(clean, false, "a cycle still running is not a clean stop");
 });
 
-test("stop() on an idle scheduler resolves immediately", async () => {
+test("stop() reports a clean stop once the cycle settles", async () => {
+  let finish: (() => void) | undefined;
+  const scheduler = createScheduler({
+    intervalMs: 5,
+    stopTimeoutMs: 10_000,
+    log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
+    run: async () => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  scheduler.start();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const stopped = scheduler.stop();
+  finish?.();
+  assert.equal(await stopped, true, "the cycle finished inside the bound");
+});
+
+test("stop() on an idle scheduler is clean", async () => {
   const scheduler = createScheduler({
     intervalMs: 1000,
     log: { debug() {}, info() {}, warn() {}, error() {}, child() { return this; } },
     run: async () => undefined,
   });
-  scheduler.stop();
-  await scheduler.stop();
+  assert.equal(await scheduler.stop(), true);
   assert.equal(scheduler.busy(), false);
 });
 

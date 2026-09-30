@@ -7,9 +7,9 @@
  * runs concurrently against the same file, and both are meant to touch it.
  */
 import { DatabaseSync } from "node:sqlite";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   DeadVideoLink,
   Scene,
@@ -123,6 +123,15 @@ export class SqliteStore {
   private readonly db: DatabaseSync;
 
   constructor(path: string) {
+    // The parent directory is created here rather than left to the platform's
+    // disk mount. Without it a fresh clone pointed at the default
+    // `data/liszt.db` fails at boot with an opaque `SQLITE_CANTOPEN` that reads
+    // like a permissions problem, and Render's `/data` only happens to work
+    // because the mount point already exists. `:memory:` has no directory, so it
+    // is skipped rather than made a special case of the caller's problem.
+    if (path !== ":memory:" && !path.startsWith("file:")) {
+      mkdirSync(dirname(resolve(path)), { recursive: true });
+    }
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");

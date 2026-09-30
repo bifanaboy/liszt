@@ -34,6 +34,15 @@ import { createHttpServer } from "./serving/http.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(HERE, "..", "public");
 
+/**
+ * The absolute ceiling on how long shutdown may take, armed at signal receipt.
+ *
+ * The scheduler's own guard is 30s, so this has to exceed it or the process
+ * exits while the cycle it was waiting for is still running. `render.yaml` sets
+ * `maxShutdownDelaySeconds: 60`, which must exceed THIS value, or the platform
+ * SIGKILLs the process before it has finished waiting.
+ */
+const SHUTDOWN_BACKSTOP_MS = 45_000;
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -161,19 +170,50 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     log.info("shutting down", { signal });
+    // The backstop is armed AT SIGNAL RECEIPT, not inside the `.then()` below.
+    // Armed there it could only start once the scheduler had already resolved,
+    // so it bounded a slow `server.close` but not the thing its comment claimed
+    // to bound: a `stop()` that never settles. Render SIGTERMs this process on
+    // every single deploy, and then SIGKILLs it at
+    // `maxShutdownDelaySeconds`, so the whole budget has to be spent before
+    // that deadline or the platform kills the process mid-write to the SQLite
+    // file on the attached disk.
+    const hardExit = setTimeout(() => {
+      log.error("shutdown timed out, exiting without closing the store", {
+        signal,
+        note: "an in-flight cycle may have been cut off mid-transaction",
+      });
+      process.exit(1);
+    }, SHUTDOWN_BACKSTOP_MS);
+    hardExit.unref?.();
+
     // The scheduler is stopped and its in-flight cycle AWAITED before the store
-    // closes, otherwise the cycle is still writing to a handle that is about to
-    // be closed underneath it. The 5s timer below is the backstop for a cycle
-    // that never settles.
+    // closes. `stop()` resolves false when its own 30s bound expired with the
+    // cycle still running - in which case closing the store would pull the
+    // handle out from under a live writer. WAL SQLite tolerates an unclosed
+    // handle at process exit; it does not tolerate a write against a closed
+    // one, so the close is skipped and the exit is reported as a failure.
     void scheduler
       .stop()
-      .catch((error) => log.error("scheduler stop failed", { error: (error as Error).message }))
-      .then(() => {
+      .catch((error) => {
+        log.error("scheduler stop failed", { error: (error as Error).message });
+        return false;
+      })
+      .then((clean) => {
+        if (!clean) {
+          log.error("shutdown gave up on an in-flight cycle; leaving the store open", {
+            signal,
+          });
+          server.close();
+          clearTimeout(hardExit);
+          process.exit(1);
+          return;
+        }
         server.close(() => {
           store.close();
+          clearTimeout(hardExit);
           process.exit(0);
         });
-        setTimeout(() => process.exit(0), 5_000).unref?.();
       });
   };
   process.on("SIGINT", () => shutdown("SIGINT"));

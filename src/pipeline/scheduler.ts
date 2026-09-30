@@ -33,8 +33,15 @@ export function createSingleFlight<T>(task: () => Promise<T>): () => Promise<T> 
 
 export interface Scheduler {
   start(): void;
-  /** Clear the timer and, by default, wait for the in-flight cycle. */
-  stop(): Promise<void>;
+  /**
+   * Clear the timer and, by default, wait for the in-flight cycle.
+   *
+   * Resolves `true` when the cycle finished and `false` when the bounded wait
+   * expired first. That distinction is load-bearing for shutdown: a caller that
+   * closes the store on `true` but leaves it alone on `false` cannot pull the
+   * SQLite handle out from under a cycle that is still writing to it.
+   */
+  stop(): Promise<boolean>;
   /** True while a cycle is in flight. Read by the refresh endpoint/read model. */
   busy(): boolean;
 }
@@ -103,11 +110,13 @@ export function createScheduler({
       if (timer) clearInterval(timer);
       timer = null;
       const pending = inFlight;
-      if (!pending) return;
+      if (!pending) return true;
       onStop?.(controller?.signal ?? new AbortController().signal);
       let guardTimer: NodeJS.Timeout | undefined;
+      let gaveUp = false;
       const guard = new Promise<void>((resolve) => {
         guardTimer = setTimeout(() => {
+          gaveUp = true;
           log.warn("scheduler: cycle still running at stop, giving up on it", { stopTimeoutMs });
           resolve();
         }, stopTimeoutMs);
@@ -118,6 +127,13 @@ export function createScheduler({
       } finally {
         if (guardTimer) clearTimeout(guardTimer);
       }
+      if (!gaveUp) return true;
+      // The guard won the race. Yield once so a cycle that settled in the very
+      // same tick is observed rather than misreported, then read the scheduler's
+      // own state: `tick` clears `inFlight` in its `finally`, so a non-null
+      // `inFlight` means the cycle is genuinely still writing.
+      await Promise.resolve();
+      return inFlight === null;
     },
     busy: () => inFlight !== null,
   };

@@ -1,38 +1,49 @@
-# Render is an ALTERNATIVE to the VPS + Cloudflare Tunnel setup. It is here for
-# someone who would rather not hold a box; it is not the recommended path,
-# because Render's egress IPs make sxyprn answer 403 and put the pool rung's
-# calibration on shakier ground.
+# Render is the ONLY supported deployment. The VPS + Cloudflare Tunnel setup is
+# gone, along with the Dockerfile that contradicted this file.
 #
-# The app binds 127.0.0.1 by design. Render needs a routable interface, so the
-# bind address is overridable here only, and ONLY because Render fronts the
-# service with its own proxy. Do not copy this to a VPS.
+# The app binds 127.0.0.1 by default because that was right for a tunnel. Render
+# fronts the service with its own proxy and needs a routable interface, so
+# LISZT_LISTEN_ADDR is overridden here and ONLY because of that. Do not copy this
+# to a box you own.
+#
+# There is nothing to type into the dashboard: every value below is in this file,
+# and there is no secret. The service is public by design.
 services:
   - type: web
     name: liszt
     runtime: node
-    plan: starter
+    # A persistent disk requires a PAID plan. `starter` was the legacy
+    # instance-type ID; `0.5c-512mb` is the current 0.5 CPU / 512 MB plan, and
+    # the one this service is already provisioned on.
+    plan: 0.5c-512mb
     region: oregon
     buildCommand: npm ci --omit=dev
     startCommand: node src/app.ts
-    # `/health` is the unauthenticated liveness probe: a constant 200. It must
-    # NOT be `/api/health` - that one is auth-gated, answers 401, and Render
+    # `/health` answers a constant `{"status":"ok"}` before anything touches the
+    # store. It must NOT be `/api/health`: that one is stateful, and Render
     # treats anything but 2xx as a failed deploy.
     healthCheckPath: /health
-    autoDeploy: false
+    # `checksPass`, not the deprecated `autoDeploy`. The dashboard is already set
+    # to "After CI Checks Pass", and without this key a blueprint sync keeps
+    # whatever the dashboard happens to say while a NEW service defaults to
+    # `commit` - which would deploy straight from main with no checks at all.
+    autoDeployTrigger: checksPass
+    # Render's default is 30s, and this app needs longer: the scheduler waits up
+    # to 30s for an in-flight cycle, then the server gets a 5s backstop. Against
+    # the default that overruns and the platform SIGKILLs the process mid-write
+    # to the SQLite file on the attached disk, on every single deploy.
+    maxShutdownDelaySeconds: 60
     disk:
       name: liszt-data
       mountPath: /data
       sizeGB: 1
     envVars:
-      # `node:sqlite` is a built-in, experimental from Node 22.5 and stable
-      # from 24. Render's default image has moved major before; pin the one
-      # this app actually requires rather than tracking the default.
-      - key: NODE_VERSION
-        value: "24.0.0"
+      # Nothing here reads NODE_ENV any more - the auth gate that needed it is
+      # deleted. npm reads it, which is reason enough to set it.
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
+      # PORT is deliberately absent: Render injects it (10000 by default) and
+      # `loadConfig` already reads it. Pinning it here is a stale constant.
       - key: LISZT_DB_PATH
         value: /data/liszt.db
       - key: LISZT_LISTEN_ADDR
@@ -43,6 +54,7 @@ services:
         value: "0"
       - key: LISZT_TRUSTED_UPLOADERS
         value: Vovick17,KJUIUI,Rafael12021988,wmrt0s
-      # Set this in the dashboard, never in a committed file.
-      - key: LISZT_AUTH_PASSWORD_HASH
-        sync: false
+      # The Node version is NOT pinned here. A `NODE_VERSION` of "24.0.0" holds
+      # the service on the first 24.x patch and never receives 24.x security
+      # updates. `engines.node` in package.json carries the range instead, which
+      # Render resolves to the newest release inside it.
