@@ -7,8 +7,8 @@
  *   1. Parse configuration. There is no credential to check and nothing that
  *      can refuse to start for a missing secret - the app has no perimeter.
  *   2. Open and migrate the store (WAL + busy timeout) before anything reads it.
- *   3. Build the ladder's lookups once: the pool index handle, the optional
- *      lazily-loaded sxyprn client, and the eporner open search.
+ *   3. Build the ladder's lookups once: the pool index handle and the optional
+ *      lazily-loaded sxyprn client.
  *   4. LISTEN FIRST, then run the boot sync in the background, then start the
  *      interval. A slow first sync must not delay the port coming up.
  *   5. All three entry points - boot sync, interval, and `POST /api/refresh` -
@@ -23,8 +23,8 @@ import { SqliteStore } from "./core/store/sqlite.ts";
 import { createSources } from "./sources/registry.ts";
 import { systemClock } from "./sources/types.ts";
 import { createSync } from "./pipeline/sync.ts";
+import { createProgressTracker } from "./pipeline/progress.ts";
 import { createScheduler, createSingleFlight } from "./pipeline/scheduler.ts";
-import { createEpornerOpenLookup, createEpornerOpenSearch } from "./tubes/eporner.ts";
 import { createPoolLookup, indexPool } from "./tubes/eporner-pool.ts";
 import { createSxyprnLookup } from "./tubes/sxyprn.ts";
 import { loadSxyprnClient } from "./tubes/sxyprn-client.ts";
@@ -72,13 +72,6 @@ async function main(): Promise<void> {
     dateWindowDays: config.matchDateWindowDays,
     log: (message, fields) => log.debug(message, fields),
   });
-  const openLookup = createEpornerOpenLookup(
-    createEpornerOpenSearch({ fetcher, lq: config.epornerLq }),
-    {
-      durationToleranceSec: config.matchDurationToleranceSec,
-      dateWindowDays: config.matchDateWindowDays,
-    },
-  );
   const sxyprnLookup = sxyprnClient
     ? createSxyprnLookup({
         client: sxyprnClient,
@@ -87,6 +80,12 @@ async function main(): Promise<void> {
       })
     : null;
 
+  // One tracker for the whole cycle, begun here because the pool index runs
+  // BEFORE `createSync` and is the longest cold-start phase. It is the single
+  // source of progress for all three refresh triggers, because all three go
+  // through `runCycle` - a second refresh joins the one already running, so
+  // there is only ever one run to describe.
+  const progress = createProgressTracker();
   const sync = createSync({
     store,
     sources,
@@ -96,12 +95,18 @@ async function main(): Promise<void> {
     windowDays: config.windowDays,
     fetchConcurrency: config.fetchConcurrency,
     traxxx: { minIntervalMs: config.traxxxMinIntervalMs, cacheTtlMs: config.traxxxCacheTtlMs },
-    lookups: { poolLookup, sxyprnLookup, openLookup },
+    lookups: { poolLookup, sxyprnLookup },
+    progress,
   });
 
   let inFlight = false;
   const runCycle = createSingleFlight(async () => {
     inFlight = true;
+    const startedAt = new Date();
+    progress.begin(`cycle-${startedAt.getTime()}`, startedAt.toISOString(), {
+      sources: sources.length,
+      uploaders: config.trustedUploaders.length,
+    });
     try {
       try {
         const report = await indexPool({
@@ -112,6 +117,7 @@ async function main(): Promise<void> {
           windowDays: config.windowDays,
           fullRewalkDays: config.poolFullRewalkDays,
           log: (message, fields) => log.info(message, fields),
+          onUploader: (done, total, uploader) => progress.indexStep(done, total, uploader),
         });
         if (!report.ok) {
           log.warn("pool index incomplete", {
@@ -135,16 +141,27 @@ async function main(): Promise<void> {
       return await sync("cycle");
     } finally {
       inFlight = false;
+      // Belt and braces, and a no-op in every real path: `sync` ends the run
+      // itself. This is the one place all three triggers converge, so a cycle
+      // that somehow ended without narrating an end - a throw between the pool
+      // index and the sync - cannot leave the dashboard showing a bar that will
+      // never move again.
+      if (progress.snapshot().active) progress.finish();
     }
   });
 
   const server = createHttpServer({
     store,
     log,
-    readModel: () => buildReadModel(store, config, new Date(), { refreshing: inFlight }),
+    readModel: () =>
+      buildReadModel(store, config, new Date(), {
+        refreshing: inFlight,
+        progress: progress.snapshot(),
+      }),
     refresh: runCycle,
     isBusy: () => inFlight,
     publicDir: PUBLIC_DIR,
+    progress: () => progress.snapshot(),
   });
 
   await new Promise<void>((resolve) => {

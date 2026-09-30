@@ -3,6 +3,7 @@
  * API expose, from the store, so the API and the dashboard can never drift.
  */
 import { dateOnly } from "../pipeline/sync.ts";
+import { idleProgress, type SyncProgress } from "../pipeline/progress.ts";
 import type { Config } from "../config.ts";
 import type { RunRecord, SqliteStore } from "../core/store/sqlite.ts";
 import type { Scene, SourceStatus } from "../core/schema.ts";
@@ -26,13 +27,23 @@ export interface ReadModel {
   sources: SourceStatus[];
   latestRun: RunRecord | null;
   refreshing: boolean;
+  /**
+   * The live cycle's progress, for the dashboard's meters.
+   *
+   * Optional, and defaulted to an inactive snapshot, so every existing caller -
+   * including the inline fixture in the HTTP tests - keeps working unchanged.
+   * It rides along on this response so a first paint that already knows a run
+   * is in flight can draw its bar; the meters themselves are driven by the
+   * much smaller `/api/progress`, which is polled on its own cadence.
+   */
+  progress: SyncProgress;
 }
 
 export function buildReadModel(
   store: SqliteStore,
   config: Config,
   now: Date,
-  { refreshing = false }: { refreshing?: boolean } = {},
+  { refreshing = false, progress }: { refreshing?: boolean; progress?: SyncProgress } = {},
 ): ReadModel {
   const to = dateOnly(now);
   const from = dateOnly(new Date(now.getTime() - config.windowDays * 86_400_000));
@@ -52,5 +63,6 @@ export function buildReadModel(
     sources: store.listSources(),
     latestRun: store.recentRuns(1)[0] ?? null,
     refreshing,
+    progress: progress ?? idleProgress(),
   };
 }

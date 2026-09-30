@@ -51,9 +51,10 @@ export type DeadVideoLink = z.infer<typeof DeadVideoLink>;
  *
  * `confidence` is the winner's IDENTITY TIER, collapsed to two values:
  * `low` means tier 0 - the candidate's title carried no evidence naming the
- * performer or reusing the scene's own wording, so it was chosen on view count
- * alone. That is the decoy path, and it is exactly the set of links worth
- * eyeballing by hand. Tiers 1, 2 and 3 all read `high`, because a
+ * performer or reusing the scene's own wording. Those are the legacy links
+ * worth eyeballing by hand; the current ladder's identity gate does not create
+ * them; the terminal fallback now creates them only after all tubes have
+ * declined to produce a named match. Tiers 1, 2 and 3 all read `high`, because a
  * first-name-only match is a real match and flagging those as suspect would
  * swamp the signal.
  *

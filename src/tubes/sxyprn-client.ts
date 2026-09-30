@@ -175,6 +175,7 @@ export function createSxyprnClient(
               ...(video.url !== undefined ? { url: video.url } : {}),
               ...(video.title !== undefined ? { title: video.title } : {}),
               ...(durationSeconds !== null ? { durationSeconds } : {}),
+              ...(video.views !== undefined ? { views: video.views } : {}),
               ...(video.isExternal !== undefined ? { isExternal: video.isExternal } : {}),
               ...(video.author !== undefined ? { author: video.author } : {}),
             };

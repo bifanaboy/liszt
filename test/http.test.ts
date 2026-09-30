@@ -22,6 +22,9 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHttpHandler, HEALTH_PATH, type HttpDeps } from "../src/serving/http.ts";
+import { buildReadModel } from "../src/serving/read-model.ts";
+import type { Config } from "../src/config.ts";
+import { createProgressTracker, type SyncProgress } from "../src/pipeline/progress.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { NullLogger } from "../src/core/logger.ts";
 
@@ -152,6 +155,107 @@ test("the deleted auth routes are now plain 404s", async () => {
   d.store.close();
 });
 
+test("/api/progress is small, live, and separate from the catalogue", async () => {
+  // The meters are polled every couple of seconds. If they rode on
+  // `/api/scenes` the dashboard would refetch ~137 KB of catalogue to move a
+  // bar, and the list would re-sort under the reader's cursor on every tick.
+  const d = deps();
+  const tracker = createProgressTracker();
+  tracker.begin("cycle-1", "2026-03-10T00:00:00Z", { sources: 6, uploaders: 4 });
+  tracker.stage("populating");
+  tracker.sourceStart("tushy");
+  tracker.sourceDone("mambo-perv");
+  d.progress = () => tracker.snapshot();
+  await withServer(d, async (base) => {
+    const response = await fetch(`${base}/api/progress`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+    const body = (await response.json()) as { generatedAt: string; progress: SyncProgress };
+    assert.equal(typeof body.generatedAt, "string");
+    assert.equal(body.progress.active, true);
+    assert.equal(body.progress.runId, "cycle-1");
+    assert.equal(body.progress.populate.done, 1);
+    assert.equal(body.progress.populate.total, 6);
+    assert.equal(
+      (await fetch(`${base}/api/scenes`)).headers.get("content-type"),
+      response.headers.get("content-type"),
+      "same origin, same policy",
+    );
+  });
+  d.store.close();
+});
+
+test("the read model carries a progress snapshot, and defaults to an idle one", async () => {
+  // The catalogue response includes the snapshot so a first paint that lands in
+  // the middle of a cycle can already draw its stage. It is OPTIONAL on the way
+  // in: every existing caller, including the fixture above, must keep working
+  // without it - and a missing snapshot has to read as "no run", never as
+  // "undefined", which would render a bar with no width and no denominator.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const config = { windowDays: 90 } as Config;
+  const idle = buildReadModel(store, config, new Date("2026-03-10T00:00:00Z"));
+  assert.equal(idle.progress.active, false);
+  assert.equal(idle.progress.stage, "idle");
+  assert.equal(idle.progress.populate.total, 0);
+
+  const tracker = createProgressTracker();
+  tracker.begin("cycle-2", "2026-03-10T00:00:00Z", { sources: 6, uploaders: 4 });
+  tracker.stage("linking");
+  tracker.linkStart(121);
+  tracker.linkStep(48, 121, 3);
+  const live = buildReadModel(store, config, new Date("2026-03-10T00:00:00Z"), {
+    refreshing: true,
+    progress: tracker.snapshot(),
+  });
+  assert.equal(live.refreshing, true, "the boolean is kept alongside the new signal");
+  assert.equal(live.progress.active, true);
+  assert.equal(live.progress.runId, "cycle-2");
+  assert.equal(live.progress.link.done, 48);
+  assert.equal(live.progress.link.matched, 3);
+  // The model must not hand out the tracker's own object: a later step would
+  // mutate a response that was already being serialised.
+  tracker.linkStep(49, 121, 3);
+  assert.equal(live.progress.link.done, 48);
+  store.close();
+});
+
+test("/api/progress answers an idle tracker rather than 404 or an empty body", async () => {
+  // A dep-less server still has to answer: the dashboard polls this route from
+  // the moment the page loads, long before anybody clicks refresh.
+  const d = deps();
+  await withServer(d, async (base) => {
+    const body = (await (await fetch(`${base}/api/progress`)).json()) as { progress: SyncProgress };
+    assert.equal(body.progress.active, false);
+    assert.equal(body.progress.stage, "idle");
+    assert.equal(body.progress.populate.total, 0);
+  });
+  d.store.close();
+});
+
+test("/api/progress is a read, not a trigger", async () => {
+  // The refresh primitive is POST /api/refresh and nothing else. A GET that
+  // started a cycle would make every prefetch and every crawler a refresh.
+  const d = deps();
+  let started = 0;
+  d.refresh = async () => {
+    started += 1;
+    return undefined;
+  };
+  await withServer(d, async (base) => {
+    assert.equal((await fetch(`${base}/api/progress`, { method: "GET" })).status, 200);
+    for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
+      assert.equal(
+        (await fetch(`${base}/api/progress`, { method })).status,
+        405,
+        `${method} must not reach the route`,
+      );
+    }
+    assert.equal(started, 0, "nothing this route did started a cycle");
+  });
+  d.store.close();
+});
+
 test("the sessions table is gone after migrating", () => {
   // The migration must actually drop it, not merely stop writing to it: an
   // unused table holding token hashes is exactly the kind of thing a later
@@ -170,8 +274,8 @@ test("the sessions table is gone after migrating", () => {
       const applied = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all();
       assert.deepEqual(
         applied.map((row) => Number((row as { version: number }).version)),
-        [1, 2],
-        "both migrations applied, in filename order",
+        [1, 2, 3],
+        "every migration applied, in filename order",
       );
       // And migrating again is a no-op rather than a second drop attempt.
       new SqliteStore(path).migrate();

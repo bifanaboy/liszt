@@ -1,9 +1,19 @@
 /**
  * The playback-link types, and the shape the ladder resolves into.
  *
- * The safety rule, inherited unchanged: **a missing link is preferable to a
- * wrong link.** Every rung returns either a link that cleared the shared gate
- * or nothing at all. There is no partial-confidence path that writes a URL.
+ * The safety rule: **a missing high-confidence link is preferable to a wrong
+ * high-confidence link.** Each tube returns candidates that cleared duration
+ * and date; a title that identifies the scene makes a high-confidence match,
+ * while an unnamed candidate can only be linked by the terminal fallback.
+ *
+ * The terminal fallback runs only after every tube has declined to produce a
+ * named match. It selects the highest-view date-and-duration survivor across
+ * all tubes and flags the link `low`, so popularity is never mistaken for
+ * identity.
+ *
+ * This replaced the older wording here, which said there was no
+ * partial-confidence path at all. `RungOutcome`'s confidence field is how a
+ * reader distinguishes named matches from the explicit fallback.
  */
 import type { Scene } from "../core/schema.ts";
 
@@ -51,6 +61,17 @@ export type RungOutcome =
   | { status: "no-match" }
   | { status: "error"; error: string };
 
-/** The ordered rungs. Nominal order; see the plan's "effective ladder" note. */
-export const RUNGS = ["eporner-pool", "sxyprn", "eporner-open"] as const;
+/**
+ * The ordered rungs. Nominal order.
+ *
+ * `eporner-open` is gone, and the list is the record of that. The eporner v2
+ * search API takes no upload date, so a 90-day-old release could only be
+ * reached by paginating backwards from `order=latest` with no reliable stop;
+ * and the uploader appears in no API response, only in video page markup, so
+ * the rung could never tell a trusted repost from an untrusted account's
+ * upload. It contributed one link out of 46, and that link belonged to an
+ * account outside the trusted pool - so removing it cost that uploader's whole
+ * catalogue, not one link. That is the reason the hierarchy exists instead.
+ */
+export const RUNGS = ["eporner-pool", "sxyprn"] as const;
 export type Rung = (typeof RUNGS)[number];

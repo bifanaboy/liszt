@@ -16,6 +16,7 @@ import { NullLogger } from "../src/core/logger.ts";
 import { HttpFetcher } from "../src/core/fetcher.ts";
 import { fixedClock } from "../src/sources/types.ts";
 import type { Scene } from "../src/core/schema.ts";
+import { createProgressTracker, type SyncProgress } from "../src/pipeline/progress.ts";
 import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
 import type { RawScene, SourceAdapter, SourceResult } from "../src/sources/types.ts";
 
@@ -59,7 +60,7 @@ function buildSync(store: SqliteStore, sources: SourceAdapter[]) {
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null, openLookup: null },
+    lookups: { poolLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
 }
@@ -286,7 +287,6 @@ function buildResolvingSync(
     lookups: {
       poolLookup: null,
       sxyprnLookup: null,
-      openLookup: null,
       ...lookups,
     },
   });
@@ -316,6 +316,7 @@ test("a pool match dated outside the window is refused end to end", async () => 
         rejectedByDate: 1,
         unknownDate: 0,
         hydrationCapped: false,
+        fallbackCandidates: [],
         rejected: "date",
       }),
     },
@@ -353,6 +354,7 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
         rejectedByDate: 0,
         unknownDate: 0,
         hydrationCapped: false,
+        fallbackCandidates: [],
         rejected: null,
       }),
     },
@@ -389,6 +391,7 @@ test("a tier-0 winner is recorded as LOW CONFIDENCE for eyeballing", async () =>
         rejectedByDate: 0,
         unknownDate: 0,
         hydrationCapped: false,
+        fallbackCandidates: [],
         rejected: null,
       }),
     },
@@ -425,6 +428,7 @@ test("deferred lanes still produce ZERO links after the gate rewrite", async () 
       rejectedByDate: 0,
       unknownDate: 0,
       hydrationCapped: false,
+      fallbackCandidates: [],
       rejected: null,
     };
   };
@@ -531,3 +535,166 @@ test("single-flight collapses concurrent cycles into one run", async () => {
   assert.equal(await flight(), 2);
   store.close();
 });
+
+/* ---- Live progress --------------------------------------------------------
+   The dashboard's meters are driven entirely by the tracker, so what matters is
+   that the pipeline narrates itself COMPLETELY and WHILE it runs: every source
+   accounted for (including the ones that threw), every resolve step counted
+   against the queue it actually built, and the run finished. A bar that sits
+   short of its total is indistinguishable from a hang. */
+
+function progressSync(store: SqliteStore, over: Partial<Parameters<typeof createSync>[0]>) {
+  return createSync({
+    store,
+    sources: [],
+    fetcher: new HttpFetcher(),
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+    ...over,
+  });
+}
+
+test("progress is live mid-run, and a source that throws still counts as an attempt", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const progress = createProgressTracker();
+  let release = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // Concurrency 1 makes the order deterministic: the first source completes,
+  // then the second starts and hangs, which is the moment worth inspecting.
+  let midRun: SyncProgress | null = null;
+  const sync = progressSync(store, {
+    sources: [
+      adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+      adapter("bad", async () => {
+        midRun = progress.snapshot();
+        await gate;
+        throw new Error("upstream is down");
+      }),
+    ],
+    fetchConcurrency: 1,
+    progress,
+  });
+
+  const started = sync("test");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(midRun, "the run reached the second source");
+  const live = midRun as SyncProgress;
+  assert.equal(live.active, true, "a reader can see the cycle while it is still working");
+  assert.equal(live.stage, "populating");
+  assert.equal(live.populate.done, 1, "the first source is already counted");
+  assert.equal(live.populate.total, 2);
+  assert.deepEqual(live.populate.current, ["bad"], "the source in flight is named");
+
+  release();
+  const summary = await started;
+  assert.equal(summary.ok, false, "the throwing source still failed the run");
+  const after = progress.snapshot();
+  assert.equal(after.populate.done, 2, "a failed source is an ATTEMPT, so the bar still fills");
+  assert.deepEqual(after.populate.current, []);
+  assert.equal(after.active, false, "the bar collapsed when the run ended");
+  assert.equal(after.stage, "idle");
+  store.close();
+});
+
+test("a cycle with the links stage switched off still finishes cleanly", async () => {
+  // `--no-links` runs never enter the resolve stage, so the Linking meter has no
+  // countable total - and the run must still end, or that bar hangs forever.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const progress = createProgressTracker();
+  const sync = progressSync(store, {
+    sources: [adapter("only", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
+    progress,
+  });
+  await sync("test");
+  const snapshot = progress.snapshot();
+  assert.equal(snapshot.active, false);
+  assert.equal(snapshot.populate.done, 1);
+  assert.equal(snapshot.link.total, 0, "nothing was queued, so nothing can be counted");
+  assert.equal(snapshot.link.done, 0);
+  assert.equal(snapshot.link.verifyTotal, 0);
+  store.close();
+});
+
+test("a cycle with no sources at all still finishes", async () => {
+  // Zero sources is the degenerate case the meters have to survive: no
+  // denominator anywhere, and a row that must still collapse when the run ends.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const progress = createProgressTracker();
+  const summary = await progressSync(store, { progress })("test");
+  const snapshot = progress.snapshot();
+  assert.equal(summary.outcomes.length, 0);
+  assert.equal(snapshot.populate.total, 0);
+  assert.equal(snapshot.populate.done, 0);
+  assert.equal(snapshot.active, false);
+  store.close();
+});
+
+test("the resolve stage counts the queue it built, not the whole window", async () => {
+  // Four scenes land in the window; `lookups.limit` cuts the queue to two. A
+  // denominator taken from the window would render a bar stuck at 50%.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const progress = createProgressTracker();
+  const denominators = new Set<number>();
+  const tap = createProgressTracker();
+  tap.begin("tap", NOW, { sources: 1, uploaders: 0 });
+  const sync = progressSync(store, {
+    sources: [
+      adapter("many", async () => ({
+        scenes: [raw("1"), raw("2"), raw("3"), raw("4")],
+        verifiedEmpty: false,
+      })),
+    ],
+    resolveEnabled: true,
+    lookups: { poolLookup: null, sxyprnLookup: null, limit: 2 },
+    progress: {
+      ...tap,
+      linkStep: (done, total, matched) => {
+        denominators.add(total);
+        tap.linkStep(done, total, matched);
+      },
+    },
+  });
+  await sync("test");
+  assert.deepEqual([...denominators], [2], "one denominator, and it is the capped queue");
+  const snapshot = tap.snapshot();
+  assert.equal(snapshot.link.total, 2);
+  assert.equal(snapshot.link.done, 2, "the bar reaches 100% at the cap");
+  assert.equal(snapshot.link.substage, "verify", "the cycle moved on to re-verify");
+  assert.equal(snapshot.active, false);
+  assert.equal(progress.snapshot().active, false, "an untouched tracker is still valid");
+  store.close();
+});
+
+for (const failure of ["ledger", "log"] as const) {
+  test(`a failure in the opening ${failure} ends progress and propagates the original error`, async (t) => {
+    const store = new SqliteStore(":memory:");
+    t.after(() => store.close());
+    store.migrate();
+    const progress = createProgressTracker();
+    const error = new Error(`opening ${failure} failed`);
+    const log = new NullLogger();
+    if (failure === "ledger")
+      t.mock.method(store, "recordRun", () => {
+        throw error;
+      });
+    else
+      t.mock.method(log, "info", () => {
+        throw error;
+      });
+    const sync = progressSync(store, { progress, log });
+    await assert.rejects(sync("test"), (actual) => actual === error);
+    assert.equal(progress.snapshot().active, false);
+    assert.equal(progress.snapshot().stage, "error");
+    assert.equal(progress.snapshot().populate.done, 0);
+  });
+}

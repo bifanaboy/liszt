@@ -1,11 +1,11 @@
 /**
  * The ladder. Four properties matter:
  *
- *   1. the order is pool -> sxyprn -> eporner open
+ *   1. the order is pool -> sxyprn, and the eporner open rung is gone
  *   2. an error in one rung lets the next run
  *   3. a known-dead URL is never written back
  *   4. `confidence` is the winner's IDENTITY TIER, and `low` means tier 0 -
- *      a winner chosen on views alone, which is the decoy path
+ *      a winner with no identity evidence, which is the decoy path
  *
  * Plus the two things this change had to stop doing: a performer-less scene is
  * now ELIGIBLE, and the deferred lanes stay inert because `matcher` is an
@@ -13,7 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveScene, resolveLinks } from "../src/tubes/resolve.ts";
+import { LOW_CONFIDENCE_RULE, resolveScene, resolveLinks } from "../src/tubes/resolve.ts";
 import { makeScene } from "./helpers.ts";
 import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
 
@@ -33,6 +33,7 @@ const poolMatch = (over: Partial<PoolMatch> = {}): PoolMatch => ({
   rejectedByDate: 0,
   unknownDate: 0,
   hydrationCapped: false,
+  fallbackCandidates: [],
   rejected: null,
   ...over,
 });
@@ -42,11 +43,23 @@ const poolMiss = (over: Partial<PoolMatch> = {}): PoolMatch =>
   poolMatch({ url: "", embedUrl: "", videoId: "", title: "", rejected: "date", ...over });
 
 const sxyprnHit = (
-  over: Partial<{ url: string; identityTier: 0 | 1 | 2 | 3; lagDays: number | null }> = {},
+  over: Partial<{
+    url: string;
+    identityTier: 0 | 1 | 2 | 3;
+    lagDays: number | null;
+    title: string;
+    duration: number;
+    added: string;
+    views: number | string | null;
+  }> = {},
 ) => ({
   url: "https://sxyprn.com/post/6ab1a9bec8445.html",
   identityTier: 2 as const,
   lagDays: 0 as number | null,
+  title: "Marfe takes it deep",
+  duration: 900,
+  added: "2026-03-05T00:00:00.000Z",
+  views: 1200,
   ...over,
 });
 
@@ -59,7 +72,6 @@ test("rung 1 (the trusted pool) wins when it matches", async () => {
     now,
     poolLookup: async () => poolMatch(),
     sxyprnLookup: async () => [sxyprnHit()],
-    openLookup: async () => [],
   });
   assert.equal(result.matched, true);
   assert.equal(result.rung, "eporner-pool");
@@ -82,42 +94,106 @@ test("confidence is the identity tier: only tier 0 reads low", async () => {
       now,
       poolLookup: async () => poolMatch({ identityTier: tier }),
       sxyprnLookup: null,
-      openLookup: null,
     });
     assert.equal(result.scene.videoMatching?.confidence, expected, `tier ${tier}`);
     assert.equal(result.tier, tier, `tier ${tier} is reported for the histogram`);
   }
 });
 
-test("a winner with no identity evidence at all is the decoy path, and is flagged", async () => {
-  // Nothing in the title names the performer. It won on views, so it is the
-  // one class of match a human has to eyeball - and `low` is how it is found.
+test("without a named match, the highest-view survivor across both tubes is linked low", async () => {
+  // The low-confidence choice is deliberately made only after both tubes have
+  // declined to produce a named match. The pool has a date+duration survivor
+  // with 900 views; sxyprn has one with 12,000, so the survivor from the second
+  // tube wins the cross-tube comparison.
   const result = await resolveScene(scene, {
     matcher: "sxyprn+eporner",
     creatorStudio: false,
     now,
-    poolLookup: async () => poolMatch({ identityTier: 0, title: "unrelated clip", lagDays: 2 }),
-    sxyprnLookup: null,
-    openLookup: null,
+    poolLookup: async () =>
+      poolMatch({
+        url: "",
+        rejected: "none",
+        fallbackCandidates: [
+          {
+            title: "unrelated pool clip",
+            duration: 900,
+            added: "2026-03-05T10:00:00Z",
+            views: 900,
+            url: "https://www.eporner.com/video-pool-low/",
+          },
+        ],
+      }),
+    sxyprnLookup: async () => [
+      sxyprnHit({
+        identityTier: 0,
+        title: "unrelated sxyprn clip",
+        duration: 900,
+        added: "2026-03-05T10:00:00Z",
+        views: 12_000,
+        url: "https://sxyprn.com/post/6ab1a9bec8446.html",
+      }),
+    ],
   });
   assert.equal(result.matched, true);
+  assert.equal(result.rung, "fallback");
   assert.equal(result.scene.videoMatching?.confidence, "low");
+  assert.equal(result.scene.videoMatching?.rule, LOW_CONFIDENCE_RULE);
+  assert.equal(result.scene.videoUrls[0]?.source, "sxyprn");
+  assert.equal(result.scene.videoUrls[0]?.url, "https://sxyprn.com/post/6ab1a9bec8446.html");
   assert.equal(result.tier, 0);
 });
 
-test("rung 2 runs when the pool misses, rung 3 when sxyprn errors", async () => {
+test("an identity-backed sxyprn result beats a more-viewed pool fallback", async () => {
+  const result = await resolveScene(scene, {
+    matcher: "sxyprn+eporner",
+    creatorStudio: false,
+    now,
+    poolLookup: async () =>
+      poolMatch({
+        url: "",
+        rejected: "none",
+        fallbackCandidates: [
+          {
+            title: "unrelated viral clip",
+            duration: 900,
+            added: "2026-03-05T10:00:00Z",
+            views: 10_000_000,
+            url: "https://www.eporner.com/video-viral/",
+          },
+        ],
+      }),
+    sxyprnLookup: async () => [
+      sxyprnHit({
+        identityTier: 1,
+        title: "Marfe compilation",
+        duration: 900,
+        added: "2026-03-05T10:00:00Z",
+        views: 1,
+      }),
+    ],
+  });
+  assert.equal(result.rung, "sxyprn");
+  assert.equal(result.scene.videoMatching?.confidence, "high");
+  assert.equal(result.scene.videoUrls[0]?.source, "sxyprn");
+  assert.equal(result.tier, 1);
+});
+
+test("rung 2 runs when the pool misses, and a rung that errors leaves the scene unlinked", async () => {
   const missed = await resolveScene(scene, {
     matcher: "sxyprn+eporner",
     creatorStudio: false,
     now,
     poolLookup: async () => poolMiss(),
     sxyprnLookup: async () => [sxyprnHit()],
-    openLookup: async () => [],
   });
   assert.equal(missed.rung, "sxyprn");
   assert.equal(missed.scene.videoUrls[0]!.source, "sxyprn");
 
-  const fellThrough = await resolveScene(scene, {
+  // An error is not a no-match, and with no rung left there is nothing to fall
+  // through TO. The scene must come back unlinked rather than guessed: the
+  // eporner open rung that used to sit at position 3 is deleted, so this is now
+  // the end of the hierarchy and the honest answer is "nothing found".
+  const errored = await resolveScene(scene, {
     matcher: "sxyprn+eporner",
     creatorStudio: false,
     now,
@@ -125,23 +201,12 @@ test("rung 2 runs when the pool misses, rung 3 when sxyprn errors", async () => 
     sxyprnLookup: async () => {
       throw new Error("sxyprn search unavailable");
     },
-    openLookup: async () => [
-      {
-        video: {
-          id: "open1",
-          url: "https://www.eporner.com/video-open/",
-          embed: "https://www.eporner.com/embed/open/",
-          length_sec: 600,
-          title: "Marfe takes it deep",
-          added: "2026-03-05 10:00:00",
-        },
-        identityTier: 2,
-      },
-    ],
   });
-  assert.equal(fellThrough.rung, "eporner-open");
-  assert.equal(fellThrough.scene.videoUrls[0]!.source, "eporner");
-  assert.equal(fellThrough.tier, 2, "rung 3 reports its own tier, it is not assumed");
+  assert.equal(errored.matched, false);
+  assert.equal(errored.rung, null);
+  assert.deepEqual(errored.scene.videoUrls, []);
+  // Still stamped, so the read model can say when it was last looked at.
+  assert.equal(errored.scene.videoCheckedAt, now.toISOString());
 });
 
 test("a pool rung that rejected on the date is counted, not silently dropped", async () => {
@@ -164,7 +229,6 @@ test("a pool rung that rejected on the date is counted, not silently dropped", a
       poolLookup: async () => poolMiss({ rejectedByDate: 4, unknownDate: 2 }),
       sxyprnLookup: null,
       // Rungs 2 and 3 disabled, so the counts below are the POOL's alone.
-      openLookup: null,
     },
     rejections,
   );
@@ -194,7 +258,6 @@ test("a known-dead URL is never re-added", async () => {
     now,
     poolLookup: async () => poolMatch(),
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(result.matched, false);
   assert.equal(result.rung, null);
@@ -216,7 +279,6 @@ test("a metadata-only lane never enters the ladder", async () => {
       return null;
     },
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(called, false);
   assert.equal(result.changed, false);
@@ -242,7 +304,6 @@ test("a scene with a live link and one without a duration are left alone", async
     now,
     poolLookup: async () => poolMatch(),
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(kept.changed, false);
 
@@ -253,7 +314,6 @@ test("a scene with a live link and one without a duration are left alone", async
     now,
     poolLookup: async () => poolMatch(),
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(skipped.changed, false);
   assert.equal(skipped.matched, false);
@@ -274,7 +334,6 @@ test("a performer-less scene IS eligible, and can still be linked", async () => 
       return poolMatch({ identityTier: 3, title: "Marfe takes it deep" });
     },
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(called, true, "the pool rung was actually consulted");
   assert.equal(result.matched, true);
@@ -297,7 +356,6 @@ test("resolveLinks keeps ineligible scenes out of the queue and preserves order"
     matcherFor: () => ({ matcher: "sxyprn+eporner", creatorStudio: false }),
     poolLookup: async () => poolMatch(),
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(result.considered, 3);
   assert.equal(result.matched, 3);
@@ -326,7 +384,6 @@ test("a deferred lane produces zero links and never enters the ladder", async ()
       return poolMatch();
     },
     sxyprnLookup: null,
-    openLookup: null,
   });
   assert.equal(called, false);
   assert.equal(result.considered, 0);
@@ -348,7 +405,6 @@ test("limit bounds the queue, and 0 is a limit rather than no limit", async () =
     matcherFor: () => ({ matcher: "sxyprn", creatorStudio: false }),
     poolLookup: null,
     sxyprnLookup: async () => [sxyprnHit()],
-    openLookup: null,
   };
 
   assert.equal(
@@ -372,4 +428,77 @@ test("limit bounds the queue, and 0 is a limit rather than no limit", async () =
     4,
     "clamped by the queue",
   );
+});
+
+test("onProgress reports the queue once, then one step per completion, in order", async () => {
+  // The meter is driven from inside a CONCURRENT map, so the only safe progress
+  // signal is a running completion count. Deriving it from a result index would
+  // make the bar jump about as tasks interleave.
+  const scenes = Array.from({ length: 4 }, (_, index) =>
+    makeScene({ id: `test:${index}`, durationSec: 900, title: `Scene ${index}` }),
+  );
+  const seen: Array<{ done: number; total: number; matched: number }> = [];
+  const result = await resolveLinks({
+    scenes,
+    now,
+    mapWithConcurrency: async (items, task) =>
+      Promise.all(items.map((item, index) => task(item, index))),
+    matcherFor: () => ({ matcher: "sxyprn", creatorStudio: false }),
+    poolLookup: null,
+    // The first two resolve and the rest miss, so `matched` is asserted
+    // against a counter that is genuinely mid-flight rather than all-or-nothing.
+    sxyprnLookup: async (candidate) =>
+      candidate.id === "test:0" || candidate.id === "test:1"
+        ? [sxyprnHit({ title: candidate.title })]
+        : [],
+    onProgress: (done, total, matched) => seen.push({ done, total, matched }),
+  });
+  assert.equal(result.considered, 4);
+  // These two start in index order, so the two matches are the first two to
+  // finish: the running `matched` reaches 2 and then holds while the misses
+  // complete. A counter derived from a result index could not do this.
+  assert.deepEqual(seen, [
+    { done: 0, total: 4, matched: 0 },
+    { done: 1, total: 4, matched: 1 },
+    { done: 2, total: 4, matched: 2 },
+    { done: 3, total: 4, matched: 2 },
+    { done: 4, total: 4, matched: 2 },
+  ]);
+  assert.equal(seen.at(-1)?.matched, result.matched, "the running total agrees with the result");
+});
+
+test("onProgress reports the CAPPED queue, so a bounded run still reaches 100%", async () => {
+  const scenes = Array.from({ length: 6 }, (_, index) =>
+    makeScene({ id: `test:${index}`, durationSec: 900, title: `Scene ${index}` }),
+  );
+  const totals = new Set<number>();
+  await resolveLinks({
+    scenes,
+    now,
+    mapWithConcurrency: async (items, task) =>
+      Promise.all(items.map((item, index) => task(item, index))),
+    matcherFor: () => ({ matcher: "sxyprn", creatorStudio: false }),
+    poolLookup: null,
+    sxyprnLookup: async () => [],
+    limit: 2,
+    onProgress: (_done, total) => totals.add(total),
+  });
+  assert.deepEqual([...totals], [2], "the cap is the denominator throughout");
+});
+
+test("an empty queue still reports, as a real zero", async () => {
+  // A pass that checked nothing has to be distinguishable from a pass that never
+  // ran - otherwise the meter waits on a total that is never announced.
+  const seen: Array<[number, number]> = [];
+  await resolveLinks({
+    scenes: [makeScene({ id: "test:1", durationSec: null })],
+    now,
+    mapWithConcurrency: async (items, task) =>
+      Promise.all(items.map((item, index) => task(item, index))),
+    matcherFor: () => ({ matcher: "sxyprn", creatorStudio: false }),
+    poolLookup: null,
+    sxyprnLookup: null,
+    onProgress: (done, total) => seen.push([done, total]),
+  });
+  assert.deepEqual(seen, [[0, 0]]);
 });

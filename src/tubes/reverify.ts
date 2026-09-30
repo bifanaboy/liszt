@@ -139,15 +139,26 @@ export async function reverifyLinks(
     now,
     limit = REVERIFY_SLICE_SIZE,
     fatal,
+    onProgress,
   }: {
     verify: (link: VideoLink) => Promise<VerifyOutcome>;
     now: Date;
     limit?: number;
     /** True when the URL was already proven dead and must not return. */
     fatal?: (link: VideoLink) => boolean;
+    /**
+     * Progress of the re-verify pass, for the dashboard's live meter. Called
+     * with `(0, slice.length)` before the first check and once per finished
+     * link. An empty slice still reports, so the caller learns the pass is a
+     * genuine zero rather than a phase that never ran.
+     */
+    onProgress?: (done: number, total: number) => void;
   },
 ): Promise<{ scenes: Scene[]; changed: Scene[]; strikes: number; dead: number }> {
   const slice = selectReverifySlice(scenes, limit);
+  // Reported before the loop, including for an empty slice: a pass that checked
+  // nothing has to be distinguishable from a pass that never ran.
+  onProgress?.(0, slice.length);
   if (!slice.length) return { scenes, changed: [], strikes: 0, dead: 0 };
 
   const outcomes: VerifyOutcome[] = [];
@@ -157,6 +168,7 @@ export async function reverifyLinks(
     } catch {
       outcomes.push({ status: "inconclusive" });
     }
+    onProgress?.(outcomes.length, slice.length);
   }
 
   interface Update {

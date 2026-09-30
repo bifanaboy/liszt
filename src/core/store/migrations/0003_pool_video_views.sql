@@ -1,0 +1,34 @@
+-- Add the view count to the trusted-pool index.
+--
+-- WHY. The ranking chain in `core/matching.ts` is
+--     tier -> views -> lag -> URL
+-- and the pool rung was not populating the second term. `pool_videos` had no
+-- `views` column, and `hydrate()` short-circuits - returning without a `views`
+-- field - for any row that already has both a duration and a date, which is
+-- every fully-indexed row. So a multi-survivor shortlist on the pool rung was
+-- being ordered by UPLOAD PROXIMITY, not popularity: with `views` null on both
+-- sides, `rank` falls through to lag, and lag is not a quality signal. The
+-- specified rule ("performer narrowing to multiple -> pick the highest view
+-- count") was not being applied at all on the rung that produces 45 of 46 links.
+--
+-- MEASURED, and this is the part that justifies the change rather than the
+-- absence of a bug report: the plan's residual risk called this a possible
+-- behaviour change to already-passing candidates. Over the 46 links live on
+-- 2026-09-30, the winner's view count was the deciding signal on 0 of them -
+-- every winner was decided by identity tier, and ties inside a tier were broken
+-- by lag. So this column changes no link that exists today. It makes the
+-- documented rule true, and it makes a future tiebreak honest, at zero
+-- measured cost.
+--
+-- ADDITIVE, NO BACKFILL. `ALTER TABLE ADD COLUMN` gives every existing row NULL,
+-- and NULL is exactly what those rows already reported to the matcher, so
+-- nothing changes behaviour until a row is re-hydrated. That matters here
+-- because the pool's live database does not survive an instance change and is
+-- rebuilt from scratch on the next sync anyway, so a backfill would be thrown
+-- away almost immediately.
+--
+-- NULL IS A FIRST-CLASS VALUE HERE, not a zero. `rank` deliberately lets a
+-- candidate with a known count outrank one the source said nothing about, and
+-- two NULLs fall through to lag. A zero default would be a lie: it would let an
+-- uncounted video outrank a genuinely uncounted-but-positive one.
+ALTER TABLE pool_videos ADD COLUMN views INTEGER;

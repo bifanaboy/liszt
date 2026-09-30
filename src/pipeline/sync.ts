@@ -34,7 +34,7 @@ import type {
 } from "../sources/types.ts";
 import { resolveLinks, emptyRejections, type RungRejections } from "../tubes/resolve.ts";
 import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
-import type { EpornerOpenMatch } from "../tubes/eporner.ts";
+import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch } from "../tubes/sxyprn.ts";
 import type { PoolMatch } from "../tubes/eporner-pool.ts";
 import type { IdentityTier } from "../core/matching.ts";
@@ -165,7 +165,6 @@ export function normaliseScene(
 export interface SyncLookups {
   poolLookup: ((scene: MatchScene, now: Date) => Promise<PoolMatch | null>) | null;
   sxyprnLookup: ((scene: MatchScene) => Promise<SxyprnMatch[]>) | null;
-  openLookup: ((scene: MatchScene) => Promise<EpornerOpenMatch[]>) | null;
   /** Optional cap on scenes resolved per cycle. */
   limit?: number;
 }
@@ -182,6 +181,16 @@ export interface SyncOptions {
   lookups: SyncLookups;
   /** Skip the resolve/re-verify stages entirely (used by `--no-links` runs). */
   resolveEnabled?: boolean;
+  /**
+   * Optional live-progress sink. The cycle narrates itself into it as it works;
+   * nothing about the run's OUTCOME depends on it, and `SyncSummary` is
+   * unchanged, so a missing tracker is a quiet no-op rather than a failure.
+   *
+   * `begin()` is called here rather than by the caller, because the run id and
+   * start time are minted here - a tracker started outside would have to
+   * duplicate both and could drift from the ledger row they describe.
+   */
+  progress?: ProgressTracker;
 }
 
 export interface SyncSummary {
@@ -237,6 +246,7 @@ function sourceContext(
  */
 export function createSync(options: SyncOptions): (reason: string) => Promise<SyncSummary> {
   const { store, sources, fetcher, clock, log, windowDays, fetchConcurrency } = options;
+  const progress = options.progress;
   const resolveEnabled = options.resolveEnabled ?? true;
   const laneBySource = new Map(
     sources.map((adapter) => [
@@ -251,20 +261,50 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const from = dateOnly(new Date(now.getTime() - windowDays * 86_400_000));
     const runId = `sync-${now.getTime()}-${randomUUID().slice(0, 8)}`;
     const startedAt = now.toISOString();
-    store.recordRun({
-      id: runId,
-      kind: "sync",
-      startedAt,
-      endedAt: null,
-      outcomes: [],
-      ok: null,
-      error: null,
-    });
-    log.info("sync started", { runId, reason, window: { from, to } });
+    // The tracker is CYCLE-scoped and is begun by the composition root, before
+    // the pool index - the index runs first and its progress must survive. A
+    // direct caller that never began it (a test, or `createSync` used on its
+    // own) would otherwise have every emission below dropped as not-active, so
+    // the run is begun here instead. `begin()` is not called unconditionally:
+    // doing that would wipe the indexing counters on every cycle.
+    if (progress && !progress.snapshot().active) {
+      progress.begin(runId, startedAt, { sources: sources.length, uploaders: 0 });
+    }
 
-    const outcomes = await mapWithConcurrency(
+    try {
+      store.recordRun({
+        id: runId,
+        kind: "sync",
+        startedAt,
+        endedAt: null,
+        outcomes: [],
+        ok: null,
+        error: null,
+      });
+      log.info("sync started", { runId, reason, window: { from, to } });
+      const outcomes = await fanOut(from, now);
+      const { matched, resolved, reverified, rejections, tiers, expired, windowScenes } =
+        await linkAndTally(from, to, now);
+      return tally(
+        { runId, startedAt, from, to, endedAt: clock.now().toISOString(), outcomes, rejections },
+        { matched, resolved, reverified, expired, windowScenes, tiers },
+      );
+    } catch (error) {
+      // The counters stay where they stopped: a failed cycle should still be
+      // able to say how far it got before it died.
+      progress?.fail();
+      throw error;
+    }
+  };
+
+  /** Phase 1: every source, in isolation, one completion per configured adapter. */
+  async function fanOut(from: string, now: Date): Promise<RunOutcome[]> {
+    progress?.stage("populating");
+    return mapWithConcurrency(
       [...sources],
       async (adapter): Promise<RunOutcome> => {
+        progress?.sourceStart(adapter.id);
+        let outcome: RunOutcome;
         try {
           const result: SourceResult = await adapter.fetch(
             from,
@@ -303,7 +343,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             count,
             verifiedEmpty: result.verifiedEmpty,
           });
-          return { source: adapter.id, ok: true, count };
+          outcome = { source: adapter.id, ok: true, count };
         } catch (error) {
           const message = (error as Error).message;
           recordSourceFailure(store, adapter, message);
@@ -311,12 +351,31 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             source: adapter.id,
             error: message,
           });
-          return { source: adapter.id, ok: false, count: 0, error: message };
+          outcome = { source: adapter.id, ok: false, count: 0, error: message };
         }
+        // An attempt, not a success: the meter has to reach its total even when
+        // a source throws, or a failing source reads as a stalled pipeline.
+        progress?.sourceDone(adapter.id);
+        return outcome;
       },
       fetchConcurrency,
     );
+  }
 
+  /** Phases 2 and 3: resolve the eligible scenes, then re-verify the stalest slice. */
+  async function linkAndTally(
+    from: string,
+    to: string,
+    now: Date,
+  ): Promise<{
+    matched: number;
+    resolved: number;
+    reverified: number;
+    rejections: RungRejections;
+    tiers: IdentityTier[];
+    expired: number;
+    windowScenes: Scene[];
+  }> {
     let matched = 0;
     let resolved = 0;
     let reverified = 0;
@@ -325,6 +384,13 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
 
     if (resolveEnabled) {
       const before = store.listWindow(from, to);
+      progress?.stage("linking");
+      // Seeded with the whole window, then corrected by `resolveLinks` to the
+      // queue it actually built: eligibility filtering and `lookups.limit` both
+      // shrink it, and a bar whose denominator moved would be a lie. The
+      // correction lands in the same synchronous block, before any poll can
+      // read the seed.
+      progress?.linkStart(before.length);
       const resolution = await resolveLinks({
         scenes: before,
         now,
@@ -333,8 +399,14 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           laneBySource.get(scene.sourceId) ?? { matcher: null, creatorStudio: false },
         poolLookup: options.lookups.poolLookup,
         sxyprnLookup: options.lookups.sxyprnLookup,
-        openLookup: options.lookups.openLookup,
+        log: options.log,
         ...(options.lookups.limit !== undefined ? { limit: options.lookups.limit } : {}),
+        ...(progress
+          ? {
+              onProgress: (done: number, total: number, hit: number) =>
+                progress.linkStep(done, total, hit),
+            }
+          : {}),
       });
       matched = resolution.matched;
       resolved = resolution.considered;
@@ -343,11 +415,22 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       for (const scene of resolution.changed) store.upsertScene(scene);
 
       const verify = createLinkVerifier({ fetcher });
-      const reverifyResult = await reverifyLinks(store.listWindow(from, to), { verify, now });
+      progress?.stage("verifying");
+      const reverifyResult = await reverifyLinks(store.listWindow(from, to), {
+        verify,
+        now,
+        ...(progress
+          ? {
+              onProgress: (done: number, total: number) =>
+                done === 0 ? progress.verifyStart(total) : progress.verifyStep(done, total),
+            }
+          : {}),
+      });
       reverified = reverifyResult.dead + reverifyResult.strikes;
       for (const scene of reverifyResult.changed) store.upsertScene(scene);
     }
 
+    progress?.stage("finishing");
     const expired = store.deleteReleasedBefore(from).length;
 
     // Recompute per-source counts from the retained window so a source that
@@ -371,8 +454,31 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         sceneCount: counts.get(status.sourceId) ?? 0,
       });
     }
+    return { matched, resolved, reverified, rejections, tiers, expired, windowScenes };
+  }
 
-    const endedAt = clock.now().toISOString();
+  /** Phase 4: close the ledger row and hand back the summary. */
+  function tally(
+    run: {
+      runId: string;
+      startedAt: string;
+      from: string;
+      to: string;
+      endedAt: string;
+      outcomes: RunOutcome[];
+      rejections: RungRejections;
+    },
+    counts: {
+      matched: number;
+      resolved: number;
+      reverified: number;
+      expired: number;
+      windowScenes: Scene[];
+      tiers: IdentityTier[];
+    },
+  ): SyncSummary {
+    const { runId, startedAt, from, to, endedAt, outcomes, rejections } = run;
+    const { matched, resolved, reverified, expired, windowScenes, tiers } = counts;
     const ok = outcomes.every((outcome) => outcome.ok);
     const error = outcomes.find((outcome) => !outcome.ok)?.error ?? null;
     store.recordRun({ id: runId, kind: "sync", startedAt, endedAt, outcomes, ok, error });
@@ -391,6 +497,10 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       tiers: tierHistogram(tiers),
     });
 
+    // The bar collapses here rather than waiting for the caller: the ledger row
+    // is closed, so this is the end of the run as far as a reader is concerned.
+    progress?.finish();
+
     return {
       runId,
       startedAt,
@@ -406,7 +516,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       rejections,
       tiers,
     };
-  };
+  }
 }
 
 /** Winners per identity tier. A rising tier-0 share is the decoy signal. */
