@@ -57,6 +57,7 @@ const linksFor = (scene) => {
   });
 };
 
+/** Render the filtered, sorted catalogue grouped by release month. */
 function render() {
   const query = search.value.trim().toLocaleLowerCase();
   const filtered = scenes.filter((scene) =>
@@ -108,6 +109,7 @@ function renderSources() {
   }).join("");
 }
 
+/** Apply a catalogue response to the scene list, source summary, and progress display. */
 function apply(data) {
   scenes = Array.isArray(data.scenes) ? data.scenes : [];
   statuses = Array.isArray(data.sources) ? data.sources : [];
@@ -165,6 +167,7 @@ let rowShown = false;
 let primed = false;
 let announcedRun = null;
 
+/** Coerce a progress value to a finite number, using zero when conversion fails. */
 const num = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
 
 /** Fill for one stage as a whole percent, or null when there is nothing to count. */
@@ -222,6 +225,7 @@ function setAria(track, percent, text) {
   track.setAttribute("aria-valuetext", text);
 }
 
+/** Update stage meters, captions, and accessibility values from a progress snapshot. */
 function renderProgress(progress) {
   const populate = progress.populate || {};
   const link = progress.link || {};
@@ -253,6 +257,7 @@ function renderProgress(progress) {
   setAria(linkTrack, links, linkNote.textContent);
 }
 
+/** Reveal the progress row once, starting its fade after the initial layout. */
 function showRow() {
   if (rowShown) return;
   rowShown = true;
@@ -263,6 +268,7 @@ function showRow() {
   requestAnimationFrame(() => { progressRow.style.opacity = ""; });
 }
 
+/** Cancel reveal and elapsed timers, clear elapsed text, and hide the progress row. */
 function hideRow() {
   if (revealTimer) { clearTimeout(revealTimer); revealTimer = null; }
   if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
@@ -273,10 +279,12 @@ function hideRow() {
   progressRow.style.opacity = "";
 }
 
+/** Refresh elapsed time from the active run, or clear it when the run is inactive. */
 function tickElapsed() {
   overallElapsed.textContent = progressState.active ? elapsedText(progressState.startedAt) : "";
 }
 
+/** Update the refresh button state and show the in-progress caption for an active run. */
 function syncRefreshChrome(active) {
   refreshButton.disabled = active;
   refreshButton.classList.toggle("is-loading", active);
@@ -328,12 +336,14 @@ function applyProgress(next) {
   return active;
 }
 
+/** Replace the pending progress poll with a delayed one while the tab is visible. */
 function schedulePoll(delay) {
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   if (document.hidden) return;
   pollTimer = setTimeout(pollProgress, delay);
 }
 
+/** Fetch progress with at most one request in flight, then schedule the next poll. */
 async function pollProgress() {
   pollTimer = null;
   // One request in flight, ever. Chained with `setTimeout` rather than

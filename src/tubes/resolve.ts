@@ -148,8 +148,13 @@ interface RungAttempt {
   leftovers: FallbackCandidate[];
 }
 
+/** Create a lookup result with neither a winner nor candidates for the fallback. */
 const emptyAttempt = (): RungAttempt => ({ winner: null, leftovers: [] });
 
+/**
+ * Try the trusted pool, update rejection counts, and retain fallback candidates if no winner
+ * exists.
+ */
 async function tryPool(
   scene: MatchScene,
   dead: Set<string>,
@@ -215,6 +220,7 @@ async function tryPool(
   return { winner: null, leftovers };
 }
 
+/** Compute a title's identity tier for the fallback candidate recorded in the run ledger. */
 function identityTierFor(scene: MatchScene, title: string): IdentityTier {
   // Keep the fallback's tier accurate for the run ledger even though the final
   // confidence is forced low. The identity signal has already failed to produce
@@ -236,6 +242,7 @@ function identityTierFor(scene: MatchScene, title: string): IdentityTier {
  */
 let rungFailuresLogged = 0;
 
+/** Log selected lookup failures using a shared counter to limit repeated warnings. */
 function logRungFailure(deps: ResolveDeps, rung: string, error: unknown): void {
   if (rungFailuresLogged !== 0 && rungFailuresLogged % 10 !== 0) {
     rungFailuresLogged += 1;
@@ -249,6 +256,10 @@ function logRungFailure(deps: ResolveDeps, rung: string, error: unknown): void {
   });
 }
 
+/**
+ * Try sxyprn for an identity match, counting rejections and retaining tier-zero fallback
+ * candidates.
+ */
 async function trySxyprn(
   scene: MatchScene,
   dead: Set<string>,

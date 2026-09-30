@@ -179,12 +179,14 @@ function emptyTierHistogram(): Record<"0" | "1" | "2" | "3", number> {
 const DELTA_BUCKETS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10+"] as const;
 type DeltaBucket = (typeof DELTA_BUCKETS)[number];
 
+/** Group a duration difference into rounded seconds up to nine, or the overflow bucket. */
 function deltaBucket(delta: number): DeltaBucket {
   if (delta <= 0) return "0";
   if (delta <= 9) return String(Math.min(9, Math.round(delta))) as DeltaBucket;
   return "10+";
 }
 
+/** Create a duration-difference histogram with every bucket initialized to zero. */
 function emptyDeltaHistogram(): Record<DeltaBucket, number> {
   return Object.fromEntries(DELTA_BUCKETS.map((bucket) => [bucket, 0])) as Record<
     DeltaBucket,
@@ -214,6 +216,7 @@ function rowsWithinBand(survivorDurations: number[], scene: MatchScene, toleranc
   return survivorDurations.filter((duration) => Math.abs(duration - target) <= tolerance).length;
 }
 
+/** Parse calibration options, gather pool candidates, and print a JSON matching report. */
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {

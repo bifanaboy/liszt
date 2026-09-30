@@ -84,6 +84,7 @@ function viewsOf(raw: unknown): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** Search unlinked scenes and print uploader proposals without saving links or changing trust. */
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {

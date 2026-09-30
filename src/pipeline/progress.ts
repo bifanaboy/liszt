@@ -86,6 +86,7 @@ export interface ProgressTracker {
   snapshot(): SyncProgress;
 }
 
+/** Create an inactive snapshot with fresh, zeroed counters for every stage. */
 function emptyProgress(): SyncProgress {
   return {
     active: false,
@@ -98,6 +99,7 @@ function emptyProgress(): SyncProgress {
   };
 }
 
+/** Copy a snapshot and its nested counters so callers cannot mutate tracker state. */
 function clone(progress: SyncProgress): SyncProgress {
   return {
     ...progress,
@@ -126,10 +128,12 @@ function denominator(value: number): number {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
+/** Create an in-memory tracker whose updates apply only during an active refresh cycle. */
 export function createProgressTracker(): ProgressTracker {
   let state = emptyProgress();
 
   return {
+    /** Reset counters and start an active indexing cycle with the supplied totals. */
     begin(runId, startedAt, totals) {
       // Reset here, not in `finish()`: a crashed cycle must not leave counters
       // behind for the next reader to mistake for a live run.
@@ -142,11 +146,13 @@ export function createProgressTracker(): ProgressTracker {
       state.populate.total = denominator(totals.sources);
     },
 
+    /** Set the stage of the active cycle. */
     stage(stage) {
       if (!state.active) return;
       state.stage = stage;
     },
 
+    /** Update indexing counts and the most recently completed uploader for the active cycle. */
     indexStep(done, total, uploader) {
       if (!state.active) return;
       state.index.total = denominator(total);
@@ -154,11 +160,16 @@ export function createProgressTracker(): ProgressTracker {
       state.index.current = uploader;
     },
 
+    /** Mark a source as in flight once for the active cycle. */
     sourceStart(sourceId) {
       if (!state.active) return;
       if (!state.populate.current.includes(sourceId)) state.populate.current.push(sourceId);
     },
 
+    /**
+     * Remove a source from the in-flight list and count its completed attempt during the active
+     * cycle.
+     */
     sourceDone(sourceId) {
       if (!state.active) return;
       state.populate.current = state.populate.current.filter((id) => id !== sourceId);
@@ -168,6 +179,7 @@ export function createProgressTracker(): ProgressTracker {
       );
     },
 
+    /** Start the active cycle's resolution queue with fresh completion and match counts. */
     linkStart(total) {
       if (!state.active) return;
       state.link.substage = "resolve";
@@ -176,6 +188,7 @@ export function createProgressTracker(): ProgressTracker {
       state.link.matched = 0;
     },
 
+    /** Update resolution totals, completions, and matches for the active cycle. */
     linkStep(done, total, matched) {
       if (!state.active) return;
       state.link.substage = "resolve";
@@ -184,6 +197,7 @@ export function createProgressTracker(): ProgressTracker {
       state.link.matched = count(matched, state.link.total);
     },
 
+    /** Start verification for the active cycle and reset its completed count. */
     verifyStart(total) {
       if (!state.active) return;
       state.link.substage = "verify";
@@ -191,6 +205,7 @@ export function createProgressTracker(): ProgressTracker {
       state.link.verifyDone = 0;
     },
 
+    /** Update verification totals and completions for the active cycle. */
     verifyStep(done, total) {
       if (!state.active) return;
       state.link.substage = "verify";
@@ -198,18 +213,21 @@ export function createProgressTracker(): ProgressTracker {
       state.link.verifyDone = count(done, state.link.verifyTotal);
     },
 
+    /** End the active cycle in the error stage while retaining its counters. */
     fail() {
       if (!state.active) return;
       state.stage = "error";
       state.active = false;
     },
 
+    /** End the active cycle in the idle stage while retaining its counters. */
     finish() {
       if (!state.active) return;
       state.active = false;
       state.stage = "idle";
     },
 
+    /** Return an independent copy of the current progress state. */
     snapshot() {
       return clone(state);
     },
