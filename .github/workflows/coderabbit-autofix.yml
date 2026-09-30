@@ -1,0 +1,61 @@
+name: CodeRabbit Autofix
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  trigger-autofix:
+    if: >
+      github.event.review.user.login == 'coderabbitai[bot]' &&
+      github.event.review.state == 'changes_requested'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check whether autofix was already requested for this commit
+        id: check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const sha = pr.head.sha;
+            const marker = `<!-- coderabbit-autofix:${sha} -->`;
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                per_page: 100
+              }
+            );
+
+            const alreadyRequested = comments.some(
+              comment => comment.body?.includes(marker)
+            );
+
+            core.setOutput("already_requested", alreadyRequested ? "true" : "false");
+
+      - name: Trigger CodeRabbit Autofix
+        if: steps.check.outputs.already_requested != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const sha = pr.head.sha;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: `@coderabbitai autofix
+
+              <!-- coderabbit-autofix:${sha} -->`
+            });
