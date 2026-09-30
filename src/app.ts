@@ -110,6 +110,16 @@ async function main(): Promise<void> {
             failed: report.uploaders.filter((entry) => entry.error).map((entry) => entry.uploader),
           });
         }
+        // A full re-walk that could not reach the end of a listing deletes
+        // nothing, so upstream deletions stay uncorrected until one completes.
+        // It is not an error, but it is also not health - reported here rather
+        // than only as a per-account truncation log line.
+        const skipped = report.uploaders.filter((entry) => entry.pruneSkipped);
+        if (skipped.length) {
+          log.warn("pool index: absence prune withheld", {
+            uploaders: skipped.map((entry) => entry.uploader),
+          });
+        }
       } catch (error) {
         // The pool is an optimisation; its failure must not stop the sync.
         log.warn("pool index failed", { error: (error as Error).message });

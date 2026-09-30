@@ -208,14 +208,18 @@ export function createDirectScrapeStudio(options: DirectScrapeOptions): SourceAd
       }
 
       // One failed video page must not take the whole lane's scenes with it.
-      // `mapWithConcurrency` rejects the entire call as soon as one task
-      // rejects, so a single 500 or a one-off timeout discarded every record the
-      // other N-1 pages had already produced. Failures are collected per entry
-      // instead, and a lane that lost records says so - a fully failed walk
-      // still reports `verifiedEmpty: false`, which is what makes sync retain
-      // the last-good rows rather than treating the outage as an empty studio.
+      // Both fan-outs reject the whole call as soon as one task rejects, so a
+      // single 500 or a one-off timeout discarded every record the other N-1
+      // pages had already produced. Failures are collected per entry instead,
+      // and a lane that lost records says so - a fully failed walk still reports
+      // `verifiedEmpty: false`, which is what makes sync retain the last-good
+      // rows rather than treating the outage as an empty studio.
+      //
+      // `ctx.mapIsolated`, not `ctx.mapWithConcurrency`: this runs inside the
+      // cycle's per-source fan-out, so the caller already holds a slot of the
+      // shared (non-re-entrant) pool and a second acquire would deadlock.
       const failed: { url: string; error: string }[] = [];
-      const settled = await ctx.mapWithConcurrency(queue, async (entry) => {
+      const settled = await ctx.mapIsolated(queue, async (entry) => {
         try {
           const html = await fetchHtml(entry.releaseUrl, ctx, allowedHosts, name);
           return parseVideoPage(html, entry, base);

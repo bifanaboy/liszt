@@ -50,7 +50,7 @@ import {
   type TubeCandidate,
 } from "../core/matching.ts";
 import { createExpiringCache, epornerEmbedUrl, epornerVideoId, epornerWatchUrl, validEpornerEmbedUrl, validEpornerUrl, type EpornerVideo } from "./eporner.ts";
-import { mapWithConcurrency, resolveFetchConcurrency } from "../core/concurrency.ts";
+import { mapIsolated } from "../core/concurrency.ts";
 import { classifyError } from "../core/fetcher.ts";
 import type { PoolVideo, SqliteStore } from "../core/store/sqlite.ts";
 import type { Fetcher } from "../sources/types.ts";
@@ -262,8 +262,14 @@ export interface UploaderIndexReport {
   watermark: string | null;
   fullRewalk: boolean;
   pruned: number;
-  /** True when the walk stopped on a 404, i.e. it reached the end of the list. */
+  /** True when the walk stopped on a 404 or a short page: it saw the whole list. */
   endOfListing: boolean;
+  /**
+   * True when a full re-walk completed but was truncated, so the prune-by-absence
+   * was withheld. Surfaced rather than only logged: a run that silently stops
+   * correcting deletions otherwise looks identical to a healthy one.
+   */
+  pruneSkipped?: boolean;
   error?: string;
 }
 
@@ -331,6 +337,15 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
       // a short page - leaves it false, and that distinction decides whether the
       // prune-by-absence below is allowed to delete anything.
       let reachedEnd = false;
+      // The listing's own page size, measured rather than assumed. eporner
+      // serves a fixed number of cards per page and the LAST page is short, so
+      // "shorter than a full page" is the end-of-listing signal - but only
+      // relative to a page size this walk actually observed. Hard-coding `12`
+      // made the short-page test unreachable: the break fired before the 404
+      // that would have set the flag, so for any account whose video count is
+      // not an exact multiple of the page size the prune NEVER ran and upstream
+      // deletions were never corrected.
+      let pageSize = 0;
       for (let page = 1; page <= maxPages; page += 1) {
         const url = profileListingUrl(uploader, page);
         let entries: ProfileEntry[];
@@ -344,7 +359,6 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
           // Anything else (timeout, 403, 5xx, a shape change) is a real failure
           // and must surface as one, or a broken account would look healthy.
           if (classifyError(error) === "definitive") {
-            report.endOfListing = true;
             reachedEnd = true;
             break;
           }
@@ -354,6 +368,11 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
           reachedEnd = true;
           break;
         }
+        // The first page is the reference: it is the one page guaranteed not to
+        // be the short final page. A shrunken page size here simply means the
+        // measured size is smaller, which is still correct - the test below is
+        // relative, so eporner changing its page size needs no code change.
+        if (page === 1) pageSize = entries.length;
 
         let oldest = Number.POSITIVE_INFINITY;
         let newRows = 0;
@@ -390,8 +409,24 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
         const stopAtWindow = oldest < windowStartMs;
         const stopAtWatermark = !fullRewalk && oldest <= watermarkMs;
         if (stopAtWindow || stopAtWatermark) break;
-        if (entries.length < 12) break;
+        // A page shorter than the measured page size IS the final page. This is
+        // the only page-level stop that genuinely reaches the end, so it is the
+        // one that sets the flag and lets the prune run. It is checked LAST,
+        // after the two confidence-ordered stops, so a page that is both short
+        // and entirely stale still reports "truncated" - which is the safe
+        // answer, because the prune is skipped rather than over-applied.
+        if (pageSize > 0 && entries.length < pageSize) {
+          reachedEnd = true;
+          break;
+        }
       }
+
+      // Derived, never assigned at the break sites: those are three different
+      // paths to the same conclusion, and setting the flag in only one of them
+      // made a complete short-page walk report `endOfListing: false` - which the
+      // cadence stamp below reads, so the re-walk could complete and still never
+      // be recorded as complete.
+      report.endOfListing = reachedEnd;
 
       if (fullRewalk) {
         // The re-walk is what corrects deletions and drift. Because the listing
@@ -411,6 +446,7 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
             store.prunePoolMissing(uploader, seen) +
             store.prunePoolUploader(uploader, new Date(windowStartMs).toISOString());
         } else {
+          report.pruneSkipped = true;
           log("eporner pool: re-walk truncated, skipping the absence prune", {
             uploader,
             pagesFetched: report.pagesFetched,
@@ -430,7 +466,16 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
     }
   }
 
-  if (reports.every((report) => !report.error)) {
+  // The cadence is stamped only when EVERY account that attempted a full re-walk
+  // also reached the end of its listing. "No account errored" is not the same
+  // thing: a walk truncated by the window, the watermark or the `maxPages`
+  // ceiling completes cleanly and would defer the prune for a whole
+  // `fullRewalkDays` - so a listing that stays just past the stop conditions
+  // silently stops correcting upstream deletions forever. Accounts that did not
+  // attempt a re-walk (`fullRewalk: false`) say nothing about completeness, so
+  // they are not counted either way.
+  const rewalked = reports.filter((report) => report.fullRewalk);
+  if (rewalked.length && rewalked.every((report) => !report.error && report.endOfListing)) {
     store.setPoolMeta(POOL_FULL_REWALK_KEY, now.toISOString());
   }
   return {
@@ -454,8 +499,6 @@ export interface PoolLookupOptions {
   maxHydrations?: number;
   /** Bound the rows examined per account, newest first. */
   maxConsidered?: number;
-  /** Concurrent `video/id` hydrations. Defaults to the shared pool's setting. */
-  fetchConcurrency?: number;
 }
 
 /** Why the pool rung produced no link. Recorded, not swallowed. */
@@ -598,9 +641,16 @@ export interface PoolGatherDeps {
   log(message: string, fields?: Record<string, unknown>): void;
   maxHydrations?: number;
   maxConsidered?: number;
-  /** Concurrent `video/id` hydrations. Defaults to the shared pool's setting. */
-  fetchConcurrency?: number;
 }
+
+/**
+ * In-flight `video/id` hydrations per scene. Fixed rather than configurable:
+ * the hydration is NESTED inside `resolveLinks`' own fan-out, so the real
+ * ceiling is this times the outer limit, and a knob here would let a caller
+ * silently reintroduce the burst the bound exists to prevent. 4 keeps the worst
+ * case at 16 requests in flight at the default `fetchConcurrency` of 4.
+ */
+const POOL_HYDRATION_CONCURRENCY = 4;
 
 /**
  * Everything in the pool rung that happens BEFORE the date half: scan the
@@ -621,7 +671,6 @@ export async function gatherPoolSurvivors(
   const maxHydrations = deps.maxHydrations ?? 40;
   /** Bound the rows examined per account, newest first. */
   const maxConsidered = deps.maxConsidered ?? 750;
-  const fetchConcurrency = resolveFetchConcurrency(deps.fetchConcurrency);
 
   const releaseMs = Date.parse(scene.releaseDate);
   // The SQL narrowing is a symmetric superset of the real asymmetric window,
@@ -671,13 +720,19 @@ export async function gatherPoolSurvivors(
   // Hydration is the only network cost in this rung, and it is bounded TWICE:
   // by how many rows are queued (`maxHydrations`) and by how many are in flight
   // at once. `Promise.all` over the whole queue honoured the first and ignored
-  // the second - a 40-way burst of `video/id` requests from a single scene,
-  // from a client whose stated invariant is that every fan-out draws from ONE
-  // process-wide pool. `mapWithConcurrency` is that pool.
-  const hydrated = await mapWithConcurrency(
+  // the second - a 40-way burst of `video/id` requests from a single scene.
+  //
+  // The in-flight bound is `mapIsolated`, NOT the shared pool. This runs inside
+  // `resolveLinks`' own fan-out, so a caller already holds its slot, and asking
+  // the shared (non-re-entrant) pool for a second one deadlocks the moment both
+  // fan-outs reach their limit. The number is deliberately fixed and small:
+  // 4 outer scenes x 4 hydrations = 16 in flight, against the 40-way
+  // `Promise.all` this replaced and against this being the request path most
+  // likely to draw a 429 from eporner.
+  const hydrated = await mapIsolated(
     queue,
     (video) => hydrate(video, { store, fetcher, now }),
-    fetchConcurrency,
+    POOL_HYDRATION_CONCURRENCY,
   );
   const candidates = hydrated
     .filter(
@@ -717,9 +772,6 @@ export function createPoolLookup(options: PoolLookupOptions) {
         log,
         ...(options.maxHydrations !== undefined ? { maxHydrations: options.maxHydrations } : {}),
         ...(options.maxConsidered !== undefined ? { maxConsidered: options.maxConsidered } : {}),
-        ...(options.fetchConcurrency !== undefined
-          ? { fetchConcurrency: options.fetchConcurrency }
-          : {}),
       },
       now,
     );

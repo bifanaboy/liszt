@@ -480,3 +480,94 @@ test("the mojibake repair never corrupts text that was not mis-decoded", () => {
   assert.equal(repairMojibake(bold), bold);
   assert.deepEqual(matchTokens(null), []);
 });
+
+// ------------------------------------------------------------- total ordering
+
+/**
+ * `pickMatch` has no exported comparator, so a total order is only observable
+ * through its two call sites: the final `sort`, and the stem-collapse
+ * `rank(...) < 0` that decides which member of a group survives. Both are
+ * driven by input order through `Array.prototype.sort`, so a comparator that is
+ * not transitive makes the winner depend on the order the candidates arrived in.
+ *
+ * `dateWindowDays: null` throughout, and deliberately so: the window rejects an
+ * UNKNOWN date outright, so with the window on, the un-dated candidate is
+ * filtered out before it ever reaches the comparator and the whole point is
+ * untestable. The window-off call is a real one (`gatherPoolSurvivors` uses it)
+ * and it is where the ordering actually has to hold.
+ */
+const UNWINDOWED = { dateWindowDays: null } as const;
+
+test("the winner does not depend on input order", () => {
+  // A is the tightest lag (1 day), B has no date at all, C is the loosest (5
+  // days). The URLs are ordered so the URL tiebreak OPPOSES the lag order -
+  // that is what makes the case discriminating rather than incidental.
+  const a = candidate({
+    title: "Marfe takes it deep",
+    added: "2026-03-05 00:00:00",
+    url: "https://www.eporner.com/video-zzzz/",
+  });
+  const b = candidate({
+    title: "Marfe takes it deep again",
+    added: null,
+    url: "https://www.eporner.com/video-aaaa/",
+  });
+  const c = candidate({
+    title: "Marfe takes it deep tonight",
+    added: "2026-03-09 00:00:00",
+    url: "https://www.eporner.com/video-mmmm/",
+  });
+
+  const permutations: TubeCandidate[][] = [
+    [a, b, c],
+    [a, c, b],
+    [b, a, c],
+    [b, c, a],
+    [c, a, b],
+    [c, b, a],
+  ];
+  const winners = permutations.map(
+    (order) => pickMatch(scene, order, UNWINDOWED)?.candidate.url ?? null,
+  );
+  assert.equal(
+    new Set(winners).size,
+    1,
+    `every input order must agree on the winner, got ${JSON.stringify(winners)}`,
+  );
+  // And the winner is the tightest LAG, not the alphabetically first URL. The
+  // old both-finite guard made B win on its URL alone, so a candidate the source
+  // could not date beat one it dated to within a day - the exact inversion the
+  // guard's comment claimed to prevent.
+  assert.equal(
+    winners[0],
+    a.url,
+    "a finite lag beats no lag, and the smallest finite lag beats the larger one",
+  );
+});
+
+test("the stem collapse keeps the tighter lag, not the first-seen member", () => {
+  // The second call site: within one stem the same order decides the survivor.
+  // A repost and its original collapse to a single candidate, so a comparator
+  // that ranks the un-dated one first keeps it and discards the dated one.
+  const undated = candidate({
+    title: "Marfe takes it deep 0304",
+    added: null,
+    url: "https://www.eporner.com/video-aaaa/",
+  });
+  const dated = candidate({
+    title: "Marfe takes it deep 0304 [new]",
+    added: "2026-03-05 00:00:00",
+    url: "https://www.eporner.com/video-zzzz/",
+  });
+  assert.equal(titleStem(undated.title), titleStem(dated.title), "one stem, two members");
+  for (const order of [
+    [undated, dated],
+    [dated, undated],
+  ]) {
+    assert.equal(
+      pickMatch(scene, order, UNWINDOWED)?.candidate.url,
+      dated.url,
+      "the dated member wins the stem regardless of which arrived first",
+    );
+  }
+});

@@ -19,10 +19,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSxyprnClient, durationStringToSeconds } from "../src/tubes/sxyprn-client.ts";
 import { createSxyprnLookup, type SxyprnCard, type SxyprnClient, type SxyprnDetail } from "../src/tubes/sxyprn.ts";
-import { makeMatchScene } from "./helpers.ts";
+import { makeMatchScene, withDeadline } from "./helpers.ts";
+import { mapWithConcurrency } from "../src/core/concurrency.ts";
 
 const POST = "https://sxyprn.com/post/6ab1a9bec8445.html";
 const OTHER = "https://sxyprn.com/post/6ab1a9bec8446.html";
+const THIRD = "https://sxyprn.com/post/6ab1a9bec8447.html";
 
 /** A package stub whose two methods the tests drive. */
 function packageStub(over: {
@@ -283,4 +285,43 @@ test("the detail pass fetches concurrently but verifies in rank order", async ()
   const matches = await pending;
   assert.equal(matches.length, 1);
   assert.equal(matches[0]?.url, POST, "rank order decides the winner, not completion order");
+});
+
+test("the detail pass inside a scene resolve does not deadlock the shared fetch pool", async () => {
+  // Same hazard as the pool rung's hydration, and it is reached more often: the
+  // detail pass runs for every scene whose card pass matched, inside
+  // `resolveLinks`' own fan-out. With the outer pool saturated, an inner acquire
+  // on that same counter waits for a release only the inner pass can make.
+  // `detailConcurrency: 3` against a saturated outer limit of 3 makes that
+  // deterministic rather than a timing gamble.
+  const lookup = createSxyprnLookup({
+    client: stubClient({
+      cards: [
+        { url: POST, title: "Marfe takes it deep", durationSeconds: 1418 },
+        { url: OTHER, title: "Marfe takes it deep", durationSeconds: 1418 },
+        { url: THIRD, title: "Marfe takes it deep", durationSeconds: 1418 },
+      ],
+      details: async (url) => ({
+        url,
+        title: "Marfe takes it deep",
+        durationSeconds: 1418,
+        streamUrl: "https://sxyprn.com/stream.m3u8",
+        uploadDate: "2026-03-05T10:00:00+00:00",
+      }),
+    }),
+    dateWindowDays: 7,
+    maxMatches: 3,
+    detailConcurrency: 3,
+  });
+  const scenes = ["s1", "s2", "s3"].map((id) => makeMatchScene({ ...SCENE, id: `test:${id}` }));
+  const results = await withDeadline(
+    mapWithConcurrency(scenes, (scene) => lookup(scene), 3),
+    5_000,
+    "the sxyprn detail pass deadlocked the shared fetch pool",
+  );
+  assert.equal(results.length, 3);
+  for (const [index, matches] of results.entries()) {
+    assert.equal(matches.length, 3, `scene ${index} verified every post rather than deadlocking`);
+    assert.equal(matches[0]?.url, POST, "rank order still decides the winner");
+  }
 });

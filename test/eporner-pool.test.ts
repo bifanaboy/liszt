@@ -20,8 +20,11 @@ import {
   preFilter,
   fullRewalkDue,
   indexPool,
+  gatherPoolSurvivors,
+  POOL_FULL_REWALK_KEY,
 } from "../src/tubes/eporner-pool.ts";
-import { makeMatchScene } from "./helpers.ts";
+import { mapWithConcurrency } from "../src/core/concurrency.ts";
+import { makeMatchScene, withDeadline } from "./helpers.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { FetchError } from "../src/core/fetcher.ts";
 import type { Fetcher } from "../src/sources/types.ts";
@@ -328,4 +331,214 @@ test("a card's date is read from its own card, not its neighbour's", () => {
   assert.equal(entries[1]!.id, "BBBB2222");
   assert.equal(entries[1]!.added, "2021-01-02", "the second card reads its own date");
   assert.equal(entries[1]!.durationSec, 1200);
+});
+
+test("a nested shared-pool fan-out deadlocks, which is the hazard `mapIsolated` removes", async () => {
+  // Demonstrated, not asserted from theory: a task holding the only slot of the
+  // shared pool asks that same pool for a second one. The inner `acquire` waits
+  // for a release, and the only thing that can release is work the inner
+  // acquire is itself blocking - so it never settles. If this ever stops
+  // deadlocking the pool grew a re-entrancy guard and the isolation below is
+  // belt-and-braces; if it starts passing silently, the guard below is vacuous.
+  await assert.rejects(
+    withDeadline(
+      mapWithConcurrency([0], () => mapWithConcurrency([1, 2], async (n) => n, 1), 1),
+      250,
+      "a re-entrant shared-pool fan-out",
+    ),
+    /a re-entrant shared-pool fan-out/,
+  );
+});
+
+test("hydration inside a scene resolve does not deadlock the shared fetch pool", async () => {
+  // `gatherPoolSurvivors` runs INSIDE `resolveLinks`' own fan-out, so by the
+  // time it hydrates the caller already holds a slot of the shared pool. If
+  // hydration drew from that same non-re-entrant pool, every inner acquire would
+  // wait for a release only the hydration could make. The outer fan-out below
+  // runs at the default limit of 4 over exactly 4 scenes, so all four slots are
+  // genuinely held - which is the saturation the deadlock needs, and makes it
+  // deterministic rather than a timing gamble.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  /** Serves the `video/id` API with a date, so hydration really fetches. */
+  const fetcher: Fetcher = {
+    fetch: async () => new Response("{}", { status: 200 }),
+    text: async () => "",
+    json: async <T>() =>
+      [{ id: "x", title: "Marfe", length_sec: 2138, added: "2026-03-05 00:00:00" }] as T,
+  };
+  const scenes = ["s1", "s2", "s3", "s4"].map((id) =>
+    makeMatchScene({
+      id: `test:${id}`,
+      title: "Marfe takes it deep",
+      performers: ["Marfe okkk"],
+      releaseDate: "2026-03-04",
+      durationSec: 2138,
+    }),
+  );
+  try {
+    for (const id of ["a", "b", "c", "d"]) {
+      store.upsertPoolVideo({
+        id,
+        uploader: "Vovick17",
+        title: `Marfe compilation ${id}`,
+        added: null,
+        // A duration but no date: the exact row shape that makes hydration
+        // issue a request rather than short-circuit from the index.
+        durationSec: 2138,
+        hydratedAt: "2026-03-10T00:00:00.000Z",
+      });
+    }
+    const gathered = await withDeadline(
+      mapWithConcurrency(
+        scenes,
+        (scene) =>
+          gatherPoolSurvivors(scene, {
+            store,
+            fetcher,
+            uploaders: ["Vovick17"],
+            durationToleranceSec: 2,
+            dateWindowDays: 90,
+            log: () => {},
+          }, NOW),
+        4,
+      ),
+      5_000,
+      "gatherPoolSurvivors deadlocked the shared fetch pool",
+    );
+    assert.equal(gathered.length, 4);
+    for (const [index, result] of gathered.entries()) {
+      assert.equal(
+        result.candidates.length,
+        4,
+        `scene ${index} hydrated every survivor rather than deadlocking`,
+      );
+    }
+  } finally {
+    store.close();
+  }
+});
+
+/** A card whose only date is the given one, or none at all. */
+function walkCard(id: string, date?: string): string {
+  return `<div class="mb"><a href="/video-${id}/slug/"><img alt="Scene ${id}" /></a>` +
+    `<p class="mbstats">${date ?? ""}<span class="mbtim" title="Duration">10:00</span></p></div>`;
+}
+const walkPage = (ids: string[], date?: string): string =>
+  ids.map((id) => walkCard(id, date)).join("\n");
+
+test("an account whose count is not a multiple of the page size still reaches the end", async () => {
+  // The short-page break compared against a HARD-CODED `12`, so it fired on the
+  // final short page - which is exactly where the walk legitimately ends - and
+  // then `break`ed WITHOUT setting `reachedEnd`. The 404 that would have set it
+  // was never fetched, so for every account whose video count is not an exact
+  // multiple of the page size the absence prune never ran and upstream deletions
+  // were never corrected. The page size is now measured off page 1 and the
+  // short-page test sets the flag.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const index = (pages: Record<number, string>, maxPages?: number) =>
+    indexPool({
+      store,
+      fetcher: textFetcher(pages),
+      now: NOW,
+      uploaders: ["Vovick17"],
+      windowDays: 90,
+      fullRewalkDays: 7,
+      log: () => {},
+      ...(maxPages !== undefined ? { maxPages } : {}),
+    });
+  try {
+    // Five rows in the index; the listing holds 7. `g` and `h` were deleted
+    // upstream and `a` and `b` were never there.
+    for (const id of ["a", "b", "c", "d", "e"]) {
+      store.upsertPoolVideo({
+        id, uploader: "Vovick17", title: id, added: null,
+        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+      });
+    }
+    // Page 1 is a FULL page of 12; page 2 holds the 7 that end the account, so
+    // the count is not a multiple of the page size.
+    const report = await index({
+      1: walkPage(Array.from({ length: 12 }, (_, i) => `q1${i}z`)),
+      2: walkPage(["c", "d", "e", "f", "g", "h", "i"]),
+    });
+    assert.equal(report.uploaders[0]!.pagesFetched, 2);
+    assert.equal(
+      report.uploaders[0]!.endOfListing,
+      true,
+      "a short final page is the end of the listing, not a truncation",
+    );
+    assert.equal(report.uploaders[0]!.pruneSkipped, undefined);
+    assert.equal(report.uploaders[0]!.pruned, 2, "a and b were genuinely deleted upstream");
+    assert.equal(store.poolVideoCount(), 19, "12 on page 1 plus the 7 that end the account");
+
+    // And the cadence is stamped, because the re-walk was complete.
+    assert.equal(store.getPoolMeta(POOL_FULL_REWALK_KEY), NOW.toISOString());
+  } finally {
+    store.close();
+  }
+});
+
+test("a walk truncated at the maxPages ceiling neither prunes nor stamps the cadence", async () => {
+  // Two failure modes in one, because they are the same failure: the walk never
+  // saw the end of the listing, so (a) nothing may be deleted, and (b) the
+  // re-walk cadence must NOT be stamped. Stamping it anyway defers the prune by
+  // a whole `fullRewalkDays`, so a listing that stays just past a stop condition
+  // silently stops correcting deletions forever.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const index = (pages: Record<number, string>, maxPages: number) =>
+    indexPool({
+      store,
+      fetcher: textFetcher(pages),
+      now: NOW,
+      uploaders: ["Vovick17"],
+      windowDays: 90,
+      fullRewalkDays: 7,
+      maxPages,
+      log: () => {},
+    });
+  try {
+    for (const id of ["a", "b", "c"]) {
+      store.upsertPoolVideo({
+        id, uploader: "Vovick17", title: id, added: null,
+        durationSec: 600, hydratedAt: "2026-03-10T00:00:00.000Z",
+      });
+    }
+    // Every page is FULL, so the short-page test never fires, and page 3 does not
+    // exist - but the ceiling stops the walk on page 2 before the 404 is reached.
+    const full = (prefix: string) => walkPage(Array.from({ length: 12 }, (_, i) => `${prefix}${i}z`));
+    const truncated = await index({ 1: full("p1"), 2: full("p2") }, 2);
+    assert.equal(truncated.uploaders[0]!.endOfListing, false, "the ceiling is not the end of the listing");
+    assert.equal(truncated.uploaders[0]!.pruned, 0, "nothing may be deleted on a truncated walk");
+    assert.equal(
+      truncated.uploaders[0]!.pruneSkipped,
+      true,
+      "the skip is reported, so /api/runs shows it rather than only a log line",
+    );
+    assert.equal(
+      store.getPoolMeta(POOL_FULL_REWALK_KEY),
+      null,
+      "an incomplete re-walk must not consume the cadence",
+    );
+    assert.equal(store.poolVideoCount(), 27, "a, b and c survive the skipped prune");
+
+    // A later complete walk then prunes and stamps as normal, which is what
+    // makes withholding the cadence worth anything.
+    const completed = await index({ 1: walkPage(["c", "d", "e"]) }, 2);
+    assert.equal(completed.uploaders[0]!.endOfListing, true);
+    assert.equal(completed.uploaders[0]!.pruneSkipped, undefined);
+    assert.ok(
+      completed.uploaders[0]!.pruned > 0,
+      "the withheld prune runs as soon as a walk actually reaches the end",
+    );
+    assert.equal(store.getPoolMeta(POOL_FULL_REWALK_KEY), NOW.toISOString());
+    assert.deepEqual(
+      store.poolVideosForUploader("Vovick17").map((row) => row.id).sort(),
+      ["c", "d", "e"],
+    );
+  } finally {
+    store.close();
+  }
 });

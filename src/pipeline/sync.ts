@@ -21,7 +21,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { Scene, parseAtBoundary, type RunOutcome } from "../core/schema.ts";
-import { mapWithConcurrency } from "../core/concurrency.ts";
+import { mapIsolated, mapWithConcurrency } from "../core/concurrency.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
 import type { Logger } from "../core/logger.ts";
 import type {
@@ -229,6 +229,8 @@ function sourceContext(
     ...(traxxx ? { traxxx } : {}),
     mapWithConcurrency: <T, R>(items: T[], task: (item: T, index: number) => Promise<R>) =>
       mapWithConcurrency(items, task, concurrency),
+    mapIsolated: <T, R>(items: T[], task: (item: T, index: number) => Promise<R>) =>
+      mapIsolated(items, task, concurrency),
   };
 }
 

@@ -61,6 +61,13 @@ export interface SourceContext {
     items: T[],
     task: (item: T, index: number) => Promise<R>,
   ): Promise<R[]>;
+  /**
+   * The same fan-out with a PRIVATE counter. An adapter's own fan-out runs
+   * inside the cycle's per-source fan-out, so it must not draw from the shared
+   * (non-re-entrant) pool above - at the limit the inner acquire would wait for
+   * work only the inner acquire can start.
+   */
+  mapIsolated<T, R>(items: T[], task: (item: T, index: number) => Promise<R>): Promise<R[]>;
 }
 
 /** The result of one source fetch. */

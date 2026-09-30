@@ -30,3 +30,25 @@ export function makeMatchScene(over: Partial<MatchScene> & { id: string }): Matc
     ...over,
   };
 }
+
+/**
+ * Fail loudly instead of hanging. A deadlock regression in a concurrency bound
+ * is otherwise invisible: the promise never settles, `node --test` waits
+ * forever, and the suite is reported as "still running" rather than as broken.
+ * `label` is required so the failure says WHICH fan-out wedged.
+ */
+export function withDeadline<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} (no completion in ${ms}ms)`)), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}

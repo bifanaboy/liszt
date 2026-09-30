@@ -31,7 +31,7 @@
  * cannot clear the measured gate is not written.
  */
 import { pickMatch, parseTimestamp, titleStem, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
-import { mapWithConcurrency } from "../core/concurrency.ts";
+import { mapIsolated } from "../core/concurrency.ts";
 import { createExpiringCache } from "./eporner.ts";
 import { buildQueries, configuredSceneCode } from "./queries.ts";
 import type { MatchScene } from "./types.ts";
@@ -181,8 +181,13 @@ export function createSxyprnLookup({
     // impersonated request, so serial would multiply the ladder's latency by
     // the slice length) but RE-VERIFIED sequentially in rank order, so the
     // winner's ordering and the maxMatches cut are unchanged.
+    //
+    // `mapIsolated`, not the shared pool: this runs inside `resolveLinks`' own
+    // fan-out, so the caller already holds a slot and a second acquire on the
+    // shared (non-re-entrant) counter would deadlock at the limit rather than
+    // merely slow down.
     const slice = ranked.slice(0, Math.max(3, maxMatches));
-    const fetched = await mapWithConcurrency(
+    const fetched = await mapIsolated(
       slice,
       async (item) => {
         try {

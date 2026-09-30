@@ -426,11 +426,18 @@ function rank(scene: SceneIdentity, left: Scored, right: Scored): number {
     if (rightViews === null) return -1;
     return rightViews - leftViews;
   }
-  // Two un-dated candidates are equally un-dated, so `Infinity` on both sides
-  // must compare EQUAL rather than returning NaN.
-  if (left.lag !== right.lag && Number.isFinite(left.lag) && Number.isFinite(right.lag)) {
-    return left.lag - right.lag;
-  }
+  // Lag, and this comparator MUST BE A TOTAL ORDER - `sort` and the stem
+  // collapse both depend on it. The old guard required BOTH lags to be finite,
+  // so a dated-versus-un-dated pair fell through to the URL tiebreak even though
+  // a finite lag is strictly smaller than `Infinity`. That is not just "the wrong
+  // winner", it is a non-transitive one: with A (lag 1d, url `.../a`), B
+  // (un-dated, url `.../b`) and C (lag 5d, url `.../c`) the old chain gave
+  // A < B and C < B by URL but B < C by lag, so the winner depended on input
+  // order. `lag` is assigned above as either `Infinity` or a finite difference
+  // and is never `NaN`, so `!==` alone is enough: `finite - Infinity` is
+  // `-Infinity` (negative - the dated side wins, which is the intent) and the
+  // guard already excludes `Infinity - Infinity`.
+  if (left.lag !== right.lag) return left.lag - right.lag;
   return String(left.candidate.url || "").localeCompare(String(right.candidate.url || ""));
 }
 

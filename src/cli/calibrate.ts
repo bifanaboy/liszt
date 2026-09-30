@@ -31,7 +31,7 @@ import { loadConfig } from "../config.ts";
 import { HttpFetcher } from "../core/fetcher.ts";
 import { JsonLogger } from "../core/logger.ts";
 import { SqliteStore } from "../core/store/sqlite.ts";
-import { mapWithConcurrency } from "../core/concurrency.ts";
+import { mapIsolated, mapWithConcurrency } from "../core/concurrency.ts";
 import { pickMatch, withinDateWindow, type IdentityTier } from "../core/matching.ts";
 import { createSources } from "../sources/registry.ts";
 import {
@@ -183,6 +183,7 @@ async function main(): Promise<void> {
           now,
           log: (message, fields) => log.debug(message, { source: adapter.id, ...fields }),
           mapWithConcurrency: (items, task) => mapWithConcurrency(items, task, config.fetchConcurrency),
+          mapIsolated: (items, task) => mapIsolated(items, task, config.fetchConcurrency),
         });
         for (const raw of result.scenes) {
           const scene: Scene = normaliseScene(adapter, raw, now);
