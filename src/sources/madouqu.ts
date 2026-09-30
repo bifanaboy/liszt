@@ -224,7 +224,10 @@ export function categoryEligible(post: WpPost, categoryId: number): boolean {
   const categories = Array.isArray(post?.categories) ? post.categories : [];
   if (!categories.includes(categoryId)) return false;
   if (categoryId !== 1) return true;
-  const fields = [decodeRenderedHtml(post.title?.rendered), decodeRenderedHtml(post.content?.rendered)];
+  const fields = [
+    decodeRenderedHtml(post.title?.rendered),
+    decodeRenderedHtml(post.content?.rendered),
+  ];
   return fields.some((text) => /^(?:皇家|麻豆X皇家華人|麻豆X皇家华人)/.test(text.trim()));
 }
 
@@ -236,7 +239,9 @@ export function parsePost(
 ): RawScene {
   const title = decodeRenderedHtml(post.title?.rendered);
   const body = decodeRenderedHtml(post.content?.rendered);
-  const codeMatch = `${title}\n${body}`.match(/(?:番號|番号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9._-]*)/);
+  const codeMatch = `${title}\n${body}`.match(
+    /(?:番號|番号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9._-]*)/,
+  );
   // `id` is the identity, but it is not guaranteed: without a fallback every
   // id-less post collapses onto the empty key `""`, and they then overwrite each
   // other in the dedupe map AND in the store's upsert. The permalink slug and
@@ -299,7 +304,12 @@ export function createJsonFetcher({
       if (response.status === 429 && attempt < maxRetries) {
         const retryAfter = Number(response.headers.get("retry-after"));
         await new Promise((resolve) =>
-          setTimeout(resolve, Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 30_000) : Math.min(1000 * 2 ** attempt, 15_000)),
+          setTimeout(
+            resolve,
+            Number.isFinite(retryAfter) && retryAfter > 0
+              ? Math.min(retryAfter * 1000, 30_000)
+              : Math.min(1000 * 2 ** attempt, 15_000),
+          ),
         );
         continue;
       }
@@ -365,7 +375,11 @@ export function createMadouquStudio({
     id: "madouqu",
     name: "Madouqu (mainland/Taiwan)",
     windowDays: 90,
-    authority: { name: "madouqu.com WordPress REST API", url: postsUrl, role: "metadata catalogue" },
+    authority: {
+      name: "madouqu.com WordPress REST API",
+      url: postsUrl,
+      role: "metadata catalogue",
+    },
     // Metadata-only: this lane never enters the tube ladder.
     matcher: null,
     async fetch(windowStart, ctx): Promise<SourceResult> {

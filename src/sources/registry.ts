@@ -51,7 +51,12 @@ export interface RegistryOptions {
 export function createSources({
   madouquApiBase,
   maximoListingUrl,
-  maximoAllowedHosts = ["sexlikereal.com", "www.sexlikereal.com", "analvids.com", "www.analvids.com"],
+  maximoAllowedHosts = [
+    "sexlikereal.com",
+    "www.sexlikereal.com",
+    "analvids.com",
+    "www.analvids.com",
+  ],
 }: RegistryOptions): SourceAdapter[] {
   return [
     lancelotStylesEvolution,

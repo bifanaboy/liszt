@@ -24,25 +24,37 @@ npm run dev                # dashboard on http://127.0.0.1:3000, no login
 
 Node 24+. No build step: TypeScript runs through Node's native type stripping.
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Watch-mode server. |
-| `npm start` | Server. |
-| `npm run calibrate` | Pool-match measurement. See [Calibration](#calibration). |
-| `npm test` | The suite. Fixture-driven, never live network. |
-| `npm run typecheck` / `lint` | `tsc --noEmit` / `eslint`. |
-| `npm run format` / `format:check` | Prettier. See the note below. |
+| Command                           | What it does                                             |
+| --------------------------------- | -------------------------------------------------------- |
+| `npm run dev`                     | Watch-mode server.                                       |
+| `npm start`                       | Server.                                                  |
+| `npm run calibrate`               | Pool-match measurement. See [Calibration](#calibration). |
+| `npm test`                        | The suite. Fixture-driven, never live network.           |
+| `npm run typecheck` / `lint`      | `tsc --noEmit` / `eslint`.                               |
+| `npm run format` / `format:check` | Prettier. See the note below.                            |
 
 There is no password and nothing to configure to start it. See
 [No perimeter](#no-perimeter) for why, and [Deployment](#deployment) for the one
 supported target.
 
-`npm run format:check` currently fails on most of the repository: there is no
-`.prettierrc` and the code is hand-written to roughly 100 columns, while Prettier
-defaults to 80. It is **not** in CI, deliberately — a permanently red required
-check stops Render deploying at all, which is worse than not gating on it. Fixing
-it is its own change, and it has to exclude `test/fixtures`: those HTML files are
-captured from live pages and the parser tests assert on their exact bytes.
+Formatting is Prettier at `printWidth: 100`, the column the code was already
+written to, and `format:check` runs in CI. `.prettierignore` holds back what must
+not be rewritten: `test/fixtures` are byte-captured responses from live pages that
+the parser tests assert on exactly; `public/` is the ported dashboard UI as it
+arrived, with a one-line 12KB `styles.css`; and `package-lock.json` is npm's to
+write.
+
+That leaves the shipped dashboard assets with **no automated check at all** —
+`eslint.config.js` ignores `public/**` too, because the port is verbatim codex
+UI. Nothing in CI reads those bytes. Covering them is real work, not a config
+flip: ESLint would need the browser globals (a `globals` dependency plus an
+environment block), and Prettier would rewrite ported markup the repo has never
+claimed to hand-maintain. Treat `public/` as vendored.
+
+`format:check` also covers Markdown and YAML — `README.md`, `render.yaml` and
+the workflow file are all in scope. Since Render will not deploy while a
+required check fails, an unformatted docs-only edit blocks deploys exactly as a
+broken build does. Run `npm run format` before pushing any of them.
 
 ---
 
@@ -59,30 +71,30 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
                                                    two-strike dead   dashboard + API
 ```
 
-| Concern | File |
-| --- | --- |
-| Composition root | `src/app.ts` |
-| One sync cycle | `src/pipeline/sync.ts` |
-| Scheduling, single-flight | `src/pipeline/scheduler.ts` |
-| Canonical schema (the one parse boundary) | `src/core/schema.ts` |
-| The measured gate (pure, no I/O) | `src/core/matching.ts` |
-| Ladder | `src/tubes/resolve.ts` |
-| Link lifecycle | `src/tubes/reverify.ts` |
-| Trusted-pool index | `src/tubes/eporner-pool.ts` |
-| Sources | `src/sources/` |
-| HTTP | `src/serving/http.ts` |
+| Concern                                   | File                        |
+| ----------------------------------------- | --------------------------- |
+| Composition root                          | `src/app.ts`                |
+| One sync cycle                            | `src/pipeline/sync.ts`      |
+| Scheduling, single-flight                 | `src/pipeline/scheduler.ts` |
+| Canonical schema (the one parse boundary) | `src/core/schema.ts`        |
+| The measured gate (pure, no I/O)          | `src/core/matching.ts`      |
+| Ladder                                    | `src/tubes/resolve.ts`      |
+| Link lifecycle                            | `src/tubes/reverify.ts`     |
+| Trusted-pool index                        | `src/tubes/eporner-pool.ts` |
+| Sources                                   | `src/sources/`              |
+| HTTP                                      | `src/serving/http.ts`       |
 
 ### Sources
 
 Four categories, in `src/sources/registry.ts`.
 
-| Lane | Mechanism | Matcher |
-| --- | --- | --- |
-| Lancelot Styles Evolution, Mambo Perv, Tushy | `traxxx.me` REST, no auth | yes |
-| Bang! Originals | listing + per-video JSON-LD | yes |
-| Maximo Garcia | direct scrape, listing URL configured | yes |
-| madouqu (9 categories) | WordPress REST + Mandarin classifier | **none** |
-| fc2cmadb | stub - interface unconfirmed | yes |
+| Lane                                         | Mechanism                             | Matcher  |
+| -------------------------------------------- | ------------------------------------- | -------- |
+| Lancelot Styles Evolution, Mambo Perv, Tushy | `traxxx.me` REST, no auth             | yes      |
+| Bang! Originals                              | listing + per-video JSON-LD           | yes      |
+| Maximo Garcia                                | direct scrape, listing URL configured | yes      |
+| madouqu (9 categories)                       | WordPress REST + Mandarin classifier  | **none** |
+| fc2cmadb                                     | stub - interface unconfirmed          | yes      |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
 
@@ -118,7 +130,7 @@ once, applied three times — trusted pool, sxyprn, eporner open search.
 
 No rung matches → the scene stays unlinked and is retried on the next cycle.
 **A missing link always beats a wrong one.** A candidate with no obtainable
-upload date is rejected: it has to be *inside* the window, not merely
+upload date is rejected: it has to be _inside_ the window, not merely
 un-disproved. A scene with no duration is never matched. A scene with no
 performers is still eligible — it simply has one fewer ranking signal.
 
@@ -132,28 +144,28 @@ fraction of pool matches — not missing links, but confidently wrong ones.
 
 Performer-in-title as a tiebreak costs nothing and removes nearly all of that.
 It also closes a real gap the previous gate had: performer data is genuinely
-spotty upstream, and under an identity gate a performer-less scene could *never*
+spotty upstream, and under an identity gate a performer-less scene could _never_
 match.
 
-| Tier | Meaning |
-| --- | --- |
-| `3` | The scene title appears verbatim, or the scene code does. Same-phrasing evidence. |
-| `2` | A full performer name is present, every token of it. |
-| `1` | Only the first token of a performer is present. |
-| `0` | Nothing. Still eligible — it just has the weakest claim. |
+| Tier | Meaning                                                                           |
+| ---- | --------------------------------------------------------------------------------- |
+| `3`  | The scene title appears verbatim, or the scene code does. Same-phrasing evidence. |
+| `2`  | A full performer name is present, every token of it.                              |
+| `1`  | Only the first token of a performer is present.                                   |
+| `0`  | Nothing. Still eligible — it just has the weakest claim.                          |
 
 Tier 1 earns its place because the trusted pool's retitles carry only first
 names for multi-performer scenes, so a full-name-only rule would score the whole
 trusted pool at 0.
 
 **Residual risk, stated plainly:** decoy exposure is now exactly the set of
-matches won with *no* identity evidence. That is why `confidence: "low"` is
+matches won with _no_ identity evidence. That is why `confidence: "low"` is
 redefined to mean tier 0 — the decoy path — and why the run logs a tier
 histogram. A rising tier-0 share is the signal to revisit this decision.
 
 **The MMDD proxy is gone.** The `MMDD code in title` check, its
 `require-date-evidence` knob, the per-rung gate variants, and the
-multi-uploader rejection all existed to make identity *stricter*. With identity
+multi-uploader rejection all existed to make identity _stricter_. With identity
 demoted to a tiebreak they have no purpose, and the MMDD check measured as
 completely inert on this corpus besides.
 
@@ -167,7 +179,7 @@ survivors, it never invents one.
 - One source failing does not stop the others; it becomes a run outcome with
   `ok: false`, keeps its last success timestamp, and **retains its last-good
   in-window records**.
-- A source returning no scenes *without asserting* `verifiedEmpty` fails the run.
+- A source returning no scenes _without asserting_ `verifiedEmpty` fails the run.
   This is what stops a parser bug from replacing a catalogue with silence.
 - Deletion happens only on window expiry. A scene missing from a successful
   response is kept until it leaves the window.
@@ -201,7 +213,7 @@ with the `sessions` table and the scrypt verifier. A password in front of a
 catalogue of public video links protects the catalogue from nobody: the links are
 already public, and the data behind them is already on the open web.
 
-What the app *does* do with that posture:
+What the app _does_ do with that posture:
 
 - **No credentials exist.** Nothing to leak, rotate, or forget. `render.yaml`
   contains six non-secret values and there is nothing to type into the dashboard.
@@ -220,15 +232,15 @@ What the app *does* do with that posture:
 
 ## HTTP surface
 
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `/health` | GET / HEAD | Liveness only. Contentless by design; nothing else is evaluated first. |
-| `/api/health` | GET | Liveness with a timestamp. A different route, and a stateful one. |
-| `/api/scenes` | GET | Read model: scenes, sources, window stats, last run. |
-| `/api/sources` | GET | Per-source health. |
-| `/api/runs` | GET | Recent run ledger. |
-| `/api/refresh` | POST | Start or join one cycle. Returns `202` immediately. |
-| `/` + static | GET | The dashboard. |
+| Route          | Method     | Purpose                                                                |
+| -------------- | ---------- | ---------------------------------------------------------------------- |
+| `/health`      | GET / HEAD | Liveness only. Contentless by design; nothing else is evaluated first. |
+| `/api/health`  | GET        | Liveness with a timestamp. A different route, and a stateful one.      |
+| `/api/scenes`  | GET        | Read model: scenes, sources, window stats, last run.                   |
+| `/api/sources` | GET        | Per-source health.                                                     |
+| `/api/runs`    | GET        | Recent run ledger.                                                     |
+| `/api/refresh` | POST       | Start or join one cycle. Returns `202` immediately.                    |
+| `/` + static   | GET        | The dashboard.                                                         |
 
 Nothing is gated, and nothing sets a cookie — the session layer is gone. `/login`
 and `/logout` are not routes: they fall through to the normal unknown-path 404.
@@ -251,7 +263,7 @@ rather than hidden.
 **Measured on the live pool (2026-09):** those uploaders title uploads in an
 obfuscated convention — one live title read
 `𝐏𝐞𝐧𝐧𝐢𝐞 𝐥𝐚𝐧𝐢𝐲𝐬 𝐰𝐡𝐞𝐫𝐞𝐬 𝐋𝐮𝐧𝐚, 𝐄𝐦𝐲, 𝐁𝐚𝐦𝐲 & 𝐂𝐡𝐞𝐫𝐭𝐲` for a five-performer
-scene. That convention is why identity is a *tier* rather than a gate, and why
+scene. That convention is why identity is a _tier_ rather than a gate, and why
 first-token-only (tier 1) is kept: those retitles would otherwise score 0 and
 lose to every decoy.
 
@@ -267,7 +279,7 @@ npm run calibrate
 
 It reports four things, and the window's value should be read against all four:
 
-- a **lag histogram**, computed over every duration-*surviving* candidate rather
+- a **lag histogram**, computed over every duration-_surviving_ candidate rather
   than over the winners — a histogram of links you already accepted cannot show
   the tail the window exists to cut off;
 - a per-stage **funnel**: considered → duration-passed → date-passed → linked;
@@ -285,25 +297,25 @@ rule has stopped doing useful work and should be deleted rather than tuned.
 Full list with defaults in `.env.example`. There is no credential and no
 required variable: everything has a working default.
 
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `LISZT_LISTEN_ADDR` | `127.0.0.1` | Loopback by default; `render.yaml` overrides it for Render's proxy. |
-| `LISZT_DB_PATH` | `data/liszt.db` | SQLite file. |
-| `PORT` | `3000` | |
-| `LISZT_WINDOW_DAYS` | `90` | Rolling window. |
-| `LISZT_POLL_INTERVAL_MINUTES` | `30` | Poll cadence. |
-| `LISZT_BOOT_SYNC` | `true` | One sync after listen. |
-| `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS` | `4` / `15000` | Outbound bound. |
-| `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000` | Politeness. |
-| `LISZT_MADOUQU_API_BASE` | WordPress.com mirror | The origin is Cloudflare-challenged. |
-| `LISZT_MAXIMO_LISTING_URL` | unset | Unset ⇒ that lane reports "not configured", calmly. |
-| `LISZT_TRUSTED_UPLOADERS` | the 4 accounts | Curation. Back this up. |
-| `LISZT_EPORNER_LQ` | `0` | The API defaults to `1`, which *includes* low-quality. |
-| `LISZT_MATCH_DURATION_TOLERANCE_SEC` | `2` | Duration band, identical on every rung. |
-| `LISZT_MATCH_DATE_WINDOW_DAYS` | `7` | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
-| `LISZT_POOL_FULL_REWALK_DAYS` | `7` | Drift/deletion correction cadence. |
-| `LISZT_SXYPRN_TIMEOUT_MS` | `15000` | |
-| `LISZT_LOG_STDERR` | `false` | JSON logs to stderr; the CLI sets it. |
+| Variable                                         | Default              | Effect                                                                |
+| ------------------------------------------------ | -------------------- | --------------------------------------------------------------------- |
+| `LISZT_LISTEN_ADDR`                              | `127.0.0.1`          | Loopback by default; `render.yaml` overrides it for Render's proxy.   |
+| `LISZT_DB_PATH`                                  | `data/liszt.db`      | SQLite file.                                                          |
+| `PORT`                                           | `3000`               |                                                                       |
+| `LISZT_WINDOW_DAYS`                              | `90`                 | Rolling window.                                                       |
+| `LISZT_POLL_INTERVAL_MINUTES`                    | `30`                 | Poll cadence.                                                         |
+| `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
+| `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
+| `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
+| `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
+| `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
+| `LISZT_TRUSTED_UPLOADERS`                        | the 4 accounts       | Curation. Back this up.                                               |
+| `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |
+| `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `2`                  | Duration band, identical on every rung.                               |
+| `LISZT_MATCH_DATE_WINDOW_DAYS`                   | `7`                  | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
+| `LISZT_POOL_FULL_REWALK_DAYS`                    | `7`                  | Drift/deletion correction cadence.                                    |
+| `LISZT_SXYPRN_TIMEOUT_MS`                        | `15000`              |                                                                       |
+| `LISZT_LOG_STDERR`                               | `false`              | JSON logs to stderr; the CLI sets it.                                 |
 
 ---
 
@@ -317,13 +329,13 @@ it.
 The whole runbook is: connect the repository to Render and let the blueprint do
 the rest. [`render.yaml`](render.yaml) carries everything.
 
-| | |
-| --- | --- |
-| Build | `npm ci --omit=dev` |
-| Start | `node src/app.ts` |
-| Health check | `/health` |
+|                |                                                                 |
+| -------------- | --------------------------------------------------------------- |
+| Build          | `npm ci --omit=dev`                                             |
+| Start          | `node src/app.ts`                                               |
+| Health check   | `/health`                                                       |
 | Deploy trigger | `checksPass` — Render will not deploy with zero checks detected |
-| Disk | `liszt-data` at `/data`, 1 GB |
+| Disk           | `liszt-data` at `/data`, 1 GB                                   |
 
 Four consequences of that blueprint worth knowing before the first deploy:
 
@@ -337,9 +349,9 @@ Four consequences of that blueprint worth knowing before the first deploy:
   Render's 30s default the platform would `SIGKILL` the process mid-write to the
   SQLite file on every single deploy.
 - **CI gates the deploy.** `.github/workflows/ci.yml` runs
-  `typecheck → lint → test`, and Render waits on it. Without that workflow
-  Render detects zero checks and never deploys again. `format:check` is
-  deliberately not in the list — see above.
+  `typecheck → lint → format:check → test`, and Render waits on it. Without that
+  workflow Render detects zero checks and never deploys again. `format:check` is
+  in that list only because it now passes; it was held out while it could not.
 
 After deploying, confirm the disk actually mounted: `liszt.db`, `liszt.db-wal`
 and `liszt.db-shm` under `/data`. Trigger one sync, restart the service, and

@@ -152,7 +152,10 @@ export interface EpornerSearchOptions {
  * The open-search request URL. Exported so the `lq=0` assertion in the tests
  * reads the same code path the client uses, rather than a re-implementation.
  */
-export function buildSearchUrl(query: string, { lq, perPage = 1000 }: { lq: number; perPage?: number }): string {
+export function buildSearchUrl(
+  query: string,
+  { lq, perPage = 1000 }: { lq: number; perPage?: number },
+): string {
   const url = new URL(SEARCH_URL);
   url.searchParams.set("query", query);
   url.searchParams.set("per_page", String(perPage));
@@ -173,9 +176,12 @@ export function createEpornerOpenSearch({
   const cached = createExpiringCache({ ttlMs: cacheTtlMs });
   return (query: string) =>
     cached(query, async () => {
-      const data = await fetcher.json<{ videos?: unknown }>(buildSearchUrl(query, { lq, perPage }), {
-        headers: { accept: "application/json" },
-      });
+      const data = await fetcher.json<{ videos?: unknown }>(
+        buildSearchUrl(query, { lq, perPage }),
+        {
+          headers: { accept: "application/json" },
+        },
+      );
       if (!data || !Array.isArray(data.videos)) {
         throw new Error("eporner returned an invalid response");
       }

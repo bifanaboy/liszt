@@ -159,7 +159,10 @@ test("a non-finite tolerance narrows the gate, never disables it", () => {
     ...WINDOW,
     durationToleranceSec: -5,
   });
-  assert.ok(negative, "a negative tolerance falls back to the measured default band, not to no gate");
+  assert.ok(
+    negative,
+    "a negative tolerance falls back to the measured default band, not to no gate",
+  );
   assert.equal(
     pickMatch(scene, [candidate({ duration: 1421 })], { ...WINDOW, durationToleranceSec: -5 }),
     null,
@@ -171,7 +174,10 @@ test("a non-finite tolerance narrows the gate, never disables it", () => {
     durationToleranceSec: 0,
   });
   assert.ok(zero, "zero is a legitimate tolerance: exact duration only");
-  assert.equal(pickMatch(scene, [candidate({ duration: 1419 })], { ...WINDOW, durationToleranceSec: 0 }), null);
+  assert.equal(
+    pickMatch(scene, [candidate({ duration: 1419 })], { ...WINDOW, durationToleranceSec: 0 }),
+    null,
+  );
 });
 
 test("a title that stems to nothing is not a candidate", () => {
@@ -198,14 +204,26 @@ test("an unreadable view count never reorders the ranking", () => {
   // skipped silently, and `Infinity - Infinity` in the next comparison made
   // `rank` return NaN, which `sort` treats as "equal". The survivor then
   // depended on input order.
-  const parsed = pickMatch(scene, [candidate({ views: "1.2M", url: "https://www.eporner.com/video-a/" })], WINDOW);
+  const parsed = pickMatch(
+    scene,
+    [candidate({ views: "1.2M", url: "https://www.eporner.com/video-a/" })],
+    WINDOW,
+  );
   assert.ok(parsed, "an abbreviated count is still a count");
   // A real count still beats no count: unknown is not zero.
   const ranked = pickMatch(
     scene,
     [
-      candidate({ title: "Marfe takes it deep", views: "", url: "https://www.eporner.com/video-none/" }),
-      candidate({ title: "Marfe takes it deep", views: "12,345", url: "https://www.eporner.com/video-some/" }),
+      candidate({
+        title: "Marfe takes it deep",
+        views: "",
+        url: "https://www.eporner.com/video-none/",
+      }),
+      candidate({
+        title: "Marfe takes it deep",
+        views: "12,345",
+        url: "https://www.eporner.com/video-some/",
+      }),
     ],
     WINDOW,
   );
@@ -216,8 +234,16 @@ test("an unreadable view count never reorders the ranking", () => {
     pickMatch(
       scene,
       [
-        candidate({ title: "Marfe takes it deep", views: "2k", url: "https://www.eporner.com/video-k/" }),
-        candidate({ title: "Marfe takes it deep", views: "1500", url: "https://www.eporner.com/video-n/" }),
+        candidate({
+          title: "Marfe takes it deep",
+          views: "2k",
+          url: "https://www.eporner.com/video-k/",
+        }),
+        candidate({
+          title: "Marfe takes it deep",
+          views: "1500",
+          url: "https://www.eporner.com/video-n/",
+        }),
       ],
       WINDOW,
     )?.candidate.url,
@@ -227,13 +253,25 @@ test("an unreadable view count never reorders the ranking", () => {
   const settled = pickMatch(
     scene,
     [
-      candidate({ title: "Marfe takes it deep extra", views: "1.2M", url: "https://www.eporner.com/video-zz/" }),
-      candidate({ title: "Marfe takes it deep extra take", views: "1.2M", url: "https://www.eporner.com/video-aa/" }),
+      candidate({
+        title: "Marfe takes it deep extra",
+        views: "1.2M",
+        url: "https://www.eporner.com/video-zz/",
+      }),
+      candidate({
+        title: "Marfe takes it deep extra take",
+        views: "1.2M",
+        url: "https://www.eporner.com/video-aa/",
+      }),
     ],
     WINDOW,
   );
   assert.ok(settled);
-  assert.equal(settled.candidate.url, "https://www.eporner.com/video-aa/", "URL is the final, always-total tiebreak");
+  assert.equal(
+    settled.candidate.url,
+    "https://www.eporner.com/video-aa/",
+    "URL is the final, always-total tiebreak",
+  );
 });
 
 // ------------------------------------------------------------- identity tier
@@ -309,17 +347,32 @@ test("identity outranks views: a named match beats a more popular decoy", () => 
 });
 
 test("views break ties WITHIN a tier", () => {
-  const quiet = candidate({ title: "Marfe okkk quiet take", views: 5, url: "https://www.eporner.com/video-a/" });
-  const loud = candidate({ title: "Marfe okkk loud take", views: 5000, url: "https://www.eporner.com/video-b/" });
+  const quiet = candidate({
+    title: "Marfe okkk quiet take",
+    views: 5,
+    url: "https://www.eporner.com/video-a/",
+  });
+  const loud = candidate({
+    title: "Marfe okkk loud take",
+    views: 5000,
+    url: "https://www.eporner.com/video-b/",
+  });
   assert.equal(identityTier(scene, quiet.title), 2);
   assert.equal(identityTier(scene, loud.title), 2);
   assert.equal(pickMatch(scene, [quiet, loud], WINDOW)?.candidate.url, loud.url);
 });
 
 test("lag then URL break ties left by tier and views", () => {
-  const early = candidate({ added: "2026-03-04 01:00:00", url: "https://www.eporner.com/video-z/" });
+  const early = candidate({
+    added: "2026-03-04 01:00:00",
+    url: "https://www.eporner.com/video-z/",
+  });
   const late = candidate({ added: "2026-03-10 01:00:00", url: "https://www.eporner.com/video-a/" });
-  assert.equal(pickMatch(scene, [late, early], WINDOW)?.candidate.url, early.url, "smaller lag wins");
+  assert.equal(
+    pickMatch(scene, [late, early], WINDOW)?.candidate.url,
+    early.url,
+    "smaller lag wins",
+  );
   // Identical everything but URL: the URL decides, so the order is total.
   const tieA = candidate({ url: "https://www.eporner.com/video-aaa/" });
   const tieB = candidate({ url: "https://www.eporner.com/video-bbb/" });
@@ -365,11 +418,7 @@ test("distinct stems from different uploaders are now ranked, not rejected", () 
   // Both titles contain the scene's own wording, so both are tier 3 and the
   // views tiebreak is what actually picked the winner. Asserting the tier is
   // what makes the previous line mean what it says.
-  assert.equal(
-    tierOf(picked),
-    3,
-    "the scene title appears verbatim in both candidates",
-  );
+  assert.equal(tierOf(picked), 3, "the scene title appears verbatim in both candidates");
   assert.equal(identityTier(scene, a.title), tierOf(picked));
   assert.equal(identityTier(scene, b.title), tierOf(picked));
 });
@@ -430,7 +479,9 @@ test("compatibility-glyph titles still tokenise", () => {
   // A live trusted-pool retitle, in mathematical-bold Unicode. NFKC/NFKD must
   // reduce it to plain ASCII or identity would score 0 on every pool title.
   assert.deepEqual(
-    matchTokens("\u{1D40F}\u{1D41E}\u{1D42D}\u{1D422}\u{1D42D}\u{1D41E} \u{1D425}\u{1D41A}\u{1D42D}\u{1D422}\u{1D427}\u{1D41A}\u{1D42C} \u{1D430}\u{1D421}\u{1D428}\u{1D42B}\u{1D41E}\u{1D42C} \u{1D40B}\u{1D42E}\u{1D427}\u{1D41A}"),
+    matchTokens(
+      "\u{1D40F}\u{1D41E}\u{1D42D}\u{1D422}\u{1D42D}\u{1D41E} \u{1D425}\u{1D41A}\u{1D42D}\u{1D422}\u{1D427}\u{1D41A}\u{1D42C} \u{1D430}\u{1D421}\u{1D428}\u{1D42B}\u{1D41E}\u{1D42C} \u{1D40B}\u{1D42E}\u{1D427}\u{1D41A}",
+    ),
     ["petite", "latinas", "whores", "luna"],
   );
 });
@@ -451,17 +502,29 @@ test("mojibake'd titles are repaired before tokenising", () => {
   // The shape the eporner `video/id` API actually serves for the trusted pool.
   // Without the repair these tokenise to NOTHING and the whole trusted pool
   // scores identity tier 0, leaving the gate ranking on views alone.
-  const bold = "\u{1D40F}\u{1D41E}\u{1D42D}\u{1D422}\u{1D42D}\u{1D41E} \u{1D425}\u{1D41A}\u{1D42D}\u{1D422}\u{1D427}\u{1D41A}\u{1D42C} \u{1D430}\u{1D421}\u{1D428}\u{1D42B}\u{1D41E}\u{1D42C} \u{1D40B}\u{1D42E}\u{1D427}\u{1D41A}, \u{1D404}\u{1D426}\u{1D432}, \u{1D412}\u{1D41A}\u{1D426}, \u{1D401}\u{1D41A}\u{1D41B}\u{1D432} & \u{1D402}\u{1D421}\u{1D41E}\u{1D42B}\u{1D42B}\u{1D432}";
+  const bold =
+    "\u{1D40F}\u{1D41E}\u{1D42D}\u{1D422}\u{1D42D}\u{1D41E} \u{1D425}\u{1D41A}\u{1D42D}\u{1D422}\u{1D427}\u{1D41A}\u{1D42C} \u{1D430}\u{1D421}\u{1D428}\u{1D42B}\u{1D41E}\u{1D42C} \u{1D40B}\u{1D42E}\u{1D427}\u{1D41A}, \u{1D404}\u{1D426}\u{1D432}, \u{1D412}\u{1D41A}\u{1D426}, \u{1D401}\u{1D41A}\u{1D41B}\u{1D432} & \u{1D402}\u{1D421}\u{1D41E}\u{1D42B}\u{1D42B}\u{1D432}";
   const wire = mojibake(bold);
   assert.notEqual(wire, bold, "the wire form really is mangled");
-  assert.deepEqual(
-    matchTokens(wire),
-    ["petite", "latinas", "whores", "luna", "emy", "sam", "baby", "cherry"],
-  );
+  assert.deepEqual(matchTokens(wire), [
+    "petite",
+    "latinas",
+    "whores",
+    "luna",
+    "emy",
+    "sam",
+    "baby",
+    "cherry",
+  ]);
   assert.deepEqual(matchTokens(bold), matchTokens(wire), "both forms agree after repair");
 
   // And the repaired title now carries identity, which is the whole point.
-  const scene = { title: "x", performers: ["Luna White"], releaseDate: "2026-03-04", durationSec: 10 };
+  const scene = {
+    title: "x",
+    performers: ["Luna White"],
+    releaseDate: "2026-03-04",
+    durationSec: 10,
+  };
   assert.equal(identityTier(scene, wire), 1, "Luna is present in the repaired title");
   assert.equal(identityTier(scene, bold), 1, "and in the decoded form");
 });

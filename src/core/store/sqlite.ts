@@ -252,16 +252,7 @@ export class SqliteStore {
         );
       }
       for (const link of parsed.deadVideoUrls) {
-        insert.run(
-          parsed.id,
-          "dead",
-          link.source,
-          link.url,
-          null,
-          0,
-          link.deadAt,
-          link.deadReason,
-        );
+        insert.run(parsed.id, "dead", link.source, link.url, null, 0, link.deadAt, link.deadReason);
       }
     });
   }
@@ -284,8 +275,7 @@ export class SqliteStore {
 
   getScene(id: string): Scene | null {
     const row = this.db.prepare("SELECT * FROM scenes WHERE id = ?").get(id) as
-      | SceneRow
-      | undefined;
+      SceneRow | undefined;
     if (!row) return null;
     return linkRowToScene(row, this.linksFor([id]).get(id) ?? []);
   }
@@ -618,14 +608,15 @@ export class SqliteStore {
    */
   getPoolMeta(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM pool_meta WHERE key = ?").get(key) as
-      | { value: string }
-      | undefined;
+      { value: string } | undefined;
     return row?.value ?? null;
   }
 
   setPoolMeta(key: string, value: string): void {
     this.db
-      .prepare("INSERT INTO pool_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .prepare(
+        "INSERT INTO pool_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+      )
       .run(key, value);
   }
 
@@ -645,9 +636,9 @@ export class SqliteStore {
    * notices it by absence.
    */
   prunePoolMissing(uploader: string, seen: Set<string>): number {
-    const rows = this.db
-      .prepare("SELECT id FROM pool_videos WHERE uploader = ?")
-      .all(uploader) as { id: string }[];
+    const rows = this.db.prepare("SELECT id FROM pool_videos WHERE uploader = ?").all(uploader) as {
+      id: string;
+    }[];
     const stale = rows.map((row) => row.id).filter((id) => !seen.has(id));
     if (!stale.length) return 0;
     const remove = this.db.prepare("DELETE FROM pool_videos WHERE id = ? AND uploader = ?");

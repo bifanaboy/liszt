@@ -18,7 +18,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSxyprnClient, durationStringToSeconds } from "../src/tubes/sxyprn-client.ts";
-import { createSxyprnLookup, type SxyprnCard, type SxyprnClient, type SxyprnDetail } from "../src/tubes/sxyprn.ts";
+import {
+  createSxyprnLookup,
+  type SxyprnCard,
+  type SxyprnClient,
+  type SxyprnDetail,
+} from "../src/tubes/sxyprn.ts";
 import { makeMatchScene, withDeadline } from "./helpers.ts";
 import { mapWithConcurrency } from "../src/core/concurrency.ts";
 
@@ -27,10 +32,12 @@ const OTHER = "https://sxyprn.com/post/6ab1a9bec8446.html";
 const THIRD = "https://sxyprn.com/post/6ab1a9bec8447.html";
 
 /** A package stub whose two methods the tests drive. */
-function packageStub(over: {
-  search?: () => Promise<{ videos?: Record<string, unknown>[] }>;
-  details?: (input?: { url?: string }) => Promise<Record<string, unknown>>;
-} = {}) {
+function packageStub(
+  over: {
+    search?: () => Promise<{ videos?: Record<string, unknown>[] }>;
+    details?: (input?: { url?: string }) => Promise<Record<string, unknown>>;
+  } = {},
+) {
   return {
     videos: {
       search: over.search ?? (async () => ({ videos: [] })),
@@ -54,7 +61,11 @@ test("details() forwards the two fields the gate cannot do without", async () =>
     }),
   );
   const detail = await client.videos.details({ url: POST });
-  assert.equal(detail.uploadDate, "2026-03-05T10:00:00+00:00", "the detail pass is the only pass with a date");
+  assert.equal(
+    detail.uploadDate,
+    "2026-03-05T10:00:00+00:00",
+    "the detail pass is the only pass with a date",
+  );
   assert.equal(detail.views, "12,345");
   assert.equal(detail.streamUrl, "https://sxyprn.com/stream.m3u8");
   assert.equal(detail.durationSeconds, 1418);

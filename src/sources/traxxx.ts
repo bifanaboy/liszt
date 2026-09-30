@@ -120,7 +120,11 @@ export function parseTraxxxPoster(poster: TraxxxPoster | null | undefined): stri
 }
 
 function isMaleGender(gender: unknown): boolean {
-  return String(gender ?? "").trim().toLowerCase() === "male";
+  return (
+    String(gender ?? "")
+      .trim()
+      .toLowerCase() === "male"
+  );
 }
 
 function performerNames(actors: TraxxxActor[] | undefined): string[] {
@@ -233,7 +237,10 @@ export interface TraxxxClient {
 /** A politeness-bounded, caching traxxx client. One per run keeps pacing local. */
 export function createTraxxxClient(
   ctx: { fetcher: Fetcher; traxxx?: TraxxxClientOptions },
-  { minIntervalMs = DEFAULT_MIN_INTERVAL_MS, cacheTtlMs = DEFAULT_CACHE_TTL_MS }: TraxxxClientOptions = {},
+  {
+    minIntervalMs = DEFAULT_MIN_INTERVAL_MS,
+    cacheTtlMs = DEFAULT_CACHE_TTL_MS,
+  }: TraxxxClientOptions = {},
 ): TraxxxClient {
   const interval = ctx.traxxx?.minIntervalMs ?? minIntervalMs;
   const ttl = ctx.traxxx?.cacheTtlMs ?? cacheTtlMs;
@@ -329,7 +336,8 @@ export function createTraxxxClient(
         const url = new URL(SCENES_URL);
         url.searchParams.set("limit", "1");
         const body = (await requestJson(url.href)) as { total?: unknown } | null;
-        if (!body || typeof body !== "object") throw new Error("traxxx returned an invalid response");
+        if (!body || typeof body !== "object")
+          throw new Error("traxxx returned an invalid response");
         return requiredCount(body.total, "total");
       }),
     async getScene(id) {

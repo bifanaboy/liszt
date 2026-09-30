@@ -67,11 +67,7 @@ function recordSourceSuccess(
   });
 }
 
-function recordSourceFailure(
-  store: SqliteStore,
-  adapter: SourceAdapter,
-  message: string,
-): void {
+function recordSourceFailure(store: SqliteStore, adapter: SourceAdapter, message: string): void {
   const prior = store
     .listSources()
     .find((status) => status.sourceId === adapter.id && status.labelId === adapter.id);
@@ -255,7 +251,15 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const from = dateOnly(new Date(now.getTime() - windowDays * 86_400_000));
     const runId = `sync-${now.getTime()}-${randomUUID().slice(0, 8)}`;
     const startedAt = now.toISOString();
-    store.recordRun({ id: runId, kind: "sync", startedAt, endedAt: null, outcomes: [], ok: null, error: null });
+    store.recordRun({
+      id: runId,
+      kind: "sync",
+      startedAt,
+      endedAt: null,
+      outcomes: [],
+      ok: null,
+      error: null,
+    });
     log.info("sync started", { runId, reason, window: { from, to } });
 
     const outcomes = await mapWithConcurrency(
@@ -264,7 +268,13 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         try {
           const result: SourceResult = await adapter.fetch(
             from,
-            sourceContext(adapter, { fetcher, now, log, traxxx: options.traxxx, concurrency: fetchConcurrency }),
+            sourceContext(adapter, {
+              fetcher,
+              now,
+              log,
+              traxxx: options.traxxx,
+              concurrency: fetchConcurrency,
+            }),
           );
           if (!result.scenes.length && !result.verifiedEmpty) {
             throw new Error(
@@ -274,9 +284,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           let count = 0;
           // One bulk read, not one per record: the stored links have to reach
           // `normaliseScene` so the metadata upsert preserves them.
-          const existing = store.getScenesByIds(
-            result.scenes.map((raw) => sceneKey(adapter, raw)),
-          );
+          const existing = store.getScenesByIds(result.scenes.map((raw) => sceneKey(adapter, raw)));
           for (const raw of result.scenes) {
             try {
               const previous = existing.get(sceneKey(adapter, raw));
@@ -290,7 +298,11 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             }
           }
           recordSourceSuccess(store, adapter, count, now);
-          log.info("sync: source ok", { source: adapter.id, count, verifiedEmpty: result.verifiedEmpty });
+          log.info("sync: source ok", {
+            source: adapter.id,
+            count,
+            verifiedEmpty: result.verifiedEmpty,
+          });
           return { source: adapter.id, ok: true, count };
         } catch (error) {
           const message = (error as Error).message;
@@ -342,7 +354,8 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     // failed still shows its real in-window size rather than a stale number.
     const windowScenes = store.listWindow(from, to);
     const counts = new Map<string, number>();
-    for (const scene of windowScenes) counts.set(scene.sourceId, (counts.get(scene.sourceId) ?? 0) + 1);
+    for (const scene of windowScenes)
+      counts.set(scene.sourceId, (counts.get(scene.sourceId) ?? 0) + 1);
     for (const status of store.listSources()) {
       store.upsertSource({
         sourceId: status.sourceId,
@@ -367,7 +380,12 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     // summary: the decoy path and a mis-tuned window are both invisible in a
     // match count, and both are cheap to spot here.
     log.info("sync finished", {
-      runId, ok, matched, resolved, reverified, expired,
+      runId,
+      ok,
+      matched,
+      resolved,
+      reverified,
+      expired,
       windowScenes: windowScenes.length,
       rejections,
       tiers: tierHistogram(tiers),

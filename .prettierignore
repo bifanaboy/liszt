@@ -1,0 +1,20 @@
+# Byte-captured responses from live pages. The parser tests assert on their
+# exact contents - reformatting would make them assert against a document the
+# site never served.
+test/fixtures/
+
+# The ported dashboard UI, shipped as it arrived: index.html is compressed
+# markup and styles.css is a single 12KB line. Rewriting them is ~1,000 lines
+# of noise and no correctness.
+#
+# NOTE: eslint.config.js ignores `public/**` as well, so these assets are read
+# by neither tool. Covering them means browser globals for ESLint and a rewrite
+# of vendored UI for Prettier - a change of its own, not a config flip.
+public/
+
+# Written by npm, not by hand.
+package-lock.json
+
+# Per-developer local agent state - gitignored, never on a shared branch, and
+# not what CI sees.
+.kilo/

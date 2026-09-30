@@ -49,7 +49,15 @@ import {
   type IdentityTier,
   type TubeCandidate,
 } from "../core/matching.ts";
-import { createExpiringCache, epornerEmbedUrl, epornerVideoId, epornerWatchUrl, validEpornerEmbedUrl, validEpornerUrl, type EpornerVideo } from "./eporner.ts";
+import {
+  createExpiringCache,
+  epornerEmbedUrl,
+  epornerVideoId,
+  epornerWatchUrl,
+  validEpornerEmbedUrl,
+  validEpornerUrl,
+  type EpornerVideo,
+} from "./eporner.ts";
 import { mapIsolated } from "../core/concurrency.ts";
 import { classifyError } from "../core/fetcher.ts";
 import type { PoolVideo, SqliteStore } from "../core/store/sqlite.ts";
@@ -60,8 +68,18 @@ const PROFILE_BASE = "https://www.eporner.com/profile";
 const DAY_MS = 86_400_000;
 const MAX_PAGES = 60;
 const MONTHS: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
 };
 
 export interface ProfileEntry {
@@ -77,9 +95,10 @@ export function parseClockDuration(value: string | null | undefined): number | n
   const match = text.match(/^(\d{1,3}):([0-5]\d)(?::([0-5]\d))?$/);
   if (!match) return null;
   const [, first, second, third] = match as unknown as [string, string, string, string | undefined];
-  const seconds = third === undefined
-    ? Number(first) * 60 + Number(second)
-    : Number(first) * 3600 + Number(second) * 60 + Number(third);
+  const seconds =
+    third === undefined
+      ? Number(first) * 60 + Number(second)
+      : Number(first) * 3600 + Number(second) * 60 + Number(third);
   return seconds > 0 ? seconds : null;
 }
 
@@ -146,13 +165,24 @@ export function parseCardDate(text: string, now: Date): string | null {
     }
   }
 
-  const relative = text.match(
-    /\b(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago\b/i,
-  );
+  const relative = text.match(/\b(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago\b/i);
   if (relative) {
     const amount = Number(relative[1]);
     const unit = (relative[2] as string).toLowerCase();
-    const scale = unit === "second" ? 1000 : unit === "minute" ? 60_000 : unit === "hour" ? 3_600_000 : unit === "day" ? DAY_MS : unit === "week" ? 7 * DAY_MS : unit === "month" ? 30 * DAY_MS : 365 * DAY_MS;
+    const scale =
+      unit === "second"
+        ? 1000
+        : unit === "minute"
+          ? 60_000
+          : unit === "hour"
+            ? 3_600_000
+            : unit === "day"
+              ? DAY_MS
+              : unit === "week"
+                ? 7 * DAY_MS
+                : unit === "month"
+                  ? 30 * DAY_MS
+                  : 365 * DAY_MS;
     return new Date(now.getTime() - amount * scale).toISOString();
   }
   return null;
@@ -204,9 +234,7 @@ export function parseProfileListing(html: string, now: Date): ProfileEntry[] {
     const cardStart = match.index;
     const nextCard = source.indexOf('<div class="video_container', cardStart + 1);
     const sliceEnd =
-      nextCard === -1
-        ? Math.min(source.length, cardStart + CARD_SLICE_CHARS)
-        : nextCard;
+      nextCard === -1 ? Math.min(source.length, cardStart + CARD_SLICE_CHARS) : nextCard;
     const slice = source.slice(cardStart, sliceEnd);
     const durationSec = parseClockDuration(
       slice.match(/title=["']Duration["'][^>]*>([^<]+)/i)?.[1] ?? null,
@@ -328,7 +356,8 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
     try {
       const watermark = store.poolWatermark(uploader);
       const watermarkMs = timeOf(watermark);
-      const fullRewalk = fullRewalkDue(lastFullWalk, now, fullRewalkDays) || !Number.isFinite(watermarkMs);
+      const fullRewalk =
+        fullRewalkDue(lastFullWalk, now, fullRewalkDays) || !Number.isFinite(watermarkMs);
       report.fullRewalk = fullRewalk;
 
       const seen = new Set<string>();
@@ -350,7 +379,9 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
         const url = profileListingUrl(uploader, page);
         let entries: ProfileEntry[];
         try {
-          const html = await cache(url, () => fetcher.text(url, { headers: { accept: "text/html" } }));
+          const html = await cache(url, () =>
+            fetcher.text(url, { headers: { accept: "text/html" } }),
+          );
           report.pagesFetched += 1;
           entries = parseProfileListing(html, now);
         } catch (error) {
@@ -801,7 +832,9 @@ export function createPoolLookup(options: PoolLookupOptions) {
     const checks =
       window === null
         ? null
-        : candidates.map((candidate) => withinDateWindow(scene.releaseDate, candidate.added, window));
+        : candidates.map((candidate) =>
+            withinDateWindow(scene.releaseDate, candidate.added, window),
+          );
     const eligible = checks ? candidates.filter((_, index) => checks[index] === true) : candidates;
     const unknownDate = checks?.filter((check) => check === "unknown").length ?? 0;
     const rejectedByDate = checks ? checks.filter((check) => check === false).length : 0;
@@ -858,4 +891,3 @@ const emptyMatch: PoolMatch = {
   hydrationCapped: false,
   rejected: "none",
 };
-

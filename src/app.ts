@@ -74,7 +74,10 @@ async function main(): Promise<void> {
   });
   const openLookup = createEpornerOpenLookup(
     createEpornerOpenSearch({ fetcher, lq: config.epornerLq }),
-    { durationToleranceSec: config.matchDurationToleranceSec, dateWindowDays: config.matchDateWindowDays },
+    {
+      durationToleranceSec: config.matchDurationToleranceSec,
+      dateWindowDays: config.matchDateWindowDays,
+    },
   );
   const sxyprnLookup = sxyprnClient
     ? createSxyprnLookup({

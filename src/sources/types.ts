@@ -57,10 +57,7 @@ export interface SourceContext {
   /** Politeness bounds for the traxxx client (spacing + cache TTL). */
   traxxx?: { minIntervalMs?: number; cacheTtlMs?: number };
   /** Bound the fan-out of any adapter-local concurrency. */
-  mapWithConcurrency<T, R>(
-    items: T[],
-    task: (item: T, index: number) => Promise<R>,
-  ): Promise<R[]>;
+  mapWithConcurrency<T, R>(items: T[], task: (item: T, index: number) => Promise<R>): Promise<R[]>;
   /**
    * The same fan-out with a PRIVATE counter. An adapter's own fan-out runs
    * inside the cycle's per-source fan-out, so it must not draw from the shared

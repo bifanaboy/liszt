@@ -31,7 +31,8 @@ function deps(over: Partial<HttpDeps> = {}): HttpDeps {
   return {
     store,
     log: new NullLogger(),
-    readModel: () => ({ generatedAt: "2026-03-04T00:00:00Z", scenes: [], sources: [], runs: [] }) as never,
+    readModel: () =>
+      ({ generatedAt: "2026-03-04T00:00:00Z", scenes: [], sources: [], runs: [] }) as never,
     refresh: async () => undefined,
     isBusy: () => false,
     publicDir: new URL("../public", import.meta.url).pathname,

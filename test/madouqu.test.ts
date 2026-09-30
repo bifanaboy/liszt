@@ -45,7 +45,12 @@ test("a post with no id falls back to a stable key instead of the empty one", ()
   const verdict = classifyScene(TITLE, BODY);
   const category = { id: 2, key: "madou", name: "Madou" } as const;
   const fromSlug = parsePost(
-    { id: undefined, slug: "marfe-okkk", title: { rendered: TITLE }, date_gmt: "2026-03-04T00:00:00" },
+    {
+      id: undefined,
+      slug: "marfe-okkk",
+      title: { rendered: TITLE },
+      date_gmt: "2026-03-04T00:00:00",
+    },
     category,
     verdict,
     { sourceUrl: "https://example.test/posts", base: "https://example.test" },
@@ -53,7 +58,12 @@ test("a post with no id falls back to a stable key instead of the empty one", ()
   assert.equal(fromSlug.sourceSceneId, "marfe-okkk");
 
   const fromLink = parsePost(
-    { id: undefined, link: "https://madouqu.com/2026/03/marfe-okkk/", title: { rendered: TITLE }, date_gmt: "2026-03-04T00:00:00" },
+    {
+      id: undefined,
+      link: "https://madouqu.com/2026/03/marfe-okkk/",
+      title: { rendered: TITLE },
+      date_gmt: "2026-03-04T00:00:00",
+    },
     category,
     verdict,
     { sourceUrl: "https://example.test/posts", base: "https://example.test" },

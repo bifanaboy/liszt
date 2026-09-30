@@ -63,7 +63,8 @@ export class HttpFetcher implements Fetcher {
     // unhandled crash instead of a failed request.
     try {
       const requested = options.timeoutMs ?? this.defaultTimeoutMs;
-      const timeoutMs = Number.isFinite(requested) && requested > 0 ? requested : this.defaultTimeoutMs;
+      const timeoutMs =
+        Number.isFinite(requested) && requested > 0 ? requested : this.defaultTimeoutMs;
       const timeoutSignal = AbortSignal.timeout(timeoutMs);
       const signal = options.signal
         ? AbortSignal.any([options.signal, timeoutSignal])

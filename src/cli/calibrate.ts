@@ -34,11 +34,7 @@ import { SqliteStore } from "../core/store/sqlite.ts";
 import { mapIsolated, mapWithConcurrency } from "../core/concurrency.ts";
 import { pickMatch, withinDateWindow, type IdentityTier } from "../core/matching.ts";
 import { createSources } from "../sources/registry.ts";
-import {
-  gatherPoolSurvivors,
-  indexPool,
-  type PoolSurvivors,
-} from "../tubes/eporner-pool.ts";
+import { gatherPoolSurvivors, indexPool, type PoolSurvivors } from "../tubes/eporner-pool.ts";
 import { normaliseScene, dateOnly } from "../pipeline/sync.ts";
 import { buildMatchScene } from "../tubes/resolve.ts";
 import type { MatchScene, Rung } from "../tubes/types.ts";
@@ -112,8 +108,15 @@ function bucketFor(lagDays: number | null): LagBucket {
 }
 
 const BUCKET_ORDER: LagBucket[] = [
-  "lag-0d", "lag-1d", "lag-1-2d", "lag-3-5d", "lag-6-7d", "lag-8-14d",
-  "lag-15d+", "before-window", "unknown",
+  "lag-0d",
+  "lag-1d",
+  "lag-1-2d",
+  "lag-3-5d",
+  "lag-6-7d",
+  "lag-8-14d",
+  "lag-15d+",
+  "before-window",
+  "unknown",
 ];
 
 function emptyLagHistogram(): Record<LagBucket, number> {
@@ -145,7 +148,9 @@ async function main(): Promise<void> {
   });
 
   const config = loadConfig();
-  const log = new JsonLogger({ component: "calibrate" }, (line) => process.stderr.write(`${line}\n`));
+  const log = new JsonLogger({ component: "calibrate" }, (line) =>
+    process.stderr.write(`${line}\n`),
+  );
   const store = new SqliteStore(config.dbPath);
   store.migrate();
   const fetcher = new HttpFetcher(config.fetchTimeoutMs);
@@ -182,7 +187,8 @@ async function main(): Promise<void> {
           fetcher,
           now,
           log: (message, fields) => log.debug(message, { source: adapter.id, ...fields }),
-          mapWithConcurrency: (items, task) => mapWithConcurrency(items, task, config.fetchConcurrency),
+          mapWithConcurrency: (items, task) =>
+            mapWithConcurrency(items, task, config.fetchConcurrency),
           mapIsolated: (items, task) => mapIsolated(items, task, config.fetchConcurrency),
         });
         for (const raw of result.scenes) {
@@ -190,7 +196,10 @@ async function main(): Promise<void> {
           matchScenes.push(buildMatchScene(scene, adapter.creatorStudio ?? false));
         }
       } catch (error) {
-        log.warn("calibrate: a traxxx lane failed", { source: adapter.id, error: (error as Error).message });
+        log.warn("calibrate: a traxxx lane failed", {
+          source: adapter.id,
+          error: (error as Error).message,
+        });
       }
     }
 
@@ -274,7 +283,8 @@ async function main(): Promise<void> {
         (total, entry) =>
           total +
           entry.gathered.candidates.filter(
-            (candidate) => withinDateWindow(entry.scene.releaseDate, candidate.added, windowDays) === true,
+            (candidate) =>
+              withinDateWindow(entry.scene.releaseDate, candidate.added, windowDays) === true,
           ).length,
         0,
       ),

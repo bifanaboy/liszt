@@ -118,12 +118,13 @@ function durationSeconds(value: unknown): number | null {
   const text = String(value ?? "").trim();
   const clock = text.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.\d+)?$/);
   if (clock) return Number(clock[1] || 0) * 3_600 + Number(clock[2]) * 60 + Number(clock[3]);
-  const iso = text.match(
-    /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i,
-  );
+  const iso = text.match(/^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
   if (iso) {
     const total =
-      Number(iso[1] || 0) * 86_400 + Number(iso[2] || 0) * 3_600 + Number(iso[3] || 0) * 60 + Number(iso[4] || 0);
+      Number(iso[1] || 0) * 86_400 +
+      Number(iso[2] || 0) * 3_600 +
+      Number(iso[3] || 0) * 60 +
+      Number(iso[4] || 0);
     return total > 0 ? total : null;
   }
   return null;
