@@ -18,9 +18,8 @@ completeness claim.
 
 ```sh
 npm install
-npm run auth:hash          # masked prompt; paste the output into .env
-cp .env.example .env       # then paste LISZT_AUTH_PASSWORD_HASH into it
-npm run dev                # dashboard on http://127.0.0.1:3000
+cp .env.example .env       # optional: every value has a default
+npm run dev                # dashboard on http://127.0.0.1:3000, no login
 ```
 
 Node 24+. No build step: TypeScript runs through Node's native type stripping.
@@ -30,13 +29,20 @@ Node 24+. No build step: TypeScript runs through Node's native type stripping.
 | `npm run dev` | Watch-mode server. |
 | `npm start` | Server. |
 | `npm run calibrate` | Pool-match measurement. See [Calibration](#calibration). |
-| `npm run auth:hash` | Password hash for `LISZT_AUTH_PASSWORD_HASH`. |
 | `npm test` | The suite. Fixture-driven, never live network. |
 | `npm run typecheck` / `lint` | `tsc --noEmit` / `eslint`. |
+| `npm run format` / `format:check` | Prettier. See the note below. |
 
-The only variable required in production is `LISZT_AUTH_PASSWORD_HASH`. With
-`NODE_ENV=production` the server **refuses to start** without it, and refuses to
-start with `LISZT_AUTH_DISABLED=true`.
+There is no password and nothing to configure to start it. See
+[No perimeter](#no-perimeter) for why, and [Deployment](#deployment) for the one
+supported target.
+
+`npm run format:check` currently fails on most of the repository: there is no
+`.prettierrc` and the code is hand-written to roughly 100 columns, while Prettier
+defaults to 80. It is **not** in CI, deliberately — a permanently red required
+check stops Render deploying at all, which is worse than not gating on it. Fixing
+it is its own change, and it has to exclude `test/fixtures`: those HTML files are
+captured from live pages and the parser tests assert on their exact bytes.
 
 ---
 
@@ -182,26 +188,33 @@ re-enters resolution. Known-dead URLs are never re-added.
 
 ---
 
-## Auth
+## No perimeter
 
-One shared password, no username, no external identity provider. It is the whole
-perimeter, so the details matter:
+**There is none.** Every route is served to anyone who can reach the port,
+including `POST /api/refresh`. That is the deliberate shape of this deployment,
+not an oversight left behind by a removed feature.
 
-- Hash format `scrypt$N$r$p$<salt>$<hash>`, parameters inside the string so cost
-  can be raised later without invalidating an existing hash.
-- Only `sha256(token)` is stored, and sessions are database-backed, so a leaked
-  cookie can be revoked. Cookie is `HttpOnly; SameSite=Lax; Secure`.
-- **The throttle is consulted before any `scrypt` work.** `scrypt` is
-  deliberately CPU-expensive, so a public `POST /login` is a denial-of-service
-  vector, not just a guessing risk. A locked-out request never reaches the hash
-  function. This ordering is asserted in the tests.
-- `POST /login` and `POST /logout` are POST-only plus `SameSite=Lax`, which is
-  the CSRF defence. This also covers `POST /api/refresh`.
-- `/api/health` is gated: a public liveness endpoint tells a scanner exactly what
-  is running, and it is not evidence that the sources are healthy. The one
-  public route, `/health`, is a constant `{"status":"ok"}` with no store or
-  source state in it, because a platform health check needs a 2xx and a 401
-  there reads as a failed deploy.
+The reasoning, once, so it is not re-litigated: this is a disposable public read
+model. It holds no user data, no accounts, no personal state, no credentials and
+no secrets — the one secret it ever had, a shared login password, is gone along
+with the `sessions` table and the scrypt verifier. A password in front of a
+catalogue of public video links protects the catalogue from nobody: the links are
+already public, and the data behind them is already on the open web.
+
+What the app *does* do with that posture:
+
+- **No credentials exist.** Nothing to leak, rotate, or forget. `render.yaml`
+  contains six non-secret values and there is nothing to type into the dashboard.
+- **`/health` is answered before anything else**, from a constant
+  `{"status":"ok"}` with no store or source state in it. It is Render's deploy
+  gate, and a health check that leaked anything would leak it to whoever felt
+  like asking.
+- **`/api/health` is a different route and it is stateful.** That is the entire
+  reason `/health` exists separately.
+- **Refresh is single-flight**, so a caller cannot stack cycles or multiply the
+  external request volume beyond one at a time. Sustained traffic against
+  `POST /api/refresh` is the accepted cost of being public; if that ever matters,
+  the cheapest lever is deleting that one route.
 
 ---
 
@@ -209,19 +222,20 @@ perimeter, so the details matter:
 
 | Route | Method | Purpose |
 | --- | --- | --- |
-| `/login` | GET / POST | The password splash. |
-| `/logout` | POST | Revoke the session row. |
-| `/health` | GET | Liveness only. **Public**, and deliberately contentless. |
-| `/api/health` | GET | Liveness. Gated. |
+| `/health` | GET / HEAD | Liveness only. Contentless by design; nothing else is evaluated first. |
+| `/api/health` | GET | Liveness with a timestamp. A different route, and a stateful one. |
 | `/api/scenes` | GET | Read model: scenes, sources, window stats, last run. |
 | `/api/sources` | GET | Per-source health. |
 | `/api/runs` | GET | Recent run ledger. |
 | `/api/refresh` | POST | Start or join one cycle. Returns `202` immediately. |
-| `/` + static | GET | The dashboard. Gated. |
+| `/` + static | GET | The dashboard. |
+
+Nothing is gated, and nothing sets a cookie — the session layer is gone. `/login`
+and `/logout` are not routes: they fall through to the normal unknown-path 404.
 
 `/api/sources`, not `/api/studios`: "source" is canonical, and one source may
-emit several studio labels. All responses are `no-store`, so the edge never
-caches the catalogue, and static serving is path-traversal safe by construction.
+emit several studio labels. All responses are `no-store`, so no edge caches the
+catalogue, and static serving is path-traversal safe by construction.
 
 The boot sync, the interval, and `POST /api/refresh` all funnel through one
 single-flight runner, so two cycles can never overlap against the same database.
@@ -268,13 +282,12 @@ rule has stopped doing useful work and should be deleted rather than tuned.
 
 ## Configuration
 
-Full list with defaults in `.env.example`.
+Full list with defaults in `.env.example`. There is no credential and no
+required variable: everything has a working default.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `LISZT_AUTH_PASSWORD_HASH` | unset | **Required in production.** |
-| `LISZT_AUTH_DISABLED` | `false` | Local dev only. Refuses to boot in production. |
-| `LISZT_LISTEN_ADDR` | `127.0.0.1` | Loopback by design; override only behind a fronting proxy. |
+| `LISZT_LISTEN_ADDR` | `127.0.0.1` | Loopback by default; `render.yaml` overrides it for Render's proxy. |
 | `LISZT_DB_PATH` | `data/liszt.db` | SQLite file. |
 | `PORT` | `3000` | |
 | `LISZT_WINDOW_DAYS` | `90` | Rolling window. |
@@ -290,25 +303,46 @@ Full list with defaults in `.env.example`.
 | `LISZT_MATCH_DATE_WINDOW_DAYS` | `7` | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
 | `LISZT_POOL_FULL_REWALK_DAYS` | `7` | Drift/deletion correction cadence. |
 | `LISZT_SXYPRN_TIMEOUT_MS` | `15000` | |
-| `LISZT_SESSION_TTL_DAYS` | `30` | Sliding session lifetime. |
-| `LISZT_LOGIN_MAX_FAILURES` / `_LOCKOUT_MINUTES` | `10` / `15` | Per-IP, consulted before hashing. |
 | `LISZT_LOG_STDERR` | `false` | JSON logs to stderr; the CLI sets it. |
 
 ---
 
 ## Deployment
 
-Production is **Node 24 under systemd behind a Cloudflare Tunnel**, not Docker.
-`Dockerfile` and `render.yaml` exist for local/CI use and as an alternative.
+**Render is the only supported target.** The systemd unit, the Cloudflare Tunnel
+runbook and the `Dockerfile` are deleted; the `Dockerfile` bound `127.0.0.1` and
+expected a password hash, so it contradicted `render.yaml` and Render never used
+it.
 
-**[`deploy/README.md`](deploy/README.md) is the runbook.** It stands alone:
-preflight, DNS/Cloudflare, host preparation, the env reference, deploy, verify,
-backup and restore, secret rotation, rollback, log inspection, Node upgrades, and
-a security checklist.
+The whole runbook is: connect the repository to Render and let the blueprint do
+the rest. [`render.yaml`](render.yaml) carries everything.
 
-The short version: the app binds loopback only, the database lives outside the
-repo, the password hash lives in a 640 file, and the edge carries one rate-limit
-rule scoped to `/login`.
+| | |
+| --- | --- |
+| Build | `npm ci --omit=dev` |
+| Start | `node src/app.ts` |
+| Health check | `/health` |
+| Deploy trigger | `checksPass` — Render will not deploy with zero checks detected |
+| Disk | `liszt-data` at `/data`, 1 GB |
+
+Four consequences of that blueprint worth knowing before the first deploy:
+
+- **A persistent disk requires a paid plan** (`0.5c-512mb`), so `free` is not an
+  option.
+- **The disk disables zero-downtime deploys.** Every merge briefly stops the
+  service. That is Render's safeguard against two instances writing one SQLite
+  file, and it is correct here — it also means the service cannot scale.
+- **`maxShutdownDelaySeconds: 60`** exists because the app's own shutdown budget
+  is ~45s: a 30s bounded wait for the in-flight cycle, then a backstop. Against
+  Render's 30s default the platform would `SIGKILL` the process mid-write to the
+  SQLite file on every single deploy.
+- **CI gates the deploy.** `.github/workflows/ci.yml` runs
+  `typecheck → lint → format:check → test`, and Render waits on it. Without that
+  workflow Render detects zero checks and never deploys again.
+
+After deploying, confirm the disk actually mounted: `liszt.db`, `liszt.db-wal`
+and `liszt.db-shm` under `/data`. Trigger one sync, restart the service, and
+confirm the catalogue and `pool_videos` survive.
 
 ---
 
