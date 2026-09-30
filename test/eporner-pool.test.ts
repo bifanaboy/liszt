@@ -20,6 +20,7 @@ import {
   preFilter,
   fullRewalkDue,
   indexPool,
+  createPoolLookup,
   gatherPoolSurvivors,
   POOL_FULL_REWALK_KEY,
 } from "../src/tubes/eporner-pool.ts";
@@ -155,6 +156,7 @@ test("the pre-filter is the DURATION half only, and nothing else", () => {
     added: null,
     durationSec: 2138,
     hydratedAt: null,
+    views: null,
   };
   // Right duration: survives, whatever the title and whatever the date.
   assert.equal(preFilter(scene, good, { durationToleranceSec: 2 }), true);
@@ -194,6 +196,7 @@ test("setPoolHydration round-trips the date the API supplied, as ISO UTC", () =>
       // "hydrated" as far as duration goes but has no date at all.
       durationSec: 2138,
       hydratedAt: "2026-03-04T00:00:00.000Z",
+      views: null,
     });
     assert.equal(store.poolUndatedCount(), 1);
 
@@ -234,6 +237,7 @@ test("a dated row is now findable by the window query", () => {
       added: "2026-03-05T11:22:33.000Z",
       durationSec: 2138,
       hydratedAt: null,
+      views: null,
     });
     // The naive zoneless format does not sort against an ISO bound; this is the
     // regression that `toIsoUtc` at the write boundary prevents.
@@ -270,6 +274,7 @@ test("the undated working set is ordered newest-first and capped in SQL", () => 
         added: null,
         durationSec: 600,
         hydratedAt: "2026-03-10T00:00:00.000Z",
+        views: null,
       });
     }
     const all = store.poolVideosUndated("Vovick17");
@@ -333,6 +338,7 @@ test("a truncated re-walk never prunes by absence", async () => {
         added: null,
         durationSec: 600,
         hydratedAt: "2026-03-10T00:00:00.000Z",
+        views: null,
       });
     }
 
@@ -357,6 +363,7 @@ test("a truncated re-walk never prunes by absence", async () => {
         added: null,
         durationSec: 600,
         hydratedAt: "2026-03-10T00:00:00.000Z",
+        views: null,
       });
     }
     const truncated = await index({
@@ -454,6 +461,7 @@ test("hydration inside a scene resolve does not deadlock the shared fetch pool",
         // issue a request rather than short-circuit from the index.
         durationSec: 2138,
         hydratedAt: "2026-03-10T00:00:00.000Z",
+        views: null,
       });
     }
     const gathered = await withDeadline(
@@ -532,6 +540,7 @@ test("an account whose count is not a multiple of the page size still reaches th
         added: null,
         durationSec: 600,
         hydratedAt: "2026-03-10T00:00:00.000Z",
+        views: null,
       });
     }
     // Page 1 is a FULL page of 12; page 2 holds the 7 that end the account, so
@@ -585,6 +594,7 @@ test("a walk truncated at the maxPages ceiling neither prunes nor stamps the cad
         added: null,
         durationSec: 600,
         hydratedAt: "2026-03-10T00:00:00.000Z",
+        views: null,
       });
     }
     // Every page is FULL, so the short-page test never fires, and page 3 does not
@@ -627,6 +637,286 @@ test("a walk truncated at the maxPages ceiling neither prunes nor stamps the cad
         .sort(),
       ["c", "d", "e"],
     );
+  } finally {
+    store.close();
+  }
+});
+
+test("onUploader reports one finished account at a time, failures included", async () => {
+  // The pool index is the longest cold-start phase and the dashboard's
+  // "Indexing the trusted pool" caption comes from this callback. It has to fire
+  // for an account that FAILED too: a bar that stops at 2 of 4 because the third
+  // account threw would read as a hang rather than as a failure.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const seen: Array<[number, number, string]> = [];
+  // One account 404s, because the walk cannot start at all for it.
+  const base = textFetcher({
+    1: walkPage(["a", "b"], "2026-03-08"),
+    2: walkPage(["c"], "2026-03-08"),
+  });
+  const gone: Fetcher = {
+    fetch: (url, options) =>
+      url.includes("/broken/")
+        ? Promise.reject(new Error("account is gone"))
+        : base.fetch(url, options),
+    text: (url, options) =>
+      url.includes("/broken/")
+        ? Promise.reject(new Error("account is gone"))
+        : base.text(url, options),
+    json: <T>(url: string, options?: Parameters<Fetcher["json"]>[1]) => base.json<T>(url, options),
+  };
+  const report = await indexPool({
+    store,
+    fetcher: gone,
+    now: NOW,
+    uploaders: ["Vovick17", "broken"],
+    windowDays: 90,
+    fullRewalkDays: 7,
+    log: () => {},
+    onUploader: (done, total, uploader) => seen.push([done, total, uploader]),
+  });
+  assert.deepEqual(seen, [
+    [1, 2, "Vovick17"],
+    [2, 2, "broken"],
+  ]);
+  assert.equal(report.ok, false, "the second account failed, and the callback still fired");
+  assert.equal(report.uploaders.length, 2);
+  store.close();
+});
+
+test("indexing zero accounts is a no-op that still reports nothing", async () => {
+  // The degenerate shape of the same loop: an empty uploaders list must not
+  // divide by zero, hang, or announce a total that will never be reached.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const seen: Array<[number, number, string]> = [];
+  const report = await indexPool({
+    store,
+    fetcher: textFetcher({}),
+    now: NOW,
+    uploaders: [],
+    windowDays: 90,
+    fullRewalkDays: 7,
+    log: () => {},
+    onUploader: (done, total, uploader) => seen.push([done, total, uploader]),
+  });
+  assert.deepEqual(seen, []);
+  assert.equal(report.totalIndexed, 0);
+  assert.equal(report.ok, true, "no account attempted, so nothing failed");
+  store.close();
+});
+
+// ------------------------------------------------------- the views tiebreak
+
+test("a hydrated row's view count is persisted, and survives the next listing walk", () => {
+  // The regression this guards is silent and total: `pool_videos` had no `views`
+  // column and `hydrate()`'s short-circuit returned no `views` field, so every
+  // fully-indexed row reached `pickMatch` with `views: null`. `rank` then falls
+  // through to LAG, so a multi-survivor shortlist was ordered by how close the
+  // upload was to the release date rather than by popularity - and the plan's
+  // step 4 ("pick the highest view count") was not being applied on the rung
+  // that produced 45 of 46 links. Nothing failed; the rule was simply not
+  // running.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    store.upsertPoolVideo({
+      id: "abc",
+      uploader: "Vovick17",
+      title: "Marfe compilation",
+      added: null,
+      durationSec: 2138,
+      hydratedAt: null,
+      views: null,
+    });
+    store.setPoolHydration("abc", "Vovick17", 2138, "2026-03-05 11:22:33", NOW.toISOString(), 4231);
+    assert.equal(store.poolVideosForUploader("Vovick17")[0]!.views, 4231);
+
+    // A listing walk supplies no count, and must not blank the one hydration
+    // paid a network request to learn. `upsertPoolVideo` COALESCEs for the same
+    // reason it COALESCEs the date.
+    store.upsertPoolVideo({
+      id: "abc",
+      uploader: "Vovick17",
+      title: "Marfe compilation",
+      added: "2026-03-05T11:22:33.000Z",
+      durationSec: 2138,
+      hydratedAt: NOW.toISOString(),
+      views: null,
+    });
+    assert.equal(
+      store.poolVideosForUploader("Vovick17")[0]!.views,
+      4231,
+      "a later walk with no count must not erase a known one",
+    );
+
+    // And shorthand forms are normalised to a number on the way in, so a stored
+    // "1.2k" and a stored 1200 rank identically.
+    store.setPoolHydration("abc", "Vovick17", 2138, null, NOW.toISOString(), null);
+    assert.equal(store.poolVideosForUploader("Vovick17")[0]!.views, 4231, "null is COALESCEd");
+  } finally {
+    store.close();
+  }
+});
+
+test("a pre-migration row fetches its missing view count once, then takes the fast path", async () => {
+  // Migration 0003 adds a nullable column, so every old row starts with views
+  // NULL. If `hydrate()` short-circuited on date+duration alone, those rows
+  // would stay NULL forever and the view tiebreak would remain upload lag in
+  // production. The missing count must therefore force one `video/id` request,
+  // and after that request the normal short-circuit must resume.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const scene = makeMatchScene({
+    id: "test:legacy-views",
+    title: "Marfe compilation",
+    performers: ["Marfe"],
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  let requests = 0;
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>() => {
+      requests += 1;
+      return {
+        id: "legacy",
+        title: "Marfe compilation",
+        url: "https://www.eporner.com/video-legacy/",
+        embed: "https://www.eporner.com/embed/legacy/",
+        length_sec: 2138,
+        added: "2026-03-05 11:22:33",
+        views: 4321,
+      } as T;
+    },
+  };
+  try {
+    store.upsertPoolVideo({
+      id: "legacy",
+      uploader: "Vovick17",
+      title: "Marfe compilation",
+      added: "2026-03-05T11:22:33.000Z",
+      durationSec: 2138,
+      hydratedAt: NOW.toISOString(),
+      views: null,
+    });
+    const deps = {
+      store,
+      fetcher,
+      uploaders: ["Vovick17"],
+      durationToleranceSec: 1,
+      dateWindowDays: 7,
+      log: () => {},
+    };
+
+    const first = await gatherPoolSurvivors(scene, deps, NOW);
+    assert.equal(first.candidates[0]?.views, 4321);
+    assert.equal(requests, 1, "legacy row hydrated once");
+    assert.equal(store.poolVideosForUploader("Vovick17")[0]?.views, 4321);
+
+    const second = await gatherPoolSurvivors(scene, deps, NOW);
+    assert.equal(second.candidates[0]?.views, 4321);
+    assert.equal(requests, 1, "persisted count restores the no-network fast path");
+  } finally {
+    store.close();
+  }
+});
+
+test("the pool rung breaks a same-tier tie on views, not on upload proximity", async () => {
+  // The end-to-end version of the guard above: two fully-indexed rows, same
+  // identity tier, and the LESS popular one is much closer to the release date.
+  // With `views` reaching the matcher the popular one wins; with it missing the
+  // lag comparator would decide, and the popular one would lose.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const scene = makeMatchScene({
+    id: "test:views",
+    title: "Marfe takes it deep",
+    performers: ["Marfe"],
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const row = (over: { id: string; added: string; views: number }) => ({
+    id: over.id,
+    uploader: "Vovick17",
+    // Same title, so both are the same identity tier, and the same stem - the
+    // collapse must not hide the comparison behind a group.
+    title: "Marfe compilation 0304",
+    added: over.added,
+    durationSec: 2138,
+    hydratedAt: NOW.toISOString(),
+    views: over.views,
+  });
+  try {
+    // `popular` is one day after the release; `close` is the same day. Lag
+    // prefers `close` by a whole day.
+    store.upsertPoolVideo(row({ id: "popular", added: "2026-03-05T12:00:00.000Z", views: 90000 }));
+    store.upsertPoolVideo(row({ id: "close", added: "2026-03-04T01:00:00.000Z", views: 12 }));
+
+    const match = await createPoolLookup({
+      store,
+      fetcher: {
+        fetch: async () => new Response(""),
+        text: async () => "",
+        json: async <T>() => ({}) as T,
+      },
+      uploaders: ["Vovick17"],
+      durationToleranceSec: 1,
+      dateWindowDays: 7,
+      log: () => {},
+    })(scene, NOW);
+
+    assert.equal(match?.videoId, "popular", "the view count decided, not the upload date");
+    assert.equal(match?.rejected, null);
+  } finally {
+    store.close();
+  }
+});
+
+test("the pool rung refuses a winner whose title names nobody", async () => {
+  // The gate, end to end. A row that clears duration and date but carries no
+  // identity evidence is not a link: the rung reports no-match so the LADDER can
+  // move to the next tube, rather than writing a confident wrong URL. Before
+  // this, 36 of 46 live links were exactly this case and every one of them was
+  // the wrong video.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const scene = makeMatchScene({
+    id: "test:gate",
+    title: "Brazilian ebony hot wife, Vivian Fernandes",
+    performers: ["Vivian Fernandes"],
+    releaseDate: "2026-09-26",
+    durationSec: 1847,
+  });
+  try {
+    store.upsertPoolVideo({
+      id: "decoy",
+      uploader: "Vovick17",
+      title: "Aceita Dupla Penetracao",
+      added: "2026-09-27T12:00:00.000Z",
+      durationSec: 1847,
+      hydratedAt: NOW.toISOString(),
+      views: 6118,
+    });
+    const match = await createPoolLookup({
+      store,
+      fetcher: {
+        fetch: async () => new Response(""),
+        text: async () => "",
+        json: async <T>() => ({}) as T,
+      },
+      uploaders: ["Vovick17"],
+      durationToleranceSec: 1,
+      dateWindowDays: 7,
+      log: () => {},
+    })(scene, NOW);
+    assert.equal(match?.url, "", "no named candidate, so no link");
+    assert.equal(match?.rejected, "none", "date passed; identity is what rejected the candidate");
+    // It was counted as considered and it cleared duration - the gate is what
+    // rejected it, not the cheap filters.
+    assert.equal(match?.durationPassed, 1);
   } finally {
     store.close();
   }

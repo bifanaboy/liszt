@@ -165,3 +165,40 @@ test("an eporner 200 with real JSON is still authoritative", async () => {
   });
   assert.equal((await present(link())).status, "live");
 });
+
+test("onProgress reports the slice before the loop, so an empty pass is a real zero", async () => {
+  // A re-verify pass over nothing has to be distinguishable from a pass that
+  // never ran, or the meter waits on a total that is never announced.
+  const seen: Array<[number, number]> = [];
+  await reverifyLinks([makeScene({ id: "test:1", videoUrls: [] })], {
+    verify: async () => ({ status: "live" as const }),
+    now: new Date("2026-03-10T00:00:00Z"),
+    onProgress: (done, total) => seen.push([done, total]),
+  });
+  assert.deepEqual(seen, [[0, 0]]);
+});
+
+test("onProgress advances once per link, and a link that throws still counts", async () => {
+  const now = new Date("2026-03-10T00:00:00Z");
+  const scenes = ["a", "b", "c"].map((id) =>
+    makeScene({
+      id: `test:${id}`,
+      videoUrls: [link({ url: `https://www.eporner.com/video-${id}/` })],
+    }),
+  );
+  const seen: Array<[number, number]> = [];
+  await reverifyLinks(scenes, {
+    verify: async (target) => {
+      if (target.url.endsWith("/b")) throw new Error("network flaked");
+      return { status: "live" as const };
+    },
+    now,
+    onProgress: (done, total) => seen.push([done, total]),
+  });
+  assert.deepEqual(seen, [
+    [0, 3],
+    [1, 3],
+    [2, 3],
+    [3, 3],
+  ]);
+});

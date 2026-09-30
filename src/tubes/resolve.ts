@@ -1,19 +1,26 @@
 /**
- * Link resolution - the three-rung ladder.
+ * Link resolution - the two-rung ladder, and the place a sparse identity signal
+ * is managed rather than worked around.
  *
  * For each scene with no live link, a positive duration, and a non-`none`
  * matcher lane, in order:
  *
  *   1. eporner trusted pool   (rung 1, the hot path)
  *   2. sxyprn                 (search, gate the card, then re-fetch and re-gate)
- *   3. eporner open search    (explicit `lq=0`)
  *
- * Otherwise the scene stays unlinked and is retried on a later cycle.
+ * A rung that finds nothing hands the scene to the next one. The eporner
+ * open-search rung that used to sit at position 3 is DELETED, and the reason is
+ * not that it misbehaved but that it could not do its job: the eporner v2 search
+ * API takes `query, per_page, page, thumbsize, order, gay, lq, format` and no
+ * upload date, so reaching a release 90 days old means paginating backwards
+ * from `order=latest` with no reliable stop. It also could not know whose video
+ * it had found: the uploader appears only in the video page markup, never in
+ * `video/search/` or `video/id/`, so an untrusted account was invisible to it
+ * and every video that account uploaded inside the window went unlinked.
  *
- * THE RULE IS THE SAME ON ALL THREE. Duration band and upload window filter;
- * performer-in-title only ranks. The rule strings below are the only place the
- * rule is written down in prose, and they are deliberately identical in content
- * so a rung cannot quietly drift into being stricter than the others.
+ * The rule is the same on both rungs. Duration and upload window filter, then
+ * performer-in-title GATES: a rung may only link a candidate it can name, and a
+ * gated no-match moves to the next tube rather than guessing.
  *
  * A source that ERRORS is not a source that found nothing: an error lets the
  * next rung run, and the recorded outcome is a clean no-match only if a rung
@@ -21,16 +28,19 @@
  * stamped so the read model can say when it was last looked at.
  *
  * `confidence` is the winner's IDENTITY TIER, not a date measurement. `low`
- * means the winner carried no identity evidence at all and was chosen on views
- * alone - the decoy path, and exactly the set of links worth eyeballing by
- * hand. A tier of 3, 2 or 1 all read `high`, because a first-name-only match is
- * a real match and flagging it as suspect would swamp the signal.
+ * means the winner carried no identity evidence at all - the decoy path, and
+ * exactly the set of links worth eyeballing by hand. A tier of 3, 2 or 1 all
+ * read `high`, because a first-name-only match is a real match and flagging it
+ * as suspect would swamp the signal.
  *
- * The safety rule is inherited unchanged: a missing link is preferable to a
- * wrong link. No rung writes a URL that did not clear the shared gate, and a
- * URL already in `deadVideoUrls` is never re-added.
+ * The safety rule is inherited unchanged for the implementation currently in
+ * this file: a missing link is preferable to a wrong link. A rung writes no URL
+ * that did not clear the shared gate, and a URL already in `deadVideoUrls` is
+ * never re-added. The plan's proposed terminal fallback - link an unnameable
+ * survivor as `low` after every tube has run - is a separate, still-unconfirmed
+ * decision and is deliberately NOT implemented here. Until that decision is
+ * made, a scene with no named candidate remains unlinked.
  */
-import { epornerVideoId, epornerWatchUrl, type EpornerOpenMatch } from "./eporner.ts";
 import { validSxyprnUrl, type SxyprnMatch } from "./sxyprn.ts";
 import { toMatchScene, type MatchScene, type Rung } from "./types.ts";
 import type { PoolMatch } from "./eporner-pool.ts";
@@ -38,13 +48,12 @@ import type { IdentityTier } from "../core/matching.ts";
 import type { Scene, VideoLink, VideoLinkSource } from "../core/schema.ts";
 
 const RULE_SHAPE =
-  "duration within tolerance AND upload date within release-1d..release+window; identity ranks, never gates";
+  "duration within tolerance AND upload date within release-1d..release+window; identity gates, then ranks";
 
 export const POOL_RULE = `trusted-pool: ${RULE_SHAPE}`;
 export const SXYPRN_RULE = `sxyprn: ${RULE_SHAPE}; post details verified, not the search card`;
-export const OPEN_RULE = `eporner open: lq=0, ${RULE_SHAPE}`;
 
-/** `low` is the decoy path: a winner with no identity evidence, chosen on views. */
+/** `low` is the decoy path: a winner with no identity evidence. */
 function confidenceFor(tier: IdentityTier | undefined): "high" | "low" {
   return tier === 0 || tier === undefined ? "low" : "high";
 }
@@ -58,8 +67,12 @@ export interface ResolveDeps {
   poolLookup: ((scene: MatchScene, now: Date) => Promise<PoolMatch | null>) | null;
   /** Rung 2. Null when the optional sxyprn client is not installed. */
   sxyprnLookup: ((scene: MatchScene) => Promise<SxyprnMatch[]>) | null;
-  /** Rung 3. */
-  openLookup: ((scene: MatchScene) => Promise<EpornerOpenMatch[]>) | null;
+  /**
+   * Where a rung's own failure is reported, so a rung that is down is
+   * distinguishable from a rung that found nothing. Optional so a caller without
+   * a logger still gets the counters.
+   */
+  log?: { warn(message: string, fields?: Record<string, unknown>): void };
 }
 
 export interface ResolveResult {
@@ -124,8 +137,9 @@ async function tryPool(
   let match: PoolMatch | null;
   try {
     match = await deps.poolLookup(scene, deps.now);
-  } catch {
+  } catch (error) {
     rejections.errored += 1;
+    logRungFailure(deps, "eporner-pool", error);
     return null;
   }
   // The pool rung reports a zeroed match rather than null when it ran and found
@@ -144,6 +158,33 @@ async function tryPool(
   return { link: linkFor("eporner-pool", match.url, deps.now), tier: match.identityTier };
 }
 
+/**
+ * A rung that threw, named. Counted before this change, invisible after it.
+ *
+ * The rejection counters roll every rung together into one `errored` number, so
+ * a rung that fails on every scene it touches and a rung that fails on one are
+ * indistinguishable in the run log. That is how the sxyprn rung came to be
+ * described as "returns nothing in production" when all that had been observed
+ * was an aggregate: nothing anywhere said WHAT it threw, and a blocked
+ * datacenter IP, an uninstalled optional package and a genuine outage all look
+ * identical from the outside. Throttled to the first failure and then every
+ * tenth, so a rung that is down for a whole cycle cannot flood the log.
+ */
+let rungFailuresLogged = 0;
+
+function logRungFailure(deps: ResolveDeps, rung: string, error: unknown): void {
+  if (rungFailuresLogged !== 0 && rungFailuresLogged % 10 !== 0) {
+    rungFailuresLogged += 1;
+    return;
+  }
+  rungFailuresLogged += 1;
+  deps.log?.warn("ladder rung failed", {
+    rung,
+    error: (error as Error)?.message ?? String(error),
+    seenSoFar: rungFailuresLogged,
+  });
+}
+
 async function trySxyprn(
   scene: MatchScene,
   dead: Set<string>,
@@ -155,8 +196,9 @@ async function trySxyprn(
   let matches: SxyprnMatch[];
   try {
     matches = await deps.sxyprnLookup(scene);
-  } catch {
+  } catch (error) {
     rejections.errored += 1;
+    logRungFailure(deps, "sxyprn", error);
     return null;
   }
   if (!matches.length) {
@@ -171,32 +213,6 @@ async function trySxyprn(
     return null;
   }
   return { link: linkFor("sxyprn", found.url, deps.now), tier: found.identityTier };
-}
-
-async function tryOpen(
-  scene: MatchScene,
-  dead: Set<string>,
-  deps: ResolveDeps,
-  rejections: RungRejections,
-): Promise<{ link: VideoLink; tier: IdentityTier } | null> {
-  if (!deps.openLookup) return null;
-  rejections.attempted += 1;
-  let matches: EpornerOpenMatch[];
-  try {
-    matches = await deps.openLookup(scene);
-  } catch {
-    rejections.errored += 1;
-    return null;
-  }
-  for (const match of matches) {
-    const id = epornerVideoId(match.video.url ?? "") ?? String(match.video.id ?? "");
-    const url = id ? epornerWatchUrl(id) : "";
-    if (url && !dead.has(url)) {
-      return { link: linkFor("eporner", url, deps.now), tier: match.identityTier };
-    }
-  }
-  rejections.noMatch += 1;
-  return null;
 }
 
 /**
@@ -220,11 +236,9 @@ export async function resolveScene(
   const matchScene = buildMatchScene(scene, deps.creatorStudio);
   const dead = new Set(scene.deadVideoUrls.map((link) => link.url));
 
-  const pool = await tryPool(matchScene, dead, deps, rejections);
   const winner =
-    pool ??
-    (await trySxyprn(matchScene, dead, deps, rejections)) ??
-    (await tryOpen(matchScene, dead, deps, rejections));
+    (await tryPool(matchScene, dead, deps, rejections)) ??
+    (await trySxyprn(matchScene, dead, deps, rejections));
 
   if (!winner) {
     return {
@@ -237,13 +251,8 @@ export async function resolveScene(
   }
 
   const { link, tier } = winner;
-  const rung: Rung =
-    link.source === "sxyprn"
-      ? "sxyprn"
-      : link.source === "eporner"
-        ? "eporner-open"
-        : "eporner-pool";
-  const rule = rung === "eporner-pool" ? POOL_RULE : rung === "sxyprn" ? SXYPRN_RULE : OPEN_RULE;
+  const rung: Rung = link.source === "sxyprn" ? "sxyprn" : "eporner-pool";
+  const rule = rung === "eporner-pool" ? POOL_RULE : SXYPRN_RULE;
   return {
     scene: {
       ...scene,
@@ -274,9 +283,18 @@ export interface ResolveLinksOptions {
   matcherFor: (scene: Scene) => { matcher: string | null; creatorStudio: boolean };
   poolLookup: ResolveDeps["poolLookup"];
   sxyprnLookup: ResolveDeps["sxyprnLookup"];
-  openLookup: ResolveDeps["openLookup"];
+  log?: ResolveDeps["log"];
   /** Optional cap on how many eligible scenes are resolved this cycle. */
   limit?: number;
+  /**
+   * Progress of the resolve queue, for the dashboard's live meter.
+   *
+   * Called once with `done: 0` and the queue length, then once per COMPLETED
+   * scene. `mapWithConcurrency` interleaves the tasks, so `done` is a completion
+   * count supplied by the caller and must never be derived from a result index -
+   * that would make the bar jump backwards.
+   */
+  onProgress?: (done: number, total: number, matched: number) => void;
 }
 
 /**
@@ -286,7 +304,9 @@ export interface ResolveLinksOptions {
  * Eligibility is deliberately NOT performer-gated. The old rule required a
  * performer to match at all, which meant a scene whose upstream data happens to
  * be missing its cast list could never be linked, however obviously its video
- * was. A performer-less scene is now eligible and simply ranks on fewer signals.
+ * was. A performer-less scene is still eligible here - it is the RUNGS that
+ * require identity, not the queue - but until the terminal-fallback decision is
+ * confirmed it remains unlinked when no candidate can name it.
  */
 export async function resolveLinks({
   scenes,
@@ -295,8 +315,9 @@ export async function resolveLinks({
   matcherFor,
   poolLookup,
   sxyprnLookup,
-  openLookup,
+  log,
   limit,
+  onProgress,
 }: ResolveLinksOptions): Promise<{
   scenes: Scene[];
   changed: Scene[];
@@ -319,24 +340,29 @@ export async function resolveLinks({
   const queue = bounded === undefined ? eligible : eligible.slice(0, bounded);
   const rejections = emptyRejections();
   // Shared and mutated in place: `mapWithConcurrency` interleaves scenes, and a
-  // per-scene counter could not be summed without racing.
-  const results = await mapWithConcurrency(queue, (scene) => {
+  // per-scene counter could not be summed without racing. `matched` is the same
+  // shape for the same reason - the progress callback is handed a running total
+  // from inside the concurrent region, exactly like `rejections` is.
+  let matched = 0;
+  let done = 0;
+  onProgress?.(0, queue.length, 0);
+  const results = await mapWithConcurrency(queue, async (scene) => {
     const { matcher, creatorStudio } = matcherFor(scene);
-    return resolveScene(
+    const result = await resolveScene(
       scene,
-      { matcher, creatorStudio, now, poolLookup, sxyprnLookup, openLookup },
+      { matcher, creatorStudio, now, poolLookup, sxyprnLookup, log },
       rejections,
     );
+    if (result.matched && result.tier !== null) matched += 1;
+    done += 1;
+    onProgress?.(done, queue.length, matched);
+    return result;
   });
   const byId = new Map(results.map((result) => [result.scene.id, result.scene]));
-  let matched = 0;
   const tiers: IdentityTier[] = [];
   const changed: Scene[] = [];
   for (const result of results) {
-    if (result.matched && result.tier !== null) {
-      matched += 1;
-      tiers.push(result.tier);
-    }
+    if (result.matched && result.tier !== null) tiers.push(result.tier);
     if (result.changed) changed.push(result.scene);
   }
   return {

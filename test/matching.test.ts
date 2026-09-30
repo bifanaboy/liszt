@@ -30,7 +30,6 @@ import {
   type PickResult,
   type TubeCandidate,
 } from "../src/core/matching.ts";
-import { matchEpornerOpen } from "../src/tubes/eporner.ts";
 import type { MatchScene } from "../src/tubes/types.ts";
 
 const scene: MatchScene = {
@@ -74,11 +73,65 @@ test("accepts a candidate inside the duration band and the window", () => {
 });
 
 test("duration rejects at the boundary and accepts one second inside it", () => {
-  assert.ok(pickMatch(scene, [candidate({ duration: 1420 })], WINDOW), "+2s is inside");
-  assert.ok(pickMatch(scene, [candidate({ duration: 1416 })], WINDOW), "-2s is inside");
+  // The default is 1s, measured over the 46 links the live service held on
+  // 2026-09-30: every winner that carried identity evidence sat at exactly 0s,
+  // and all twenty winners at 1s or 2s were the wrong video. So the boundary
+  // that matters is the one the reported bug sat on - 2s out - and it must be
+  // outside. See `MATCH_DURATION_TOLERANCE_SEC` for the table.
+  assert.ok(pickMatch(scene, [candidate({ duration: 1419 })], WINDOW), "+1s is inside");
+  assert.ok(pickMatch(scene, [candidate({ duration: 1417 })], WINDOW), "-1s is inside");
+  assert.equal(pickMatch(scene, [candidate({ duration: 1420 })], WINDOW), null, "+2s is outside");
+  assert.equal(pickMatch(scene, [candidate({ duration: 1416 })], WINDOW), null, "-2s is outside");
   assert.equal(pickMatch(scene, [candidate({ duration: 1421 })], WINDOW), null, "+3s is outside");
-  assert.equal(pickMatch(scene, [candidate({ duration: 1415 })], WINDOW), null, "-3s is outside");
-  assert.equal(MATCH_DURATION_TOLERANCE_SEC, 2);
+  assert.equal(MATCH_DURATION_TOLERANCE_SEC, 1);
+});
+
+test("the reported bug: a 1845s decoy cannot be admitted by a 1847s scene", () => {
+  // The exact trio from the report. The comparison is `> tolerance`, so a
+  // tolerance of 2 admitted this decoy on the inclusive boundary: `2 > 2` is
+  // false. At 1s the same check is `2 > 1`, so the decoy is rejected and the
+  // real video - an exact 0s match - is the only candidate left.
+  const reported: MatchScene = {
+    id: "mambo-perv:725786",
+    source: "mambo-perv",
+    sourceId: "mambo-perv",
+    label: "Mambo Perv",
+    title: "Brazilian ebony hot wife, Vivian Fernandes fucked by a big black dick OB670",
+    performers: ["Vivian Fernandes"],
+    releaseDate: "2026-09-26",
+    durationSec: 1847,
+    sceneCode: "OB670",
+  };
+  const inWindow = { dateWindowDays: 7, requireIdentity: true };
+  const decoy: TubeCandidate = {
+    title: "Aceita Dupla Penetracao",
+    duration: 1845,
+    url: "https://www.eporner.com/video-ZCjANkVcnV2/",
+    views: 6118,
+    added: "2026-09-27 12:00:00",
+  };
+  const real: TubeCandidate = {
+    title: "Vivian Fernandes Brazilian ebony OB670",
+    duration: 1847,
+    url: "https://www.eporner.com/video-ZOp97Rv2LhP/",
+    views: 900,
+    added: "2026-09-27 09:00:00",
+  };
+  // Alone, the decoy is rejected on duration.
+  assert.equal(pickMatch(reported, [decoy], inWindow), null, "the 2s decoy is outside the band");
+  // With the real video present, the pick is the real video, not the decoy that
+  // has eight times the views. This is the assertion that would have caught the
+  // original bug: at a 2s tolerance the decoy entered the shortlist and won on
+  // views.
+  const picked = pickMatch(reported, [decoy, real], inWindow);
+  assert.equal(picked?.candidate.url, "https://www.eporner.com/video-ZOp97Rv2LhP/");
+  // And the gate alone rejects the decoy even inside the band, so the fix does
+  // not depend on the tolerance being right.
+  assert.equal(
+    pickMatch(reported, [{ ...decoy, duration: 1847 }], inWindow),
+    null,
+    "a 0s decoy still fails: no identity evidence",
+  );
 });
 
 test("a scene with no positive duration can never match, on any rung", () => {
@@ -423,24 +476,6 @@ test("distinct stems from different uploaders are now ranked, not rejected", () 
   assert.equal(identityTier(scene, b.title), tierOf(picked));
 });
 
-// ------------------------------------------------------------- open-search rung
-
-test("the open rung applies the same rule as every other rung", () => {
-  const video = {
-    url: "https://www.eporner.com/video-abc/",
-    embed: "https://www.eporner.com/embed/abc/",
-    title: "Marfe takes it deep",
-    length_sec: 1418,
-    added: "2026-03-05 10:00:00",
-  };
-  assert.ok(matchEpornerOpen(scene, [video], WINDOW));
-  // Out of window on this rung exactly as on the pool rung.
-  assert.equal(matchEpornerOpen(scene, [{ ...video, added: "2026-04-20 10:00:00" }], WINDOW), null);
-  // Out of the duration band, and with no date at all.
-  assert.equal(matchEpornerOpen(scene, [{ ...video, length_sec: 1423 }], WINDOW), null);
-  assert.equal(matchEpornerOpen(scene, [{ ...video, added: null }], WINDOW), null);
-});
-
 // ----------------------------------------------------------------- timestamps
 
 test("a zone-less timestamp is pinned to UTC, not read as local time", () => {
@@ -633,4 +668,85 @@ test("the stem collapse keeps the tighter lag, not the first-seen member", () =>
       "the dated member wins the stem regardless of which arrived first",
     );
   }
+});
+
+// ------------------------------------------------------- the identity gate
+
+test("requireIdentity drops every candidate that names nobody", () => {
+  // Three survivors, all inside the band and the window. One names the
+  // performer, and it wins; the two that name nobody are not links at all.
+  const named = candidate({ title: "Marfe okkk deep take" });
+  const unnamed = candidate({
+    title: "Bem no fundo da bunda",
+    url: "https://www.eporner.com/video-xyz/",
+  });
+  const { title: _a, ...noNameNoUrl } = candidate();
+  const other = { ...noNameNoUrl, title: "Another unrelated clip", url: "https://x/1" };
+
+  assert.equal(
+    pickMatch(scene, [unnamed], { ...WINDOW, requireIdentity: true }),
+    null,
+    "one unnamed candidate is a no-match",
+  );
+  assert.equal(
+    pickMatch(scene, [unnamed, other], { ...WINDOW, requireIdentity: true }),
+    null,
+    "two unnamed candidates are still a no-match",
+  );
+  const picked = pickMatch(scene, [unnamed, named, other], { ...WINDOW, requireIdentity: true });
+  assert.equal(picked?.candidate.title, named.title, "the named one is admitted");
+  // And the gate is opt-in, so a caller that does not ask for it is unchanged.
+  assert.ok(pickMatch(scene, [unnamed], WINDOW), "without the flag, the unnamed one still wins");
+});
+
+test("the gate judges a STEM GROUP on its best member, in either input order", () => {
+  // Candidates collapse by title stem before anything else, so a repost and its
+  // original are one candidate. Gating has to happen after that collapse and on
+  // the group's BEST member: gate inside the scan loop and a group gets judged
+  // on whichever member happened to be examined first, which drops a correctly
+  // titled original because an untitled sibling was seen first.
+  // The view counts are set explicitly because the rule is not intuitive: a
+  // candidate with a KNOWN count outranks one the source said nothing about, so
+  // an unset `views` here would lose to the repost on the missing count rather
+  // than on anything about the titles.
+  const named = candidate({ title: "Marfe compilation", views: 100 });
+  // Same stem - `new` is a decoration word - and the same identity tier, so the
+  // view count is the only thing that separates the two members of the group.
+  const repost = candidate({
+    title: "New Marfe compilation",
+    url: "https://www.eporner.com/video-repost/",
+    views: 5,
+  });
+  const gate = { ...WINDOW, requireIdentity: true };
+  // Named first, and repost first: the same winner either way.
+  for (const order of [
+    [named, repost],
+    [repost, named],
+  ]) {
+    const picked = pickMatch(scene, order, gate);
+    assert.equal(picked?.candidate.url, named.url, "the better-ranked member of the group wins");
+  }
+  // A group where NO member names the performer is dropped whole, and the other
+  // group still gets its chance.
+  const decoyGroup = candidate({
+    title: "Unrelated compilation",
+    url: "https://www.eporner.com/video-decoy/",
+  });
+  const picked = pickMatch(scene, [decoyGroup, named], gate);
+  assert.equal(picked?.candidate.url, named.url, "one named group is enough");
+  assert.equal(pickMatch(scene, [decoyGroup], gate), null, "an all-unnamed group is a no-match");
+});
+
+test("a performer-less scene cannot clear the gate, and that is reported not guessed", () => {
+  // No performers and no scene code means every candidate scores tier 0, so the
+  // gate has nothing to admit. The honest answer is a no-match the ladder can
+  // route on - not a rank on views dressed up as a match. The one path allowed
+  // to link such a scene is the ladder's terminal fallback, flagged `low`.
+  const noCast = { ...scene, performers: [] };
+  const titled = candidate({ title: "Whatever the uploader called it" });
+  assert.equal(pickMatch(noCast, [titled], { ...WINDOW, requireIdentity: true }), null);
+  // The scene's own title can still identify it, so the gate is not a blanket ban.
+  const selfTitled = candidate({ title: "Marfe takes it deep" });
+  const picked = pickMatch(noCast, [selfTitled], { ...WINDOW, requireIdentity: true });
+  assert.equal(picked?.identityTier, 3, "the studio's own wording is tier 3 evidence");
 });

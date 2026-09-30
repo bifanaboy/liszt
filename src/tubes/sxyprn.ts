@@ -4,9 +4,22 @@
  * sxyprn exposes no clean public API, so it is reached through the optional
  * `sxyprn` client (browser impersonation) when that package is installed. From
  * a datacenter IP sxyprn frequently answers 403 behind Cloudflare, so this rung
- * is the one most likely to be dead in production; the client is therefore
- * lazily loaded and circuit-broken in `sxyprn-client.ts`, and a failure here
- * simply lets the eporner-open rung run.
+ * is the one most likely to be unavailable in production; the client is
+ * therefore lazily loaded and circuit-broken in `sxyprn-client.ts`, and a
+ * failure here simply lets the ladder record an error and stop.
+ *
+ * MEASURED, and the reason "most likely to be unavailable" is stated as a
+ * concern rather than a fact. From a workstation IP the client answers fine: a
+ * live `search("mambo-perv")` on 2026-09-30 returned 30 cards, each carrying
+ * `durationSeconds`, `views`, `relativeDate` and `author`. The open question is
+ * what a datacenter IP gets, and the ladder now logs the error a rung throws
+ * instead of folding every rung's failures into one `errored` counter - a
+ * blocked IP, a missing optional package and a genuine outage were
+ * indistinguishable from outside, which is how this rung came to be described
+ * as dead on the strength of an aggregate. Everything the gate needs is here:
+ * the card carries the duration, the post carries a real `uploadDate` and a
+ * `views` count, so this tube can raise the share of scenes that can be
+ * identified at all.
  *
  * THE TWO PASSES, AND WHY THERE ARE TWO. Search cards already carry
  * `durationSeconds`, so the duration half of the gate can run on the cards and
@@ -142,6 +155,7 @@ export function createSxyprnLookup({
     if (!queries.length || !Number.isFinite(scene.durationSec)) return [];
     const allCandidates = new Map<string, SxyprnCard>();
     let successfulSearches = 0;
+    const searchErrors: string[] = [];
     for (const query of queries) {
       try {
         const page = await search(query);
@@ -150,11 +164,19 @@ export function createSxyprnLookup({
           if (!validSxyprnUrl(item.url)) continue;
           allCandidates.set(item.url as string, item);
         }
-      } catch {
+      } catch (error) {
+        searchErrors.push((error as Error).message);
         /* A second performer or the title may still find the scene. */
       }
     }
-    if (!successfulSearches) throw new Error("sxyprn search unavailable");
+    if (!successfulSearches) {
+      // Keep the source's actual reason. A generic message made an HTTP 403,
+      // a timeout, and a broken package indistinguishable, so the aggregate
+      // `errored` count was mistaken for proof that this whole tube was dead.
+      // The query text is not logged; it may contain scene metadata.
+      const reasons = [...new Set(searchErrors)].slice(0, 3).join("; ");
+      throw new Error(`sxyprn search unavailable${reasons ? `: ${reasons}` : ""}`);
+    }
 
     // The card pass. `dateWindowDays: null` is the whole point: a card has no
     // real date, so the date half is deferred rather than faked from
@@ -223,7 +245,13 @@ export function createSxyprnLookup({
       const detail = outcome.detail;
       verifiedPosts += 1;
       // Verify the POST's own title, duration and date, not the search card's:
-      // a card can advertise any of the three wrongly.
+      // a card can advertise any of the three wrongly. This is also where the
+      // identity gate applies, and the placement is deliberate: the card pass
+      // above is NOT gated, because a search card routinely omits the
+      // performer from a title the post itself carries, and gating there would
+      // refuse to fetch the very post that would have proved the match. The
+      // detail pass is the one that admits, so it is the one that requires a
+      // candidate it can name.
       const accepted = pickMatch(
         identity,
         [
@@ -235,7 +263,7 @@ export function createSxyprnLookup({
             views: detail.views ?? null,
           },
         ],
-        { dateWindowDays, durationToleranceSec },
+        { dateWindowDays, durationToleranceSec, requireIdentity: true },
       );
       if (validSxyprnUrl(detail.url) && detail.url === item.url && detail.streamUrl && accepted) {
         verified.push({

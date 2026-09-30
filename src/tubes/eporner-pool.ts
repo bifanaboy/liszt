@@ -280,6 +280,13 @@ export interface PoolIndexDeps {
   fullRewalkDays: number;
   log(message: string, fields?: Record<string, unknown>): void;
   maxPages?: number;
+  /**
+   * Progress of the account loop, for the dashboard's live meter. Called once
+   * per FINISHED account with its 1-based position, whether it indexed or
+   * failed - a failed account is an attempt that completed, and the caption has
+   * to be able to say so.
+   */
+  onUploader?: (done: number, total: number, uploader: string) => void;
 }
 
 export interface UploaderIndexReport {
@@ -425,6 +432,10 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
             // at index time and no per-scene `video/id` call is ever needed.
             durationSec: entry.durationSec,
             hydratedAt: entry.durationSec === null ? null : now.toISOString(),
+            // The listing carries no view count. `null` here is a real "the
+            // source did not say", and `upsertPoolVideo` COALESCEs it, so the
+            // walk cannot blank a count an earlier hydration paid for.
+            views: null,
           });
           report.indexed += 1;
           if (entry.added === null) report.undated += 1;
@@ -495,6 +506,7 @@ export async function indexPool(deps: PoolIndexDeps): Promise<PoolIndexReport> {
         definitive: classifyError(error) === "definitive",
       });
     }
+    deps.onUploader?.(reports.length, uploaders.length, uploader);
   }
 
   // The cadence is stamped only when EVERY account that attempted a full re-walk
@@ -550,7 +562,7 @@ export interface PoolMatch {
   videoId: string;
   uploader: string;
   title: string;
-  /** The winner's identity tier. 0 means it won on views alone. */
+  /** The winner's identity tier. 0 means the title named neither performer nor scene. */
   identityTier: IdentityTier;
   /** Days between the scene's release date and the winner's upload date. */
   lagDays: number | null;
@@ -609,12 +621,17 @@ async function hydrate(
   video: PoolVideo,
   { store, fetcher, now }: { store: SqliteStore; fetcher: Fetcher; now: Date },
 ): Promise<EpornerVideo | null> {
-  // The short-circuit needs BOTH halves of the gate on hand. A row with a
-  // duration but no date is exactly the common case - the listing supplies one
-  // and never the other - and returning it here would leave it permanently
-  // undatable, so every scene that considers it would silently find an
-  // inadmissible candidate forever.
-  if (video.durationSec !== null && video.added !== null) {
+  // The short-circuit needs both gate fields AND the view count on hand. A row
+  // with a duration but no date is exactly the common case - the listing
+  // supplies one and never the other - and returning it here would leave it
+  // permanently undatable. Rows written before migration 0003 have date and
+  // duration but no views; they must also pass through hydration once, or the
+  // new view-count tiebreak would remain null forever on every existing row.
+  // The API supplies views on the measured rows, so after this one backfill the
+  // short-circuit is free again. If a source row has no count, it is not marked
+  // separately; that uncommon case may be re-requested when another scene
+  // considers it, rather than persisting a fabricated zero.
+  if (video.durationSec !== null && video.added !== null && video.views !== null) {
     return {
       id: video.id,
       title: video.title ?? "",
@@ -622,6 +639,13 @@ async function hydrate(
       embed: epornerEmbedUrl(video.id),
       length_sec: video.durationSec,
       added: video.added,
+      // Carried through, and this is the whole point of the short-circuit
+      // carrying it. `rank` orders survivors by tier, then VIEWS, then lag, so a
+      // row that reaches the matcher without a count skips the documented
+      // tiebreak entirely and falls through to upload proximity - which is not
+      // a quality signal. Before migration 0003 this field simply did not exist
+      // and every fully-indexed row took that path.
+      views: video.views,
       uploader: video.uploader,
     };
   }
@@ -633,6 +657,12 @@ async function hydrate(
     const record = (Array.isArray(data) ? data[0] : data) as EpornerVideo | undefined;
     const duration = Number(record?.length_sec);
     if (!record || !Number.isFinite(duration) || duration <= 0) return null;
+    // The view count, normalised the same way the matcher normalises it, and
+    // carried to BOTH the write and the returned candidate. Persisting it is
+    // what makes the documented view-count tiebreak reachable on the pool rung
+    // at all: the rung re-reads this row for the next scene, and a count that
+    // was not written down has to be paid for again.
+    const views = comparableViews(record.views);
     // Persist permanently, and persist the DATE with it: hydration happens once
     // per video, not once per scene, and the date is half the gate. Dropping it
     // here - as an earlier version did - would make every later scene pay the
@@ -643,6 +673,7 @@ async function hydrate(
       Math.round(duration),
       record.added ?? null,
       now.toISOString(),
+      views,
     );
     return {
       id: video.id,
@@ -660,12 +691,47 @@ async function hydrate(
   }
 }
 
+/**
+ * A view count as a number, or null when the source said nothing usable.
+ *
+ * Duplicated from `matching.ts`'s private `viewCount` rather than imported: that
+ * one is not exported, and exporting it would widen the module's surface for one
+ * caller. The two must agree on what "no count" means - `null`, never `NaN` and
+ * never 0 - because the value written to the index is the value the matcher
+ * later reads, and a disagreement would show up only as a mis-ordered tiebreak.
+ */
+function comparableViews(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  const suffix = /(k|m)$/i.exec(trimmed);
+  const digits = trimmed.replace(/[,\s]/g, "").replace(/(?:views?|k|m)$/i, "");
+  if (!/^\d+(\.\d+)?$/.test(digits)) return null;
+  const value = Number(digits);
+  if (!Number.isFinite(value)) return null;
+  if (suffix) return value * (/^m$/i.test(suffix[1] as string) ? 1_000_000 : 1_000);
+  return value;
+}
+
 /** What the duration pre-filter and hydration produced, before the date half. */
 export interface PoolSurvivors {
   /** Index rows the duration pre-filter examined. */
   considered: number;
   /** Rows that survived the duration band. */
   durationPassed: number;
+  /**
+   * Every row that cleared the pre-filter, with the duration it was screened on.
+   *
+   * Reported BEFORE hydration, and deliberately not post-hydration: a hydration
+   * failure removes a candidate from contention for reasons that have nothing to
+   * do with duration, so counting it here would make the band look emptier than
+   * it is. The purpose is band occupancy at a tolerance NARROWER than the one
+   * the gather ran with, which is a question about the index and can be answered
+   * from these numbers without a second scan. Rows with no title are absent,
+   * because a title-less row hashes to an empty title stem and is never a
+   * candidate however well its duration agrees.
+   */
+  survivorDurations: number[];
   /** Hydrated candidates, ready for the date half. */
   candidates: TubeCandidate[];
   /** True when the hydration cap dropped survivors that would otherwise qualify. */
@@ -745,7 +811,11 @@ export async function gatherPoolSurvivors(
       if (preFilter(scene, row, { durationToleranceSec })) survivors.push(row);
     }
   }
-  if (!survivors.length) return { considered, durationPassed: 0, candidates: [], capped: false };
+  const survivorDurations = survivors.flatMap((row) =>
+    row.durationSec === null ? [] : [row.durationSec],
+  );
+  if (!survivors.length)
+    return { considered, durationPassed: 0, survivorDurations, candidates: [], capped: false };
 
   // Hydration is the only network cost in this rung, and it is bounded.
   const queue = survivors.slice(0, maxHydrations);
@@ -787,7 +857,7 @@ export async function gatherPoolSurvivors(
       views: video.views ?? null,
       uploader: video.uploader,
     }));
-  return { considered, durationPassed: survivors.length, candidates, capped };
+  return { considered, durationPassed: survivors.length, survivorDurations, candidates, capped };
 }
 
 /**
@@ -839,7 +909,18 @@ export function createPoolLookup(options: PoolLookupOptions) {
     const unknownDate = checks?.filter((check) => check === "unknown").length ?? 0;
     const rejectedByDate = checks ? checks.filter((check) => check === false).length : 0;
 
-    const match = pickMatch(scene, eligible, { durationToleranceSec, dateWindowDays: window });
+    // `requireIdentity` is the gate, and it is the whole point of this change.
+    // Measured on 2026-09-30 over the 46 links this rung produced: 36 winners
+    // carried no identity evidence and every one of them was the wrong video -
+    // a 1847s scene for Vivian Fernandes linked to a 1845s video titled "Aceita
+    // Dupla Penetracao". Gating here means a no-match the LADDER can act on, so
+    // the scene moves to sxyprn instead of being written as a confident wrong
+    // URL. See `PickOptions.requireIdentity`.
+    const match = pickMatch(scene, eligible, {
+      durationToleranceSec,
+      dateWindowDays: window,
+      requireIdentity: true,
+    });
     const counts = {
       candidatesConsidered: considered,
       durationPassed,
@@ -848,7 +929,12 @@ export function createPoolLookup(options: PoolLookupOptions) {
       unknownDate,
       hydrationCapped: gathered.capped,
     };
-    if (!match) return { ...emptyMatch, ...counts, rejected: "date" };
+    // `eligible` has already passed the date half above. A null pick here means
+    // that no candidate could be ranked - under `requireIdentity`, the usual
+    // reason is that every stem group was unnamed. Do not misreport that as a
+    // date rejection: the counters already know exactly how many date checks
+    // failed, and an identity failure is a clean no-match after those checks.
+    if (!match) return { ...emptyMatch, ...counts, rejected: "none" };
 
     const videoId = epornerVideoId(match.candidate.url);
     if (!videoId) return { ...emptyMatch, ...counts, rejected: "none" };

@@ -30,6 +30,22 @@
         <article class="stat"><span class="stat-label">WITH A LINK</span><strong id="stat-linked">—</strong><span class="stat-note" id="link-rate">verified source matches</span></article>
         <article class="stat"><span class="stat-label">SOURCES</span><strong id="stat-studios">—</strong><span class="stat-note">active sources</span></article>
         <article class="stat stat-updated"><span class="stat-label">LAST REFRESH</span><strong id="last-checked">—</strong><span class="stat-note" id="refresh-state">Waiting for catalogue</span></article>
+        <div class="progress-row" id="progress-row" hidden>
+          <div class="meter meter--overall">
+            <div class="meter-head"><span class="meter-label">REFRESH</span><span class="meter-note" id="overall-note"></span><span class="meter-elapsed" id="overall-elapsed"></span></div>
+            <div class="meter-track meter-track--split" id="overall-track" role="progressbar" aria-label="Overall refresh progress" aria-valuemin="0" aria-valuemax="100"><span class="meter-half" id="overall-half-sources"><i class="meter-fill" id="overall-fill-sources"></i></span><span class="meter-half" id="overall-half-links"><i class="meter-fill" id="overall-fill-links"></i></span></div>
+          </div>
+          <div class="meter meter--populate">
+            <div class="meter-head"><span class="meter-label">POPULATING</span><span class="meter-note" id="populate-note"></span></div>
+            <div class="meter-track" id="populate-track" role="progressbar" aria-label="Sources polled"><span class="meter-fill" id="populate-fill"></span></div>
+          </div>
+          <div class="meter meter--link">
+            <div class="meter-head"><span class="meter-label">LINKING</span><span class="meter-note" id="link-note"></span></div>
+            <div class="meter-track" id="link-track" role="progressbar" aria-label="Releases checked for a link"><span class="meter-fill" id="link-fill"></span></div>
+            <p class="meter-detail" id="link-detail"></p>
+          </div>
+          <p class="sr-only" id="progress-live" role="status" aria-live="polite"></p>
+        </div>
       </section>
 
       <section class="catalogue" id="catalogue">
