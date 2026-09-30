@@ -31,6 +31,8 @@
  * cannot clear the measured gate is not written.
  */
 import { pickMatch, parseTimestamp, titleStem, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
+import { mapWithConcurrency } from "../core/concurrency.ts";
+import { createExpiringCache } from "./eporner.ts";
 import { buildQueries, configuredSceneCode } from "./queries.ts";
 import type { MatchScene } from "./types.ts";
 
@@ -49,6 +51,8 @@ export interface SxyprnDetail extends SxyprnCard {
   /** Schema.org `uploadDate`, ISO 8601 with an offset. The date the gate uses. */
   uploadDate?: string;
   sizeBytes?: number;
+  /** View count. A string on the wire, so it is normalised at the boundary. */
+  views?: number | string;
 }
 
 export interface SxyprnClient {
@@ -90,6 +94,9 @@ export interface SxyprnLookupOptions {
   /** The upload window, applied on the verified post. */
   dateWindowDays: number;
   durationToleranceSec?: number;
+  /** Detail fetches in flight at once, and the per-slice detail cache TTL. */
+  detailConcurrency?: number;
+  cacheTtlMs?: number;
 }
 
 /** One accepted post: its URL, and the evidence that admitted it. */
@@ -110,26 +117,18 @@ export function createSxyprnLookup({
   maxMatches = 1,
   dateWindowDays,
   durationToleranceSec,
+  detailConcurrency = 3,
+  cacheTtlMs = 5 * 60_000,
 }: SxyprnLookupOptions) {
-  const searchCache = new Map<string, Promise<{ videos?: SxyprnCard[] }>>();
-  const detailsCache = new Map<string, Promise<SxyprnDetail>>();
-  const search = (query: string): Promise<{ videos?: SxyprnCard[] }> => {
-    const slug = searchSlug(query);
-    const existing = searchCache.get(slug);
-    if (existing) return existing;
-    const pending = client.videos.search(slug);
-    pending.catch(() => {});
-    searchCache.set(slug, pending);
-    return pending;
-  };
-  const details = (url: string): Promise<SxyprnDetail> => {
-    const existing = detailsCache.get(url);
-    if (existing) return existing;
-    const pending = client.videos.details({ url });
-    pending.catch(() => {});
-    detailsCache.set(url, pending);
-    return pending;
-  };
+  // Both caches are bounded AND expiring. A `Map` that only ever grows is a
+  // slow leak across a long-running server: one entry per slug and per post URL
+  // for the life of the process, holding a resolved detail forever.
+  const cachedSearch = createExpiringCache({ ttlMs: cacheTtlMs });
+  const cachedDetails = createExpiringCache({ ttlMs: cacheTtlMs });
+  const search = (query: string): Promise<{ videos?: SxyprnCard[] }> =>
+    cachedSearch(searchSlug(query), () => client.videos.search(searchSlug(query)));
+  const details = (url: string): Promise<SxyprnDetail> =>
+    cachedDetails(url, () => client.videos.details({ url }));
 
   return async function lookup(scene: MatchScene): Promise<SxyprnMatch[]> {
     const code = scene.sceneCode ?? configuredSceneCode(scene);
@@ -178,40 +177,63 @@ export function createSxyprnLookup({
       ...sameStem,
     ].sort((left, right) => Number(left.isExternal) - Number(right.isExternal));
 
-    const verified: SxyprnMatch[] = [];
-    let successfulDetails = 0;
-    for (const item of ranked.slice(0, Math.max(3, maxMatches))) {
-      try {
-        const detail = await details(item.url as string);
-        successfulDetails += 1;
-        // Verify the POST's own title, duration and date, not the search card's:
-        // a card can advertise any of the three wrongly.
-        const accepted = pickMatch(
-          identity,
-          [
-            {
-              url: String(item.url ?? ""),
-              title: detail.title ?? "",
-              duration: Number(detail.durationSeconds ?? item.duration),
-              added: detail.uploadDate ?? null,
-              views: (detail as { views?: number | string }).views ?? null,
-            },
-          ],
-          { dateWindowDays, durationToleranceSec },
-        );
-        if (validSxyprnUrl(detail.url) && detail.url === item.url && detail.streamUrl && accepted) {
-          verified.push({
-            url: detail.url as string,
-            identityTier: accepted.identityTier,
-            lagDays: lagInDays(scene.releaseDate, detail.uploadDate),
-          });
-          if (verified.length >= maxMatches) break;
+    // The detail pass. The posts are fetched concurrently (each pays a browser-
+    // impersonated request, so serial would multiply the ladder's latency by
+    // the slice length) but RE-VERIFIED sequentially in rank order, so the
+    // winner's ordering and the maxMatches cut are unchanged.
+    const slice = ranked.slice(0, Math.max(3, maxMatches));
+    const fetched = await mapWithConcurrency(
+      slice,
+      async (item) => {
+        try {
+          return { detail: await details(item.url as string) };
+        } catch (error) {
+          return { detail: null, error };
         }
-      } catch {
-        /* Never expose a search hit whose post could not be verified. */
+      },
+      detailConcurrency,
+    );
+
+    // Two counters, deliberately: `verifiedPosts` counts posts the source could
+    // ANSWER, and is what distinguishes "sxyprn is down" from "sxyprn found
+    // nothing". `accepted` counts posts that then cleared the gate. Conflating
+    // them would report a healthy source as a dead one whenever the gate
+    // rejected every candidate.
+    let verifiedPosts = 0;
+    const verified: SxyprnMatch[] = [];
+    for (let index = 0; index < slice.length; index += 1) {
+      if (verified.length >= maxMatches) break;
+      const item = slice[index] as TubeCandidate & { isExternal: boolean };
+      const outcome = fetched[index];
+      // A post we could not fetch is never exposed as playback, and is not
+      // counted against the source: the ladder moves down instead.
+      if (!outcome || outcome.detail === null) continue;
+      const detail = outcome.detail;
+      verifiedPosts += 1;
+      // Verify the POST's own title, duration and date, not the search card's:
+      // a card can advertise any of the three wrongly.
+      const accepted = pickMatch(
+        identity,
+        [
+          {
+            url: String(item.url ?? ""),
+            title: detail.title ?? "",
+            duration: Number(detail.durationSeconds ?? item.duration),
+            added: detail.uploadDate ?? null,
+            views: detail.views ?? null,
+          },
+        ],
+        { dateWindowDays, durationToleranceSec },
+      );
+      if (validSxyprnUrl(detail.url) && detail.url === item.url && detail.streamUrl && accepted) {
+        verified.push({
+          url: detail.url as string,
+          identityTier: accepted.identityTier,
+          lagDays: lagInDays(scene.releaseDate, detail.uploadDate),
+        });
       }
     }
-    if (!successfulDetails) throw new Error("sxyprn post verification unavailable");
+    if (!verifiedPosts) throw new Error("sxyprn post verification unavailable");
     return verified.slice(0, maxMatches);
   };
 }
