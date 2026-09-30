@@ -674,3 +674,27 @@ test("the resolve stage counts the queue it built, not the whole window", async 
   assert.equal(progress.snapshot().active, false, "an untouched tracker is still valid");
   store.close();
 });
+
+for (const failure of ["ledger", "log"] as const) {
+  test(`a failure in the opening ${failure} ends progress and propagates the original error`, async (t) => {
+    const store = new SqliteStore(":memory:");
+    t.after(() => store.close());
+    store.migrate();
+    const progress = createProgressTracker();
+    const error = new Error(`opening ${failure} failed`);
+    const log = new NullLogger();
+    if (failure === "ledger")
+      t.mock.method(store, "recordRun", () => {
+        throw error;
+      });
+    else
+      t.mock.method(log, "info", () => {
+        throw error;
+      });
+    const sync = progressSync(store, { progress, log });
+    await assert.rejects(sync("test"), (actual) => actual === error);
+    assert.equal(progress.snapshot().active, false);
+    assert.equal(progress.snapshot().stage, "error");
+    assert.equal(progress.snapshot().populate.done, 0);
+  });
+}

@@ -36,6 +36,7 @@ import { JsonLogger } from "../core/logger.ts";
 import { SqliteStore } from "../core/store/sqlite.ts";
 import { mapIsolated } from "../core/concurrency.ts";
 import { withinDateWindow } from "../core/matching.ts";
+import { createSources } from "../sources/registry.ts";
 import { dateOnly } from "../pipeline/sync.ts";
 import { buildQueries } from "../tubes/queries.ts";
 import { buildMatchScene } from "../tubes/resolve.ts";
@@ -80,7 +81,9 @@ function videoIdOf(url: string | undefined, fallback: string): string {
 function viewsOf(raw: unknown): number | null {
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
   if (typeof raw !== "string") return null;
-  const value = Number(raw.replace(/[,\s]/g, ""));
+  const cleaned = raw.replace(/[,\s]/g, "");
+  if (!/\d/.test(cleaned)) return null;
+  const value = Number(cleaned);
   return Number.isFinite(value) ? value : null;
 }
 
@@ -102,17 +105,41 @@ async function main(): Promise<void> {
   const log = new JsonLogger({ component: "discover-uploaders" }, (line) =>
     process.stderr.write(`${line}\n`),
   );
+  const limit = Number(values.limit);
+  const perScene = Number(values["per-scene"]);
+  const windowDays =
+    values.window === undefined ? config.matchDateWindowDays : Number(values.window);
+  // The band is a FILTER, so it is deliberately generous: the point of this
+  // tool is to find accounts, and a near-length video on the right account is
+  // still a lead. Anything tighter would hide the account that re-encodes.
+  const minDelta = values["min-delta"] === undefined ? 2 : Number(values["min-delta"]);
+  for (const [name, value, positive] of [
+    ["limit", limit, true],
+    ["per-scene", perScene, true],
+    ["window", windowDays, false],
+    ["min-delta", minDelta, false],
+  ] as const) {
+    if (
+      values[name]?.trim() === "" ||
+      !Number.isFinite(value) ||
+      (positive ? value <= 0 : value < 0)
+    ) {
+      throw new Error(
+        `--${name} must be a finite ${positive ? "positive" : "non-negative"} number`,
+      );
+    }
+  }
+  const sources = createSources({
+    madouquApiBase: config.madouquApiBase,
+    maximoListingUrl: config.maximoListingUrl,
+  });
+  const creatorBySource = new Map(
+    sources.map((source) => [source.id, source.creatorStudio ?? false]),
+  );
   const store = new SqliteStore(config.dbPath);
   store.migrate();
   const fetcher = new HttpFetcher(config.fetchTimeoutMs);
   const now = new Date();
-  const limit = Math.max(1, Number(values.limit) || 40);
-  const perScene = Math.max(1, Number(values["per-scene"]) || 6);
-  const windowDays = values.window ? Number(values.window) : config.matchDateWindowDays;
-  // The band is a FILTER, so it is deliberately generous: the point of this
-  // tool is to find accounts, and a near-length video on the right account is
-  // still a lead. Anything tighter would hide the account that re-encodes.
-  const minDelta = values["min-delta"] ? Number(values["min-delta"]) : 2;
 
   try {
     const from = dateOnly(new Date(now.getTime() - config.windowDays * DAY_MS));
@@ -120,7 +147,7 @@ async function main(): Promise<void> {
     const unlinked = store
       .listWindow(from, to)
       .filter((scene) => scene.videoUrls.length === 0)
-      .map((scene) => buildMatchScene(scene, scene.labelId === "bang-originals"));
+      .map((scene) => buildMatchScene(scene, creatorBySource.get(scene.sourceId) ?? false));
     const selected = values["scene-id"]
       ? unlinked.filter((scene) => scene.id === values["scene-id"])
       : unlinked;
@@ -194,7 +221,7 @@ async function main(): Promise<void> {
           // The account name is in the video page and nowhere else.
           let uploader: string | null = null;
           try {
-            const html = await fetcher.text(row.url ?? `https://www.eporner.com/video-${id}/`, {
+            const html = await fetcher.text(`https://www.eporner.com/video-${id}/`, {
               headers: { accept: "text/html" },
             });
             pagesFetched += 1;

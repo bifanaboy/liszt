@@ -93,15 +93,15 @@ test("a source that is started twice appears once", () => {
   assert.deepEqual(tracker.snapshot().populate.current, ["tushy"]);
 });
 
-test("link progress is clamped to the queue and cannot rewind", () => {
+test("link progress is clamped to the queue and tracks the latest report, including rewinds", () => {
   const tracker = begun();
   tracker.stage("linking");
   tracker.linkStart(121);
   tracker.linkStep(48, 121, 3);
   assert.equal(tracker.snapshot().link.done, 48);
   assert.equal(tracker.snapshot().link.matched, 3);
-  // A completion count that overshoots, and one that goes backwards. Neither
-  // may reach the bar: an over-100% fill is worse than a stalled one.
+  // Overshoots are clamped to the queue, but a later report can rewind the
+  // count: the tracker keeps the latest report rather than accumulating it.
   tracker.linkStep(500, 121, 500);
   assert.equal(tracker.snapshot().link.done, 121);
   assert.equal(tracker.snapshot().link.matched, 121);

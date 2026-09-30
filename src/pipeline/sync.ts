@@ -261,17 +261,6 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const from = dateOnly(new Date(now.getTime() - windowDays * 86_400_000));
     const runId = `sync-${now.getTime()}-${randomUUID().slice(0, 8)}`;
     const startedAt = now.toISOString();
-    store.recordRun({
-      id: runId,
-      kind: "sync",
-      startedAt,
-      endedAt: null,
-      outcomes: [],
-      ok: null,
-      error: null,
-    });
-    log.info("sync started", { runId, reason, window: { from, to } });
-
     // The tracker is CYCLE-scoped and is begun by the composition root, before
     // the pool index - the index runs first and its progress must survive. A
     // direct caller that never began it (a test, or `createSync` used on its
@@ -283,6 +272,16 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     }
 
     try {
+      store.recordRun({
+        id: runId,
+        kind: "sync",
+        startedAt,
+        endedAt: null,
+        outcomes: [],
+        ok: null,
+        error: null,
+      });
+      log.info("sync started", { runId, reason, window: { from, to } });
       const outcomes = await fanOut(from, now);
       const { matched, resolved, reverified, rejections, tiers, expired, windowScenes } =
         await linkAndTally(from, to, now);

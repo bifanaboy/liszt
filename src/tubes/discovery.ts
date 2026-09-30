@@ -76,7 +76,11 @@ export function parseVideoUploader(html: string): string | null {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return decodeURIComponent(href) || text || null;
+  try {
+    return decodeURIComponent(href) || text || null;
+  } catch {
+    return text || null;
+  }
 }
 
 /** How a candidate's title identifies the scene, and on what evidence. */

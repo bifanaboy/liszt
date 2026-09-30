@@ -161,6 +161,7 @@ const LIVE_SOURCE_NAMES = 2;
 let progressState = { active: false, stage: "idle" };
 let pollTimer = null;
 let pollPending = false;
+let catalogueReloadFailed = false;
 let revealTimer = null;
 let elapsedTimer = null;
 let rowShown = false;
@@ -241,8 +242,9 @@ function renderProgress(progress) {
   setTrack(overallLinksHalf, overallLinksFill, links);
   // Never shown as a number: six crawls and 121 link checks are not one unit
   // of work, so there is no honest single figure. The average exists only to
-  // give the progressbar role a valid value, and the caption carries the text.
-  const overall = sources === null && links === null ? null : Math.round(((sources ?? 0) + (links ?? 0)) / 2);
+  // give the progressbar role a valid value when both stages are known;
+  // otherwise use the known stage, or leave the value indeterminate.
+  const overall = sources === null ? links : links === null ? sources : Math.round((sources + links) / 2);
   setAria(overallTrack, overall, caption);
 
   populateNote.textContent = num(populate.total) > 0 ? `${num(populate.done)} of ${num(populate.total)} sources` : "No sources configured";
@@ -329,7 +331,7 @@ function applyProgress(next) {
     // would re-sort the list under the reader's cursor for nothing.
     if (wasActive) {
       progressLive.textContent = progressState.stage === "error" ? "Refresh failed" : "Refresh finished";
-      load().catch(() => { /* the next poll, or the next manual refresh, recovers */ });
+      load().then(() => { catalogueReloadFailed = false; }).catch(() => { catalogueReloadFailed = true; });
     }
   }
   syncRefreshChrome(active);
@@ -345,6 +347,7 @@ function schedulePoll(delay) {
 
 /** Fetch progress with at most one request in flight, then schedule the next poll. */
 async function pollProgress() {
+  if (pollTimer) clearTimeout(pollTimer);
   pollTimer = null;
   // One request in flight, ever. Chained with `setTimeout` rather than
   // `setInterval` so a slow response cannot stack up behind itself.
@@ -356,6 +359,10 @@ async function pollProgress() {
     if (!response.ok) throw new Error(String(response.status));
     const body = await response.json();
     active = applyProgress(body.progress);
+    if (!active && catalogueReloadFailed) {
+      await load();
+      catalogueReloadFailed = false;
+    }
   } catch {
     // A failed poll leaves the last snapshot alone - collapsing a bar because
     // one request failed would be a lie - and backs the loop off to idle.
@@ -412,8 +419,9 @@ document.addEventListener("keydown", (event) => {
 });
 try {
   await load();
-  schedulePoll(refreshing ? POLL_ACTIVE_MS : POLL_IDLE_MS);
 } catch (error) {
   notices.innerHTML = `<div class="notice notice-warning">Catalogue unavailable: ${esc(error.message)}</div>`;
   refreshState.textContent = "Unable to load catalogue";
+} finally {
+  schedulePoll(refreshing ? POLL_ACTIVE_MS : POLL_IDLE_MS);
 }

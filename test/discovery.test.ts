@@ -187,3 +187,20 @@ test("a duration artefact is visible in the proposal, so a reader can catch it",
   assert.equal(proposeUploaders(rows, [])[0]!.medianDurationDeltaSec, 1);
   assert.equal(proposeUploaders([], [])[0], undefined, "an empty tally proposes nothing");
 });
+
+test("profile escapes decode when valid and fall back to display text when malformed", () => {
+  assert.equal(
+    parseVideoUploader('<li class="vit-uploader"><a href="/profile/Some%20Name/">display</a></li>'),
+    "Some Name",
+  );
+  assert.equal(
+    parseVideoUploader(
+      '<li class="vit-uploader"><a href="/profile/bad%ZZ/">  Display Name </a></li>',
+    ),
+    "Display Name",
+  );
+  assert.equal(
+    parseVideoUploader('<li class="vit-uploader"><a href="/profile/bad%ZZ/"></a></li>'),
+    null,
+  );
+});
