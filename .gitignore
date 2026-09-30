@@ -23,3 +23,7 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local agent state: plans, session scratch, local agent config. Per-developer
+# and per-machine, like .vscode/ - nothing here belongs in a shared branch.
+.kilo/
