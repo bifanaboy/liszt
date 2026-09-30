@@ -1,0 +1,68 @@
+# Render is set to deploy "After CI Checks Pass", and Render does NOT deploy
+# when it detects zero checks - so without this workflow the service stops
+# receiving deploys entirely. These checks are what `autoDeployTrigger:
+# checksPass` in render.yaml waits on.
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Render resolves `engines.node` to the newest release in the range and
+          # applies security patches on every deploy. CI pins to the same major
+          # so a check can never pass on a runtime the deploy will not use.
+          node-version: '24'
+
+      # WITH devDependencies. `npm ci --omit=dev` is what Render runs to build,
+      # but the checks below are the devDependencies themselves.
+      - run: npm ci
+
+      - run: npm run typecheck
+      - run: npm run lint
+
+      # `format:check` is deliberately NOT here. It fails on 53 files at
+      # `a39abc1` - it has never passed - because the repo has no `.prettierrc`
+      # and the code is hand-written to ~100 columns while Prettier defaults to
+      # 80. Including it would leave this check permanently red, and Render does
+      # not deploy while a required check fails, so it would block every deploy
+      # rather than gate them. Making it pass is its own change, separate from a
+      # critical-fix PR, and it has to exclude `test/fixtures` regardless: those
+      # HTML files are captured from live pages and the parser tests assert on
+      # their exact bytes.
+
+      # `npm test` alone cannot catch a glob that matched nothing: the runner
+      # reports "tests 0" and exits 0. TAP's plan line is what makes that
+      # checkable, so the suite runs through the tap reporter and the plan is
+      # asserted to be non-empty.
+      #
+      # THERE IS DELIBERATELY NO `| tee` HERE. A pipeline's exit status is that
+      # of its LAST command, and with `shell` unspecified the Actions runner
+      # invokes `bash -e {0}` - WITHOUT `-o pipefail`. That option is added only
+      # when `shell: bash` is named explicitly; GitHub's own docs note the two
+      # run "a different command". So `node --test | tee` would exit 0 on a
+      # FAILING suite, `set -e` would never fire, the plan line is printed on
+      # failure as well as success, and a red suite would deploy green - which
+      # is the one outcome this check exists to prevent.
+      #
+      # Redirecting to a file creates no pipeline, so `$?` is node's own exit
+      # code under any shell the runner might pick. `|| status=$?` stops `set -e`
+      # from aborting before the diagnostics below get to print.
+      - name: test
+        run: |
+          status=0
+          node --test --test-reporter=tap 'test/**/*.test.ts' > test-output.tap || status=$?
+          cat test-output.tap
+          if [ "$status" -ne 0 ]; then
+            echo "::error::the test suite failed (exit $status)"
+            exit "$status"
+          fi
+          grep -qE '^1\.\.[1-9]' test-output.tap || {
+            echo '::error::the test glob matched no files - the suite did not run'
+            exit 1
+          }
