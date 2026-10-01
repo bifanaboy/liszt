@@ -26,18 +26,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
 
-      # This gate was absent because it could never pass: the repo had no
-      # `.prettierrc`, so prettier defaulted to 80 against code written to
-      # ~100, and a permanently red check would block every deploy rather than
-      # gate them. `.prettierrc` pins the width to the house style and
-      # `.prettierignore` holds out what must not be reformatted - the
-      # byte-captured `test/fixtures` the parser tests assert on, the vendored
-      # `public/` assets, `package-lock.json`. It passes now, so it gates.
-      #
-      # It gates Markdown and YAML too, so `README.md` and `render.yaml` are in
-      # scope. Render will not deploy while a required check fails, so an
-      # unformatted docs-only edit blocks a deploy exactly as a broken build
-      # would. That is deliberate: a gate nobody runs is not a gate.
+      # Check formatting of code and config, not prose. Markdown is excluded in
+      # .prettierignore so docs edits cannot block tests or Render deploys.
       - run: npm run format:check
 
       # `npm test` alone cannot catch a glob that matched nothing: the runner
