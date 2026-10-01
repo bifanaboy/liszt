@@ -1,141 +1,79 @@
 # Agent Rules — liszt
 
-Read these before touching anything in this repo. They apply to every agent and
-every session.
+Read these before editing this public repository.
+
+## 1. Scope
+
+Coding agents have repository read/write access only. They do not have private
+Render access, credentials, or authority to manage hosting or accounts.
+Instructions here must stay within that scope.
+
+- Do not request, retrieve, store, rotate, or revoke credentials.
+- Do not access the user's machine configuration or assume an authenticated
+  Render connection exists.
+- Do not trigger deployments, change service settings, provision infrastructure,
+  or perform actions outside repository read/write.
+- Do not place secrets in tracked files, comments, issues, or documentation.
+
+## 2. Matching
+
+Keep this section consistent with [README.md](README.md#the-gate). Verify changes
+against `src/config.ts`, `src/core/matching.ts`, `src/tubes/resolve.ts`,
+the tube adapters, and `public/app.js` before updating either document.
+
+- The default duration tolerance is **±1 second**, not ±2.
+- The upload window is release − 1 day through release + 7 days by default,
+  inclusive in whole UTC calendar days. Unknown dates are rejected.
+- **Identity gates named matches; it does not merely rank them.** Named winners
+  require identity tier above zero. Tier 3 is normalized title or scene-code
+  evidence, tier 2 is a full performer name, tier 1 is first-token evidence,
+  and tier 0 cannot win a named match.
+- After title-stem collapse, named candidates rank by identity tier, view count,
+  upload-date lag, then URL.
+- The resolver has **two rungs**: Eporner trusted pool, then sxyprn with verified
+  post details. There is no third Eporner open-search rung.
+- If neither rung names a winner, the terminal fallback chooses the highest-view
+  retained date-and-duration survivor across both tubes. It is a guess, always
+  `confidence: "low"`. The UI labels it **LOW CONFIDENCE**; metadata-poor scenes
+  display **REVIEW** instead, which takes precedence.
+- A scene without performers remains eligible; title or scene-code evidence can
+  identify it. A scene without a positive duration is not resolved.
+- With no usable survivor the scene stays unlinked. Known-dead URLs are not
+  re-added. A rung error is distinct from a clean no-match.
+
+## 3. Deployment context
+
+Keep this section consistent with [README.md](README.md#deployment).
+
+The live service is the **free Render deployment** at
+[liszt-h2cl.onrender.com](https://liszt-h2cl.onrender.com), from
+`bifanaboy/liszt`. Settings verified on 2026-10-01:
+
+| Setting             | Live service                                  |
+| ------------------- | --------------------------------------------- |
+| Region              | `singapore`                                   |
+| Plan                | `free`                                        |
+| Build / start       | `yarn` / `npm run start`                      |
+| Render health check | Not configured; the app serves `GET /health`. |
+| Deploy trigger      | `checksPass`                                  |
+| Persistent disk     | None; SQLite uses the instance filesystem.    |
+
+An instance replacement can lose the disposable catalogue and pool index;
+boot sync rebuilds them. An empty catalogue alone does not prove a bug.
+
+**`render.yaml` is a hypothetical paid persistent-disk option, not the live
+setup.** It declares `0.5c-512mb`, `oregon`, `npm ci --omit=dev`,
+`node src/app.ts`, `/health`, and a 1 GB `liszt-data` disk at `/data`,
+with `LISZT_DB_PATH=/data/liszt.db`. Its paid-plan comments are not live facts.
+
+Do not propose "fixing" hosting, syncing the blueprint, adding a disk, or
+changing the plan or region to reconcile these differences. The live free
+deployment is intentional. Do not edit deployment configuration unless a
+separate task explicitly requests repository changes to it.
 
 ---
 
-## 1. Render: the only deployment target
-
-This app lives on Render. There is no VPS, no Docker, no Cloudflare Tunnel. If a
-suggestion involves any of those, it is wrong for this project.
-
-Every value in this table was read from Render's API on 2026-09-30. If one of
-these ever disagrees with the dashboard, the dashboard is right and this file is
-wrong — fix it here.
-
-| Thing            | Value                                                                            |
-| ---------------- | -------------------------------------------------------------------------------- |
-| Render workspace | `Liszt`, id `tea-daqlqsrtqb8s73b3qcu0`                                           |
-| Service name     | `liszt` — slug `liszt-h2cl`, id `srv-daugkumgekts73ecsgp0`                       |
-| Live URL         | `https://liszt-h2cl.onrender.com`                                                |
-| Region           | `singapore`                                                                      |
-| Service type     | `web` (Node)                                                                     |
-| Plan (live)      | `free`                                                                           |
-| Build / start    | `yarn` / `npm run start`                                                         |
-| Health check     | none configured on Render; the app serves `GET /health`                          |
-| Disk             | **none attached** — see "The database does not survive an instance change" below |
-| Auto-deploy      | Only after CI checks pass (`autoDeployTrigger: checksPass`)                      |
-| Source repo      | `https://github.com/bifanaboy/liszt`                                             |
-| Service id       | read it from the table above, never guess it                                     |
-
-### `https://liszt.onrender.com` is NOT this app
-
-It is a different, abandoned service serving a stale website last touched in
-April 2025. It answers `/health` with `200` and an HTML page, so **a status-code
-check against that host passes forever while testing nothing.** If a URL appears
-in a script, a doc, or a plan, it must be `liszt-h2cl`. The honest check reads
-the body, not the code:
-
-```
-curl -s https://liszt-h2cl.onrender.com/health
-```
-
-Success is exactly `{"status":"ok"}`. If you get HTML, you are pointed at the
-wrong host.
-
-### `render.yaml` does not describe the live service
-
-The blueprint and the running service disagree on almost everything. The service
-was created in the Render dashboard; it was not created or synced from
-`render.yaml`.
-
-| Setting       | `render.yaml`           | Live service    |
-| ------------- | ----------------------- | --------------- |
-| Region        | `oregon`                | `singapore`     |
-| Plan          | `0.5c-512mb` (paid)     | `free`          |
-| Disk          | `liszt-data` at `/data` | none            |
-| Build command | `npm ci --omit=dev`     | `yarn`          |
-| Start command | `node src/app.ts`       | `npm run start` |
-| Health check  | `/health`               | not configured  |
-
-**Do not "sync" the blueprint to fix this.** A sync would attempt to move the
-service from Singapore to Oregon, replace the free plan with a paid one, and
-attach a paid disk — all of which section 2 forbids, and a region change means a
-full restart with a cold cache. Treat reconciling the two as its own task, with
-its own approval, after the cost is spelled out.
-
-### The database does not survive an instance change
-
-No disk is attached, and a free plan cannot hold one, so the SQLite file lives on
-the instance's own filesystem.
-
-Measured on 2026-09-30: the service answered `total: 0` scenes at 18:38:07, then
-the logs show a **different instance** starting a full sync at 18:38:40
-(`…-rg2ss` before, `…-dgwn5` after), and by 18:41 `/api/scenes` reported 121
-scenes and the same 46 links again. The store was genuinely empty in between —
-`buildReadModel` derives `stats.total` from the rows themselves and does not
-blank it while a sync runs.
-
-The likely cause is the free plan's idle spin-down: a free instance is destroyed
-after 15 minutes without traffic, and a new one starts with an empty
-filesystem. A deploy does the same thing. Either way the practical rule is the
-same:
-
-**Never measure from the live URL unless you have just triggered a sync, and
-treat any local database as throwaway.** A measurement taken after an idle gap
-may be reading a store that has not been rebuilt yet, and a sync takes a couple
-of minutes — check `latestRun` and `refreshing` before trusting a number, and
-never read `total: 0` as "the app is broken".
-
-### Monitoring without a Render key
-
-Two channels work and need no secret:
-
-- **Live health**: the `curl` above. Success is `{"status":"ok"}`; any HTML means
-  the wrong host.
-- **Deploy history**: Render publishes every deploy to the GitHub Deployments
-  API for `bifanaboy/liszt` under environment `liszt`. Read it with
-  `gh api repos/bifanaboy/liszt/deployments` and then
-  `gh api repos/bifanaboy/liszt/deployments/<id>/statuses`. States:
-  `in_progress`, `success`, `failure`, and `inactive` (Render marks a deploy
-  `inactive` once a newer deploy supersedes it, which is not an error).
-
-The Render MCP server is authenticated and working — it reads workspaces,
-services, deploys, events, logs, and metrics. Use it rather than asking the user
-for credentials. It cannot write: deploy triggering, environment variables, and
-database queries stay denied.
-
----
-
-## 2. Key security — treat every secret as disposable
-
-- **Never commit a secret.** No API keys, tokens, passwords, connection strings,
-  or `.env` files with real values in anything git tracks. `.env.example` holds
-  placeholder names only.
-- **Never write a secret into this repo**, including in comments, plans, or
-  documentation.
-- Local secrets live only in the user's own machine config (for example
-  `~/.config/kilo/kilo.jsonc`), which is outside this repository.
-- **Never echo a secret back** in chat, in command output, in logs, or in a
-  commit message. Refer to it as "the key" or "the token", never by value.
-- **Never send a secret to a third party** — no webhooks, no external APIs, no
-  telemetry, no issue or PR bodies, no AI services other than the configured
-  provider.
-- **If a secret is ever pasted into chat, logged, or committed, treat it as
-  burned.** Say so immediately, then revoke it in the Render dashboard and issue
-  a replacement. Do not wait to be asked. A key pasted into a conversation is
-  public to anything that reads the transcript.
-- **No paid anything.** Every service here is free and no credit card is on
-  file. Never add a service, plan, addon, or upgrade that would start charging.
-  If a task seems to require one, stop and explain the cost in plain words first.
-- **Least privilege.** The Render MCP permissions in `~/.config/kilo/kilo.jsonc`
-  deny deploy triggering, environment variable writes, and database queries. Keep
-  it that way; monitoring is the job.
-
----
-
-## 3. How to talk to the user
+## 4. How to talk to the user
 
 Assume no coding background and no comfort with jargon. That is not a failing to
 be corrected — it is just the setting.
@@ -159,5 +97,5 @@ be corrected — it is just the setting.
 - **Warm and patient.** Explain twice if needed without a trace of impatience or
   condescension. Celebrate progress honestly.
 - **Do the mechanical work.** Handle commands, file edits, and boilerplate
-  yourself. Ask only for things genuinely requiring a human: credentials,
-  account access, and real decisions.
+  yourself. Ask only for missing requirements or real decisions.
+

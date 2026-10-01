@@ -2,11 +2,10 @@
 
 A long-running personal release watchlist. On boot and on a timer it polls every
 source for scene metadata, keeps a rolling window in SQLite, and resolves **one
-verified playback link per scene, or none**.
+playback link per scene, or none**.
 
-The safety rule, inherited unchanged from the two projects this replaces:
-
-> **A missing link is preferable to a wrong link.**
+Named matches require identity evidence. If neither tube can name the scene,
+the resolver may provide a guess explicitly marked **LOW CONFIDENCE**.
 
 An unmatched scene is a valid result, not a failure. Tube coverage is empirical
 and changes as uploads are removed or sources become inaccessible - this is not a
@@ -72,7 +71,7 @@ source adapters          pipeline              tube ladder            serving
 ─────────────            ────────              ───────────            ───────
 traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
 Bang!       ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
-Maximo      │            per-source       │    3 eporner open   ─┘         │
+Maximo      │            per-source       │    guess fallback   ─┘         │
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -118,68 +117,53 @@ Two things are load-bearing and must not be "simplified" away:
 
 ### The gate
 
-One rule, applied to every scene in the catalogue regardless of source. Stated
-once, applied three times — trusted pool, sxyprn, eporner open search.
+The shared rules are implemented in `src/core/matching.ts`, configured in
+`src/config.ts`, and applied by both rungs in `src/tubes/resolve.ts`.
 
-**Eligibility. Both must hold:**
+**Candidate filters. Both must hold:**
 
-1. Duration within `LISZT_MATCH_DURATION_TOLERANCE_SEC` (default ±2s).
+1. Duration within `LISZT_MATCH_DURATION_TOLERANCE_SEC` (default **±1 second**).
 2. Upload date between `release − 1 day` and `release + LISZT_MATCH_DATE_WINDOW_DAYS`
-   (default 7). Compared in UTC, in whole calendar days.
+   (default 7), inclusive in whole UTC calendar days. Unknown dates are rejected.
 
-**Then, per rung.** Zero survivors → fall through to the next rung. One survivor
-→ link it. Several → collapse same-video reposts by title stem, then rank by:
+**Identity gates named matches; it also ranks them.** After date and duration
+filtering, candidates collapse by title stem. A named winner must have an
+identity tier above zero; even a sole survivor cannot become a named match
+without identity evidence. Named survivors rank by identity tier, highest view
+count, upload-date lag, then URL.
 
-1. **performer in title** — identity tier (below)
-2. highest view count
-3. smallest upload-date lag
-4. URL, purely so the order is total
+| Tier | Meaning                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------- |
+| `3`  | Normalized scene title appears in the candidate title, or all scene-code tokens are present. |
+| `2`  | All tokens of a full performer name are present.                                             |
+| `1`  | A performer's first token is present, including supported name-plus-date-code forms.         |
+| `0`  | No identity evidence; cannot win a named match.                                              |
 
-No rung matches → the scene stays unlinked and is retried on the next cycle.
-**A missing link always beats a wrong one.** A candidate with no obtainable
-upload date is rejected: it has to be _inside_ the window, not merely
-un-disproved. A scene with no duration is never matched. A scene with no
-performers is still eligible — it simply has one fewer ranking signal.
+Tier 1 is accepted; a full-name-only rule would reject useful first-name
+retitles. A scene without performers is still eligible: title or scene-code
+evidence can identify it. A scene without a positive duration is not resolved.
 
-#### Identity is a ranking signal, not a gate
+### Two rungs and a guess fallback
 
-The pool index holds thousands of videos. At roughly one video per second-value
-of duration, a ±2s band is about five second-values, so **~5 unrelated pool
-videos share a scene's duration**; the date window then admits 0–2 of them.
-Ranking on views alone therefore picks the most popular decoy in a large
-fraction of pool matches — not missing links, but confidently wrong ones.
+`src/tubes/resolve.ts` tries, in order:
 
-Performer-in-title as a tiebreak costs nothing and removes nearly all of that.
-It also closes a real gap the previous gate had: performer data is genuinely
-spotty upstream, and under an identity gate a performer-less scene could _never_
-match.
+1. **Eporner trusted pool** — date and duration filters, then the identity gate.
+2. **sxyprn** — search cards, verified post details, then the same identity gate.
 
-| Tier | Meaning                                                                           |
-| ---- | --------------------------------------------------------------------------------- |
-| `3`  | The scene title appears verbatim, or the scene code does. Same-phrasing evidence. |
-| `2`  | A full performer name is present, every token of it.                              |
-| `1`  | Only the first token of a performer is present.                                   |
-| `0`  | Nothing. Still eligible — it just has the weakest claim.                          |
+A named winner stops resolution and receives `confidence: "high"`. If a rung
+cannot name a candidate, resolution proceeds to the next tube. There is no
+third Eporner open-search rung.
 
-Tier 1 earns its place because the trusted pool's retitles carry only first
-names for multi-performer scenes, so a full-name-only rule would score the whole
-trusted pool at 0.
+If neither rung produces a named winner, the terminal fallback picks the
+highest-view candidate from the retained date-and-duration survivors across
+both tubes. Unknown view counts rank below known counts; URL breaks ties.
+This is a **guess**, always saved as `confidence: "low"`, not an identity-backed
+match. The UI in `public/app.js` labels it **LOW CONFIDENCE**; metadata-poor
+scenes display **REVIEW** instead, which takes precedence.
 
-**Residual risk, stated plainly:** decoy exposure is now exactly the set of
-matches won with _no_ identity evidence. That is why `confidence: "low"` is
-redefined to mean tier 0 — the decoy path — and why the run logs a tier
-histogram. A rising tier-0 share is the signal to revisit this decision.
-
-**The MMDD proxy is gone.** The `MMDD code in title` check, its
-`require-date-evidence` knob, the per-rung gate variants, and the
-multi-uploader rejection all existed to make identity _stricter_. With identity
-demoted to a tiebreak they have no purpose, and the MMDD check measured as
-completely inert on this corpus besides.
-
-Deliberately **not** acceptance rules, and still absent: studio-in-title,
-thumbnail similarity, tag search, duration alone, and fuzzy title similarity.
-Duration and date are filters, never evidence of a match; identity orders
-survivors, it never invents one.
+A rung error lets the other rung run but contributes no fallback candidates;
+it is not recorded as a clean no-match. With no usable survivor the scene stays
+unlinked for a later cycle. Known-dead URLs are never re-added.
 
 ### Sync behaviour
 
@@ -263,20 +247,9 @@ single-flight runner, so two cycles can never overlap against the same database.
 
 ## Calibration
 
-The pool rung is the loosest gate and it runs first, deliberately: the four
-trusted accounts carry most of the traxxx-lane releases. That trade is documented
-rather than hidden.
-
-**Measured on the live pool (2026-09):** those uploaders title uploads in an
-obfuscated convention — one live title read
-`𝐏𝐞𝐧𝐧𝐢𝐞 𝐥𝐚𝐧𝐢𝐲𝐬 𝐰𝐡𝐞𝐫𝐞𝐬 𝐋𝐮𝐧𝐚, 𝐄𝐦𝐲, 𝐁𝐚𝐦𝐲 & 𝐂𝐡𝐞𝐫𝐭𝐲` for a five-performer
-scene. That convention is why identity is a _tier_ rather than a gate, and why
-first-token-only (tier 1) is kept: those retitles would otherwise score 0 and
-lose to every decoy.
-
-**Measured on the ±2s band:** across 1,005 indexed pool videos a scene's ±2s
-band holds a mean of 3.1 videos, a median of 2, a p99 of 10 and a maximum of 13
-— comfortably inside the 40-hydration cap.
+The trusted pool runs first. Both rungs use the same default ±1-second duration
+tolerance and require identity evidence for named matches. The fallback is
+always low confidence; views cannot establish identity.
 
 So measure before changing anything:
 
@@ -318,7 +291,7 @@ required variable: everything has a working default.
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
 | `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |
-| `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `2`                  | Duration band, identical on every rung.                               |
+| `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `1`                  | Duration band, identical on every rung.                               |
 | `LISZT_MATCH_DATE_WINDOW_DAYS`                   | `7`                  | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
 | `LISZT_POOL_FULL_REWALK_DAYS`                    | `7`                  | Drift/deletion correction cadence.                                    |
 | `LISZT_SXYPRN_TIMEOUT_MS`                        | `15000`              |                                                                       |
@@ -328,41 +301,38 @@ required variable: everything has a working default.
 
 ## Deployment
 
-**Render is the only supported target.** The systemd unit, the Cloudflare Tunnel
-runbook and the `Dockerfile` are deleted; the `Dockerfile` bound `127.0.0.1` and
-expected a password hash, so it contradicted `render.yaml` and Render never used
-it.
+**The live service is the free Render deployment**, at
+[liszt-h2cl.onrender.com](https://liszt-h2cl.onrender.com), backed by this
+repository. Its settings were verified on 2026-10-01:
 
-The whole runbook is: connect the repository to Render and let the blueprint do
-the rest. [`render.yaml`](render.yaml) carries everything.
+| Setting             | Live service                                  |
+| ------------------- | --------------------------------------------- |
+| Region              | `singapore`                                   |
+| Plan                | `free`                                        |
+| Build               | `yarn`                                        |
+| Start               | `npm run start`                               |
+| Render health check | Not configured; the app serves `GET /health`. |
+| Deploy trigger      | `checksPass`                                  |
+| Persistent disk     | None; SQLite uses the instance filesystem.    |
 
-|                |                                                                 |
-| -------------- | --------------------------------------------------------------- |
-| Build          | `npm ci --omit=dev`                                             |
-| Start          | `node src/app.ts`                                               |
-| Health check   | `/health`                                                       |
-| Deploy trigger | `checksPass` — Render will not deploy with zero checks detected |
-| Disk           | `liszt-data` at `/data`, 1 GB                                   |
+The catalogue and pool index are disposable and rebuild through boot sync.
+An instance replacement can lose the database; inspect sync status before
+interpreting an empty catalogue as a bug.
 
-Four consequences of that blueprint worth knowing before the first deploy:
+**[`render.yaml`](render.yaml) is a hypothetical paid persistent-disk option,
+not the live setup.** It currently declares `0.5c-512mb`, `oregon`,
+`npm ci --omit=dev`, `node src/app.ts`, `/health`, and a 1 GB `liszt-data`
+disk mounted at `/data`, with `LISZT_DB_PATH=/data/liszt.db`. Its paid-plan
+comments do not describe the current live service.
 
-- **A persistent disk requires a paid plan** (`0.5c-512mb`), so `free` is not an
-  option.
-- **The disk disables zero-downtime deploys.** Every merge briefly stops the
-  service. That is Render's safeguard against two instances writing one SQLite
-  file, and it is correct here — it also means the service cannot scale.
-- **`maxShutdownDelaySeconds: 60`** exists because the app's own shutdown budget
-  is ~45s: a 30s bounded wait for the in-flight cycle, then a backstop. Against
-  Render's 30s default the platform would `SIGKILL` the process mid-write to the
-  SQLite file on every single deploy.
-- **CI gates the deploy.** `.github/workflows/ci.yml` runs
-  `typecheck → lint → format:check → test`, and Render waits on it. Without that
-  workflow Render detects zero checks and never deploys again. `format:check` is
-  in that list only because it now passes; it was held out while it could not.
+Do not propose syncing that blueprint, adding a disk, changing plans or regions,
+or "fixing" hosting to reconcile the difference. The live free deployment is
+intentional. Hosting changes require a separate explicit task.
 
-After deploying, confirm the disk actually mounted: `liszt.db`, `liszt.db-wal`
-and `liszt.db-shm` under `/data`. Trigger one sync, restart the service, and
-confirm the catalogue and `pool_videos` survive.
+For repository coding agents, deployment settings are documentation context
+only: agents have repository read/write access, not private Render access or
+credential-management authority. Keep these deployment and matching facts
+consistent with [AGENTS.md](AGENTS.md), checking the source files before edits.
 
 ---
 
@@ -376,3 +346,4 @@ is no data exchange between them and this database.
 
 The rebuild exists because the older pair could not do the obvious thing - poll
 regularly - and because a scene missing from one snapshot silently vanished.
+
