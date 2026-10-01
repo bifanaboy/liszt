@@ -1,0 +1,29 @@
+name: Enable auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      # Run trusted workflow code only. Never check out or execute PR code here.
+      # Use the enable-only API mutation: `gh pr merge --auto` can directly
+      # merge an already mergeable PR, rather than merely enabling the setting.
+      - name: Enable automatic merge without a direct-merge command
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_ID: ${{ github.event.pull_request.node_id }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api graphql \
+            -f query='mutation($id: ID!, $head: GitObjectID!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, expectedHeadOid: $head, mergeMethod: SQUASH}) { pullRequest { number autoMergeRequest { enabledAt } } } }' \
+            -f id="$PR_ID" \
+            -f head="$HEAD_SHA"
