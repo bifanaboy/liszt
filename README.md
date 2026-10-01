@@ -100,7 +100,7 @@ Four categories, in `src/sources/registry.ts`.
 | Lancelot Styles Evolution, Mambo Perv, Tushy | `traxxx.me` REST, no auth             | yes      |
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
-| madouqu (9 categories)                       | WordPress REST + Mandarin classifier  | **none** |
+| madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
 | fc2cmadb                                     | stub - interface unconfirmed          | yes      |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.

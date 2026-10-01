@@ -85,7 +85,6 @@ export interface SourceResult {
 export interface SourceAdapter {
   readonly id: string;
   readonly name: string;
-  readonly windowDays: number;
   readonly authority: { name: string; url: string; role: string };
   /** `null` declares a metadata-only lane: no tube matching is attempted. */
   readonly matcher: string | null;

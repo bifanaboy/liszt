@@ -81,7 +81,6 @@ function studio(ctx: SourceContext) {
     name: "Studio",
     allowedHosts: ["studio.test"],
     listingUrl: `${BASE}/listing`,
-    windowDays: 90,
     matcher: "sxyprn+eporner",
     parseListing,
     parseVideoPage,

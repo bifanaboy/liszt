@@ -380,7 +380,6 @@ export interface TraxxxStudioOptions {
   kind: TraxxxEntityKind;
   /** The traxxx slug, e.g. `lancelotstyles` or `vixen` (for a network). */
   slug: string;
-  windowDays?: number;
   creatorStudio?: boolean;
 }
 
@@ -396,13 +395,12 @@ function withinWindow(releaseDate: string, windowStart: string, now: Date): bool
  * sync stays bounded by the window even though the API exposes no date filter.
  */
 export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter {
-  const { id, name, kind, slug, windowDays = 90, creatorStudio = false } = options;
+  const { id, name, kind, slug, creatorStudio = false } = options;
   const filter = entityFilter(kind, slug);
   const authorityUrl = `${SCENES_URL}?e=${encodeURIComponent(filter)}`;
   return {
     id,
     name,
-    windowDays,
     authority: { name: "traxxx.me", url: authorityUrl, role: "authoritative catalogue" },
     matcher: "sxyprn+eporner",
     creatorStudio,
