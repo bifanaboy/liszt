@@ -160,3 +160,19 @@ test("performers come only from the observed labeled excerpt field", () => {
   assert.deepEqual(empty.performers, []);
   assert.equal(empty.fieldProvenance?.performers, undefined);
 });
+
+test("performers stay empty when the download-address terminator is missing", () => {
+  const scene = parsePost(
+    {
+      id: 91985,
+      title: { rendered: "示例场景肛交" },
+      content: { rendered: "<p>麻豆女郎：空空子 后续介绍文字</p>" },
+      date_gmt: "2026-03-04T00:00:00",
+    },
+    { id: 779, key: "xingba", name: "Xingba Media" },
+    classifyScene("肛交", "肛交"),
+    { sourceUrl: "https://example.test/posts", base: "https://example.test" },
+  );
+  assert.deepEqual(scene.performers, []);
+  assert.equal(scene.fieldProvenance?.performers, undefined);
+});

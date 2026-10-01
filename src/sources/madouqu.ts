@@ -272,10 +272,8 @@ export function parsePost(
   const title = decodeRenderedHtml(post.title?.rendered);
   const body = decodeRenderedHtml(post.content?.rendered);
   // Real WordPress excerpts use the explicit “麻豆女郎：…” field. Stop at
-  // the next known field label; unrelated prose is never treated as a name.
-  const performerField = body
-    .match(/麻豆女郎\s*[:：]\s*(.*?)(?=\s*下载地址\s*[:：]|$)/)?.[1]
-    ?.trim();
+  // the required “下载地址” label; incomplete fields produce no names.
+  const performerField = body.match(/麻豆女郎\s*[:：]\s*(.*?)(?=\s*下载地址\s*[:：])/)?.[1]?.trim();
   const performers = performerField
     ? performerField
         .split(/[，、,]/)
