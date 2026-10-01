@@ -4,9 +4,10 @@ Read these before editing this public repository.
 
 ## 1. Scope
 
-Coding agents have repository read/write access only. They do not have private
-Render access, credentials, or authority to manage hosting or accounts.
-Instructions here must stay within that scope.
+Repository access alone does not include private Render access, credentials,
+or authority to manage hosting or accounts. Instructions here do not grant
+that access. Section 7 allows checks only through separately authorized,
+already available read-only hosting access.
 
 - Do not request, retrieve, store, rotate, or revoke credentials.
 - Do not access the user's machine configuration or assume an authenticated
@@ -99,3 +100,78 @@ be corrected — it is just the setting.
 - **Do the mechanical work.** Handle commands, file edits, and boilerplate
   yourself. Ask only for missing requirements or real decisions.
 
+
+## 5. Issues people can understand
+
+Search open and closed issues before creating or editing one. Update an existing
+issue when it covers the same problem; do not create a duplicate.
+
+Use a title a reader with no coding background can understand. Describe the
+problem or improvement, not a file name or implementation technique.
+
+Every issue must have exactly one label from each group:
+
+- Estimated agent token use: `cheap`, `fair`, or `expensive`. These are relative
+  planning estimates, not a promise of a bill or a fixed token count. Explain
+  uncertainty when it matters and revise the estimate when scope changes.
+- Work type: `bug` or `feature`.
+- Effect on app functionality: `minor` or `major`. Judge the user-facing effect,
+  not the amount of code. A small fix can have a major effect.
+
+Keep other useful labels. Do not use competing labels from the same group.
+
+Use these sections, with as much detail as the work needs:
+
+1. **Plain-language summary.** What gets better, why it is currently wrong or
+   missing, and how we plan to fix it. For example: "Progress bars are broken
+   because they're tracking the wrong data. We'll make them track the work
+   actually being done."
+2. **Technical summary.** Explain the approach at a junior software engineer's
+   level. Define terms and point to the relevant code once verified.
+3. **Detailed spec.** Expected behavior, scope, limits, important failure cases,
+   and how we will know it works. Separate confirmed requirements from open
+   decisions. Do not disguise a research question as an implementation rule.
+4. **Action plan.** Concrete steps for the agent: inspect, clarify, build, test,
+   and check the result. Add dependencies or evidence only when they help.
+
+An idea or research issue is not permission to implement it. Say when a spec
+needs more discussion or when development is deliberately deferred.
+
+## 6. Start clean and keep it simple
+
+- Check the working tree before starting. Do not discard someone else's work.
+- Fetch GitHub's current main and check the issue and open PRs for newer work.
+  Start each new piece of work on its own branch from current `origin/main`.
+  Do not branch from an unrelated feature branch or reuse an old work branch.
+- When main changes, merge `origin/main` into the work branch. Never rebase or
+  force-push to rewrite shared history. Resolve conflicts and run checks again.
+- Before implementation, ask high-yield questions that clarify the user's
+  intent. Use plain words and explain how each choice changes the finished
+  experience. Recommend a sensible option. Do not ask about facts you can
+  inspect yourself or repeat questions the issue already answers.
+- Keep it simple. Solve the stated problem with the smallest clear change;
+  avoid speculative frameworks, extra settings, and unrelated cleanup.
+
+## 7. Check what actually shipped
+
+Repository access does not grant hosting access. The restrictions in section 1
+still apply. If an agent has separately authorized, read-only Render access
+through an available integration or API, use it to verify the deployed commit,
+service health, and changed behavior after merge. Do not obtain credentials,
+change hosting, or trigger a deployment just to do this check.
+
+Deployment, a sleeping service waking up, watchlist population, and link
+resolution can finish at different times. Check the deployed commit before
+judging the feature. Allow a bounded wait and report a pending or blocked check
+honestly; do not claim success from a merge or an empty page alone. If no Render
+connection is available, that is fine: report the local checks and clearly say
+that deployment was not checked. Inspect the actual UI when a change is visual.
+
+Reconcile bugs with GitHub issues before filing:
+
+- Bugs caused by or belonging to the feature just shipped should normally go
+  into one follow-up issue, with each symptom and reproduction step listed.
+- Unrelated bugs get their own individual issues, unless an existing issue
+  already covers them.
+- Keep related and unrelated problems separate. Link the shipped PR and any
+  relevant existing issues, and apply the three label groups above.
