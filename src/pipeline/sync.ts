@@ -487,7 +487,16 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const { matched, resolved, reverified, expired, windowScenes, tiers } = counts;
     const ok = outcomes.every((outcome) => outcome.ok);
     const error = outcomes.find((outcome) => !outcome.ok)?.error ?? null;
-    store.recordRun({ id: runId, kind: "sync", startedAt, endedAt, outcomes, ok, error });
+    store.recordRun({
+      id: runId,
+      kind: "sync",
+      startedAt,
+      endedAt,
+      outcomes,
+      ok,
+      error,
+      resolverHealth: { ...rejections },
+    });
     // The tier histogram and the rejection counts go in the log, not just the
     // summary: the decoy path and a mis-tuned window are both invisible in a
     // match count, and both are cheap to spot here.

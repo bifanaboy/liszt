@@ -165,6 +165,10 @@ A rung error lets the other rung run but contributes no fallback candidates;
 it is not recorded as a clean no-match. With no usable survivor the scene stays
 unlinked for a later cycle. Known-dead URLs are never re-added.
 
+`/api/runs` stores resolver rejection counters separately from catalogue-source
+outcomes. A resolver outage therefore does not mark healthy catalogue polling
+as failed, and the dashboard reports resolver unavailability independently.
+
 ### Sync behaviour
 
 - One source failing does not stop the others; it becomes a run outcome with
@@ -346,4 +350,3 @@ is no data exchange between them and this database.
 
 The rebuild exists because the older pair could not do the obvious thing - poll
 regularly - and because a scene missing from one snapshot silently vanished.
-

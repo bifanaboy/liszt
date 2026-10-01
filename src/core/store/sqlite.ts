@@ -31,6 +31,8 @@ export interface RunRecord {
   outcomes: RunOutcome[];
   ok: boolean | null;
   error: string | null;
+  /** Resolver rung counters, separate from metadata-source poll outcomes. */
+  resolverHealth?: Record<string, number> | null;
 }
 
 /** One row of the trusted-pool index. */
@@ -426,9 +428,10 @@ export class SqliteStore {
   recordRun(run: RunRecord): void {
     this.db
       .prepare(
-        `INSERT INTO runs (id, kind, started_at, ended_at, outcomes, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO runs (id, kind, started_at, ended_at, outcomes, ok, error, resolver_health) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, ended_at = excluded.ended_at,
-           outcomes = excluded.outcomes, ok = excluded.ok, error = excluded.error`,
+           outcomes = excluded.outcomes, ok = excluded.ok, error = excluded.error,
+           resolver_health = excluded.resolver_health`,
       )
       .run(
         run.id,
@@ -438,6 +441,7 @@ export class SqliteStore {
         JSON.stringify(run.outcomes),
         run.ok === null ? null : run.ok ? 1 : 0,
         run.error,
+        run.resolverHealth ? JSON.stringify(run.resolverHealth) : null,
       );
   }
 
@@ -452,6 +456,7 @@ export class SqliteStore {
       outcomes: string;
       ok: number | null;
       error: string | null;
+      resolver_health: string | null;
     }[];
     return rows.map((row) => ({
       id: row.id,
@@ -461,6 +466,9 @@ export class SqliteStore {
       outcomes: JSON.parse(row.outcomes) as RunOutcome[],
       ok: row.ok === null ? null : row.ok === 1,
       error: row.error,
+      resolverHealth: row.resolver_health
+        ? (JSON.parse(row.resolver_health) as Record<string, number>)
+        : null,
     }));
   }
 
