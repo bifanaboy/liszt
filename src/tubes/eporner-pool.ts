@@ -762,6 +762,9 @@ export interface PoolGatherDeps {
  */
 const POOL_HYDRATION_CONCURRENCY = 4;
 
+// All scene lookups in a run share `now`; keep attempts ordered across them.
+const hydrationAttemptOffsets = new WeakMap<Date, number>();
+
 /**
  * Everything in the pool rung that happens BEFORE the date half: scan the
  * index, apply the duration band, hydrate the survivors.
@@ -850,7 +853,13 @@ export async function gatherPoolSurvivors(
   const hydrated = await mapIsolated(
     queue,
     async (video) => {
-      store.markPoolHydrationAttempt(video.id, video.uploader, now.toISOString());
+      const attemptOffset = hydrationAttemptOffsets.get(now) ?? 0;
+      hydrationAttemptOffsets.set(now, attemptOffset + 1);
+      store.markPoolHydrationAttempt(
+        video.id,
+        video.uploader,
+        new Date(now.getTime() + attemptOffset).toISOString(),
+      );
       return hydrate(video, { store, fetcher, now });
     },
     POOL_HYDRATION_CONCURRENCY,
