@@ -316,7 +316,7 @@ required variable: everything has a working default.
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
-| `LISZT_TRUSTED_UPLOADERS`                        | the 4 accounts       | Curation. Back this up.                                               |
+| `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
 | `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |
 | `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `2`                  | Duration band, identical on every rung.                               |
 | `LISZT_MATCH_DATE_WINDOW_DAYS`                   | `7`                  | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
