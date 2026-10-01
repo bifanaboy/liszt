@@ -226,7 +226,6 @@ export function createMaximoGarciaStudio(
     name: "Maximo Garcia",
     allowedHosts,
     listingUrl,
-    windowDays: 90,
     matcher: "sxyprn+eporner",
     // A creator studio: performer-only queries return better recall than the
     // studio name, which is shared with hundreds of other releases.

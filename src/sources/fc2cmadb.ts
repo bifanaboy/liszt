@@ -35,7 +35,6 @@ export function createFc2CmadbStudio(): SourceAdapter {
   return {
     id: FC2CMADB_ID,
     name: "FC2 (fc2cmadb)",
-    windowDays: 90,
     authority: {
       name: "fc2cmadb.com",
       url: "https://fc2cmadb.com",

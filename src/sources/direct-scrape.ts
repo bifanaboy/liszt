@@ -30,7 +30,6 @@ export interface DirectScrapeOptions {
   allowedHosts: readonly string[];
   /** Empty means "not configured" - the source reports that calmly. */
   listingUrl: string | undefined;
-  windowDays: number;
   matcher: string | null;
   creatorStudio?: boolean;
   role?: string;
@@ -130,7 +129,6 @@ export function createDirectScrapeStudio(options: DirectScrapeOptions): SourceAd
     name,
     allowedHosts,
     listingUrl,
-    windowDays,
     matcher,
     creatorStudio = false,
     role = "authoritative catalogue",
@@ -144,7 +142,6 @@ export function createDirectScrapeStudio(options: DirectScrapeOptions): SourceAd
   return {
     id,
     name,
-    windowDays,
     authority: { name, url: listingUrl ?? "not configured", role },
     matcher,
     creatorStudio,

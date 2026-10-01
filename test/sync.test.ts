@@ -44,21 +44,20 @@ function adapter(
   return {
     id,
     name: id,
-    windowDays: 90,
     authority: { name: "test", url: `https://example.test/${id}`, role: "catalogue source" },
     matcher,
     fetch,
   };
 }
 
-function buildSync(store: SqliteStore, sources: SourceAdapter[]) {
+function buildSync(store: SqliteStore, sources: SourceAdapter[], windowDays = 90) {
   return createSync({
     store,
     sources,
     fetcher: new HttpFetcher(),
     clock: fixedClock(NOW),
     log: new NullLogger(),
-    windowDays: 90,
+    windowDays,
     fetchConcurrency: 2,
     lookups: { poolLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
@@ -89,6 +88,27 @@ test("one failing source does not stop the others", async () => {
   assert.match(sources.get("bad")?.lastError ?? "", /upstream is down/);
   assert.equal(sources.get("good")?.lastError, null);
   assert.ok(sources.get("good")?.lastSuccessAt);
+  store.close();
+});
+
+test("source health stores the configured global window on success and failure", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const sync = buildSync(
+    store,
+    [
+      adapter("madouqu", async () => ({ scenes: [raw("1")], verifiedEmpty: false }), null),
+      adapter("broken", async () => {
+        throw new Error("upstream is down");
+      }),
+    ],
+    37,
+  );
+
+  await sync("test");
+  const sources = new Map(store.listSources().map((entry) => [entry.sourceId, entry]));
+  assert.equal(sources.get("madouqu")?.windowDays, 37);
+  assert.equal(sources.get("broken")?.windowDays, 37);
   store.close();
 });
 

@@ -51,6 +51,7 @@ function recordSourceSuccess(
   adapter: SourceAdapter,
   sceneCount: number,
   now: Date,
+  windowDays: number,
 ): void {
   store.upsertSource({
     sourceId: adapter.id,
@@ -59,7 +60,7 @@ function recordSourceSuccess(
     label: adapter.name,
     authority: adapter.authority,
     creatorStudio: adapter.creatorStudio ?? false,
-    windowDays: adapter.windowDays,
+    windowDays,
     matcher: adapter.matcher,
     lastSuccessAt: now.toISOString(),
     lastError: null,
@@ -67,7 +68,12 @@ function recordSourceSuccess(
   });
 }
 
-function recordSourceFailure(store: SqliteStore, adapter: SourceAdapter, message: string): void {
+function recordSourceFailure(
+  store: SqliteStore,
+  adapter: SourceAdapter,
+  message: string,
+  windowDays: number,
+): void {
   const prior = store
     .listSources()
     .find((status) => status.sourceId === adapter.id && status.labelId === adapter.id);
@@ -78,7 +84,7 @@ function recordSourceFailure(store: SqliteStore, adapter: SourceAdapter, message
     label: adapter.name,
     authority: adapter.authority,
     creatorStudio: adapter.creatorStudio ?? false,
-    windowDays: adapter.windowDays,
+    windowDays,
     matcher: adapter.matcher,
     // A failed poll keeps its prior success timestamp so "last success" stays
     // meaningful rather than being reset by a transient outage.
@@ -337,7 +343,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
               });
             }
           }
-          recordSourceSuccess(store, adapter, count, now);
+          recordSourceSuccess(store, adapter, count, now, windowDays);
           log.info("sync: source ok", {
             source: adapter.id,
             count,
@@ -346,7 +352,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           outcome = { source: adapter.id, ok: true, count };
         } catch (error) {
           const message = (error as Error).message;
-          recordSourceFailure(store, adapter, message);
+          recordSourceFailure(store, adapter, message, windowDays);
           log.error("sync: source failed, retaining last-good records", {
             source: adapter.id,
             error: message,

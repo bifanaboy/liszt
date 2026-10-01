@@ -374,7 +374,14 @@ test("a deferred lane produces zero links and never enters the ladder", async ()
   // silently start linking a deferred lane the day its adapter improves.
   let called = false;
   const result = await resolveLinks({
-    scenes: [makeScene({ id: "madouqu:1", durationSec: 900, title: "anything" })],
+    scenes: [
+      makeScene({
+        id: "madouqu:1",
+        durationSec: 900,
+        title: "anything",
+        performers: ["空空子"],
+      }),
+    ],
     now,
     mapWithConcurrency: async (items, task) =>
       Promise.all(items.map((item, index) => task(item, index))),

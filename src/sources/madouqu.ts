@@ -1,5 +1,5 @@
 /**
- * The madouqu.com lane - category 4 of 4. Nine explicit sub-labels, one
+ * The madouqu.com lane - category 4 of 4. Eleven explicit sub-labels, one
  * classifier, and no tube matching.
  *
  * Two things are inherited deliberately:
@@ -39,6 +39,8 @@ export const STUDIO_CATEGORIES = [
   { id: 103, key: "xingkong", name: "Xingkong" },
   { id: 1116, key: "elephant", name: "Elephant" },
   { id: 1023, key: "aidou", name: "AiDou" },
+  { id: 779, key: "xingba", name: "Xingba Media" },
+  { id: 720, key: "tangxin", name: "Tangxin VLOG" },
 ] as const;
 
 export type StudioCategory = (typeof STUDIO_CATEGORIES)[number];
@@ -82,6 +84,26 @@ const EXCLUSION_PATTERNS: [string, RegExp][] = [
   ["pegging", /女攻男受|四爱|四愛/],
   ["male-male-or-male-trans", /男男|\bM\s*\+\s*M\b|\bM\s*\+\s*T\b|男\s*[＋+]\s*(?:男|T)/i],
   ["solo", /(?:單人|单人|獨自|独自|自慰|自摸|solo)/i],
+];
+/**
+ * Hard safety exclusions, checked before genre classification against both
+ * title and body. Keep these literal and non-global: changing the patterns
+ * must not make the shared module-level regex stateful.
+ */
+const SAFETY_BLOCK_PATTERNS: [string, RegExp][] = [
+  ["萝莉", /萝莉/],
+  ["蘿莉", /蘿莉/],
+  ["幼女", /幼女/],
+  ["未成年", /未成年/],
+  ["初中", /初中/],
+  ["小学", /小学/],
+  ["小學", /小學/],
+  ["迷奸", /迷奸/],
+  ["迷姦", /迷姦/],
+  ["强奸", /强奸/],
+  ["強姦", /強姦/],
+  ["昏迷", /昏迷/],
+  ["偷拍", /偷拍/],
 ];
 const PENETRATION_PATTERNS: RegExp[] = [
   /肛交/,
@@ -166,6 +188,16 @@ export interface MadouquVerdict {
 export function classifyScene(title: unknown, body: unknown): MadouquVerdict {
   const plainTitle = decodeRenderedHtml(title);
   const combined = `${plainTitle} ${decodeRenderedHtml(body)}`.trim();
+  const blocked = hits(combined, SAFETY_BLOCK_PATTERNS);
+  if (blocked.length) {
+    return {
+      decision: "excluded",
+      reason: "safety:blocked",
+      matchedKeywords: [],
+      exclusionKeywords: blocked,
+      snippet: snippetAround(combined, blocked),
+    };
+  }
   const positive = hits(combined, POSITIVE_PATTERNS);
   const review = hits(combined, REVIEW_PATTERNS);
   const exclusions = EXCLUSION_PATTERNS.filter(([, regex]) => regex.test(combined)).map(
@@ -239,6 +271,17 @@ export function parsePost(
 ): RawScene {
   const title = decodeRenderedHtml(post.title?.rendered);
   const body = decodeRenderedHtml(post.content?.rendered);
+  // Real WordPress excerpts use the explicit “麻豆女郎：…” field. Stop at
+  // the next known field label; unrelated prose is never treated as a name.
+  const performerField = body
+    .match(/麻豆女郎\s*[:：]\s*(.*?)(?=\s*下载地址\s*[:：]|$)/)?.[1]
+    ?.trim();
+  const performers = performerField
+    ? performerField
+        .split(/[，、,]/)
+        .map((name) => name.trim())
+        .filter(Boolean)
+    : [];
   const codeMatch = `${title}\n${body}`.match(
     /(?:番號|番号)\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9._-]*)/,
   );
@@ -252,7 +295,7 @@ export function parsePost(
     sourceSceneId,
     title,
     releaseDate: String(post.date_gmt || post.date || "").slice(0, 10),
-    performers: [],
+    performers,
     thumbnailUrl:
       (typeof post.jetpack_featured_media_url === "string" && post.jetpack_featured_media_url) ||
       (post._embedded?.["wp:featuredmedia"]?.[0]?.source_url as string | undefined) ||
@@ -263,7 +306,10 @@ export function parsePost(
     tags: ["anal"],
     studioId: `madouqu-${category.key}`,
     studio: category.name,
-    fieldProvenance: { decision: `madouqu:${verdict.decision}` },
+    fieldProvenance: {
+      decision: `madouqu:${verdict.decision}`,
+      ...(performers.length ? { performers: "madouqu:excerpt" } : {}),
+    },
     // A review post is kept in metadata and flagged, never silently admitted.
     metadataPoor: verdict.decision === "review",
     provenance: {
@@ -374,7 +420,6 @@ export function createMadouquStudio({
   return {
     id: "madouqu",
     name: "Madouqu (mainland/Taiwan)",
-    windowDays: 90,
     authority: {
       name: "madouqu.com WordPress REST API",
       url: postsUrl,
@@ -397,6 +442,7 @@ export function createMadouquStudio({
           if (verdict.decision === "excluded") {
             ctx.log(`madouqu: excluded post ${String(post.id)} (${verdict.reason})`, {
               category: category.name,
+              matchedTerms: verdict.exclusionKeywords ?? [],
             });
             continue;
           }

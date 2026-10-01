@@ -178,7 +178,6 @@ export function createBangOriginalsStudio(): ReturnType<typeof createDirectScrap
     name: "Bang!",
     allowedHosts: BANG_ALLOWED_HOSTS,
     listingUrl: LISTING_URL,
-    windowDays: 90,
     matcher: "sxyprn+eporner",
     role: "authoritative catalogue",
     parseListing,

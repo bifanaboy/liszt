@@ -9,7 +9,7 @@
  *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
  *                   (traxxx measures no scenes for it; listing is configured).
  *  3. fc2cmadb.com - a named stub. Its interface is unconfirmed.
- *  4. madouqu.com - nine category ids, Mandarin classifier, metadata only.
+ *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
  */
 import { createTraxxxStudio } from "./traxxx.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
