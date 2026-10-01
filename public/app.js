@@ -3,6 +3,8 @@ import { renderSourceHealth, renderSourceHealthSummary } from "./source-health.j
 const $ = (selector) => document.querySelector(selector);
 const list = $("#list");
 const empty = $("#empty");
+const emptyTitle = $("#empty-title");
+const emptyMessage = $("#empty-message");
 const search = $("#search");
 const sort = $("#sort");
 const studio = $("#studio");
@@ -36,6 +38,8 @@ const progressLive = $("#progress-live");
 let scenes = [];
 let statuses = [];
 let refreshing = false;
+let catalogueLoaded = false;
+let latestRun = null;
 
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 const niceDate = (value) => {
@@ -67,7 +71,7 @@ function render() {
     ? a.title.localeCompare(b.title)
     : (sort.value === "oldest" ? 1 : -1) * String(a.releaseDate || "").localeCompare(String(b.releaseDate || "")));
   count.textContent = `${filtered.length} ${filtered.length === 1 ? "release" : "releases"}`;
-  empty.hidden = filtered.length > 0;
+  renderEmptyState(filtered.length);
   list.hidden = filtered.length === 0;
   const groups = new Map();
   for (const scene of filtered) {
@@ -96,6 +100,43 @@ function render() {
   }).join("")}</section>`).join("");
 }
 
+/** Explain an empty view using the catalogue snapshot and the live refresh state. */
+function renderEmptyState(visibleCount = null) {
+  // Progress polls only update the explanation; they never rebuild populated rows.
+  if (scenes.length > 0 && visibleCount === null) return;
+  empty.hidden = visibleCount > 0;
+  if (empty.hidden) return;
+  let title;
+  let message;
+  if (!catalogueLoaded) {
+    title = "Loading catalogue…";
+    message = "Waiting for the catalogue response.";
+  } else if (scenes.length > 0) {
+    title = "No releases found";
+    message = "Try a different search or studio filter.";
+  } else if (progressState.active || (refreshing && !catalogueReloadPending && !catalogueReloadFailed && progressState.stage !== "error")) {
+    title = "Building the catalogue…";
+    message = "The refresh is still running. This page updates when it finishes; reloading may show releases already collected. Follow its progress above.";
+  } else if (catalogueReloadPending) {
+    title = "Loading refreshed catalogue…";
+    message = "The refresh has ended. Fetching its latest releases.";
+  } else if (catalogueReloadFailed) {
+    title = "Unable to load refreshed catalogue";
+    message = "The catalogue request failed. This page will retry automatically, or you can reload.";
+  } else if (progressState.stage === "error" || latestRun?.ok === false) {
+    title = "Refresh failed to populate the catalogue";
+    message = "No releases are available in this page’s catalogue. Check Sources for reported failures, then try Refresh now.";
+  } else if (latestRun) {
+    title = "No releases in the catalogue";
+    message = "The refresh finished without releases in the current window. Check Sources or try Refresh now.";
+  } else {
+    title = "Waiting for the first refresh";
+    message = "The catalogue has not been populated yet. Try Refresh now.";
+  }
+  emptyTitle.textContent = title;
+  emptyMessage.textContent = message;
+}
+
 function renderSources() {
   sourceSummary.innerHTML = renderSourceHealthSummary(statuses);
   sourcesList.innerHTML = statuses.map((item) => {
@@ -114,6 +155,10 @@ function apply(data) {
   scenes = Array.isArray(data.scenes) ? data.scenes : [];
   statuses = Array.isArray(data.sources) ? data.sources : [];
   refreshing = Boolean(data.refreshing);
+  catalogueLoaded = true;
+  latestRun = data.latestRun || null;
+  catalogueReloadPending = false;
+  catalogueReloadFailed = false;
   const stats = data.stats || {};
   scenesTotal.textContent = Number(stats.total ?? scenes.length).toLocaleString();
   linkedTotal.textContent = Number(stats.live ?? 0).toLocaleString();
@@ -162,6 +207,7 @@ let progressState = { active: false, stage: "idle" };
 let pollTimer = null;
 let pollPending = false;
 let catalogueReloadFailed = false;
+let catalogueReloadPending = false;
 let revealTimer = null;
 let elapsedTimer = null;
 let rowShown = false;
@@ -335,10 +381,16 @@ function applyProgress(next) {
       progressLive.textContent = progressState.stage === "error" ? "Refresh failed" : "Refresh finished";
     }
     if (wasActive || newRun) {
-      load().then(() => { catalogueReloadFailed = false; }).catch(() => { catalogueReloadFailed = true; });
+      catalogueReloadPending = true;
+      load().catch(() => {
+        catalogueReloadPending = false;
+        catalogueReloadFailed = true;
+        renderEmptyState();
+      });
     }
   }
   syncRefreshChrome(active);
+  renderEmptyState();
   return active;
 }
 
