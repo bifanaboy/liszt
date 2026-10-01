@@ -123,7 +123,9 @@ function apply(data) {
   refreshState.textContent = refreshing
     ? "Refresh in progress…"
     : data.latestRun
-      ? (data.latestRun.ok ? "Catalogue up to date" : "Last refresh had source failures")
+      ? (data.latestRun.ok
+        ? (Number(data.latestRun.resolverHealth?.errored || 0) ? "Catalogue up to date · resolver unavailable" : "Catalogue up to date")
+        : (Number(data.latestRun.resolverHealth?.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"))
       : "Waiting for first refresh";
   refreshButton.disabled = refreshing;
   const selected = studio.value;

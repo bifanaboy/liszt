@@ -290,6 +290,29 @@ test("the run ledger records each cycle with its outcomes", async () => {
   store.close();
 });
 
+test("run ledger keeps resolver errors separate from catalogue source health", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const sync = buildResolvingSync(
+    store,
+    [adapter("healthy-catalogue", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
+    {
+      sxyprnLookup: async () => {
+        throw new Error("sxyprn timed out");
+      },
+    },
+  );
+
+  const summary = await sync("test");
+  const [run] = store.recentRuns(1);
+  assert.equal(summary.ok, true, "resolver outages do not mark catalogue polling as failed");
+  assert.equal(store.listSources()[0]?.lastError, null);
+  assert.equal(run?.resolverHealth?.attempted, 1);
+  assert.equal(run?.resolverHealth?.errored, 1);
+  assert.equal(run?.outcomes[0]?.ok, true);
+  store.close();
+});
+
 /** A sync with the resolve stage switched on, for the ladder's end-to-end tests. */
 function buildResolvingSync(
   store: SqliteStore,
