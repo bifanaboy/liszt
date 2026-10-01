@@ -923,3 +923,126 @@ test("the pool rung refuses a winner whose title names nobody", async () => {
     store.close();
   }
 });
+
+test("hydration cap resumes fairly and reports an incomplete search", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const scene = makeMatchScene({
+    id: "test:late-pool-candidate",
+    title: "Marfe takes it deep",
+    performers: ["Marfe"],
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>() => ({}) as T,
+  };
+  try {
+    for (let index = 0; index < 41; index += 1) {
+      store.upsertPoolVideo({
+        id: `candidate${index}`,
+        uploader: "Vovick17",
+        title: index === 40 ? "Marfe compilation" : `Unrelated compilation ${index}`,
+        added: "2026-03-05T12:00:00.000Z",
+        durationSec: 2138,
+        hydratedAt: NOW.toISOString(),
+        views: 100,
+      });
+    }
+    const lookup = createPoolLookup({
+      store,
+      fetcher,
+      uploaders: ["Vovick17"],
+      durationToleranceSec: 1,
+      dateWindowDays: 7,
+      maxHydrations: 40,
+      log: () => {},
+    });
+
+    const first = await lookup(scene, NOW);
+    assert.equal(first?.videoId, "");
+    assert.equal(first?.hydrationCapped, true);
+    assert.equal(first?.omittedCandidates, 1);
+    assert.equal(first?.rejected, "incomplete", "the first pass is not an exhaustive no-match");
+
+    const second = await lookup(scene, new Date(NOW.getTime() + 1_000));
+    assert.equal(second?.videoId, "candidate40");
+    assert.equal(second?.hydrationCapped, true, "the remaining tail is still reported");
+    assert.equal(second?.omittedCandidates, 1);
+  } finally {
+    store.close();
+  }
+});
+
+test("hydration attempts rotate after failures within a run with a fixed time", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const now = new Date(NOW);
+  const scene = makeMatchScene({
+    id: "test:pool-attempt-order",
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const attemptedIds: string[] = [];
+  const attemptedTimes: string[] = [];
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>(url: string): Promise<T> => {
+      const id = new URL(url).searchParams.get("id");
+      const row = store.poolVideosForUploader("Vovick17").find((row) => row.id === id);
+      assert.ok(row?.hydrationAttemptedAt);
+      attemptedIds.push(row.id);
+      attemptedTimes.push(row.hydrationAttemptedAt);
+      throw new Error("temporary hydration failure");
+    },
+  };
+  try {
+    for (let index = 0; index < 3; index += 1) {
+      store.upsertPoolVideo({
+        id: `candidate${index}`,
+        uploader: "Vovick17",
+        title: "Marfe compilation",
+        added: null,
+        durationSec: 2138,
+        hydratedAt: null,
+        views: null,
+      });
+    }
+    for (let pass = 0; pass < 3; pass += 1) {
+      const gathered = await gatherPoolSurvivors(
+        scene,
+        {
+          store,
+          fetcher,
+          uploaders: ["Vovick17"],
+          durationToleranceSec: 1,
+          dateWindowDays: 7,
+          maxHydrations: 2,
+          log: () => {},
+        },
+        now,
+      );
+      assert.equal(gathered.durationPassed, 3);
+      assert.equal(gathered.capped, true);
+      assert.deepEqual(gathered.candidates, []);
+    }
+    assert.deepEqual(attemptedIds, [
+      "candidate0",
+      "candidate1",
+      "candidate2",
+      "candidate0",
+      "candidate1",
+      "candidate2",
+    ]);
+    assert.equal(attemptedTimes[0], now.toISOString());
+    for (let index = 1; index < attemptedTimes.length; index += 1) {
+      assert.ok(attemptedTimes[index]! > attemptedTimes[index - 1]!);
+    }
+    assert.equal(now.toISOString(), NOW.toISOString(), "the run time stays unchanged");
+  } finally {
+    store.close();
+  }
+});

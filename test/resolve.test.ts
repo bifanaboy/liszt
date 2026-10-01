@@ -33,6 +33,7 @@ const poolMatch = (over: Partial<PoolMatch> = {}): PoolMatch => ({
   rejectedByDate: 0,
   unknownDate: 0,
   hydrationCapped: false,
+  omittedCandidates: 0,
   fallbackCandidates: [],
   rejected: null,
   ...over,

@@ -45,6 +45,7 @@ export interface PoolVideo {
   added: string | null;
   durationSec: number | null;
   hydratedAt: string | null;
+  hydrationAttemptedAt?: string | null;
   /**
    * View count, or NULL when no source has ever reported one.
    *
@@ -514,7 +515,7 @@ export class SqliteStore {
   poolVideosInWindow(uploader: string, from: string, to: string): PoolVideo[] {
     return this.db
       .prepare(
-        "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NOT NULL AND added >= ? AND added <= ? ORDER BY added DESC",
+        "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NOT NULL AND added >= ? AND added <= ? ORDER BY added DESC, hydration_attempted_at ASC, rowid ASC",
       )
       .all(uploader, from, to)
       .map(rowToPoolVideo);
@@ -613,6 +614,13 @@ export class SqliteStore {
       .run(durationSec, toIsoUtc(added), views, hydratedAt, id, uploader);
   }
 
+  /** Persist a bounded-search attempt, including a transiently failed request. */
+  markPoolHydrationAttempt(id: string, uploader: string, attemptedAt: string): void {
+    this.db
+      .prepare("UPDATE pool_videos SET hydration_attempted_at = ? WHERE id = ? AND uploader = ?")
+      .run(attemptedAt, id, uploader);
+  }
+
   /** The incremental watermark: the newest upload date seen for an uploader. */
   poolWatermark(uploader: string): string | null {
     const row = this.db
@@ -693,6 +701,7 @@ function rowToPoolVideo(row: Record<string, unknown>): PoolVideo {
     added: (row.added as string | null) ?? null,
     durationSec: row.duration_sec === null ? null : Number(row.duration_sec),
     hydratedAt: (row.hydrated_at as string | null) ?? null,
+    hydrationAttemptedAt: (row.hydration_attempted_at as string | null) ?? null,
     // `undefined` means the column is absent, which is what a database created
     // before migration 0003 reports through some drivers. It is normalised to
     // NULL rather than left undefined so the two "no count" spellings cannot

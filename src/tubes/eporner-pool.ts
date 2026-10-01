@@ -554,7 +554,7 @@ export interface PoolLookupOptions {
 }
 
 /** Why the pool rung produced no link. Recorded, not swallowed. */
-export type PoolRejection = "duration" | "date" | "none";
+export type PoolRejection = "duration" | "date" | "none" | "incomplete";
 
 export interface PoolMatch {
   url: string;
@@ -578,6 +578,8 @@ export interface PoolMatch {
   unknownDate: number;
   /** True when the hydration cap dropped otherwise-qualifying survivors. */
   hydrationCapped: boolean;
+  /** Number of duration survivors left for a later bounded search. */
+  omittedCandidates: number;
   /** Date-and-duration survivors retained for the terminal low-confidence fallback. */
   fallbackCandidates: TubeCandidate[];
   /** Set when the rung found nothing; null when it linked. */
@@ -599,10 +601,9 @@ export interface PoolMatch {
  * after hydration, date narrowing and title-stem collapse; applying it earlier
  * would judge a repost group member-by-member rather than on the group's best
  * title. Keeping all date+duration survivors also supplies the terminal
- * low-confidence fallback if no tube returns a named match. The cost is bounded
- * and was measured rather than assumed: over 1,005 indexed pool videos the
- * +-2s band holds a mean of 3.1 videos, a median of 2, a p99 of 10 and a maximum
- * of 13, so the survivor set stays well inside the `maxHydrations` cap.
+ * low-confidence fallback if no tube returns a named match. Search is bounded;
+ * candidates are ordered by least recent hydration attempt so repeated runs
+ * resume fairly instead of starving later rows behind insertion order.
  */
 export function preFilter(
   scene: MatchScene,
@@ -761,6 +762,9 @@ export interface PoolGatherDeps {
  */
 const POOL_HYDRATION_CONCURRENCY = 4;
 
+// All scene lookups in a run share `now`; keep attempts ordered across them.
+const hydrationAttemptOffsets = new WeakMap<Date, number>();
+
 /**
  * Everything in the pool rung that happens BEFORE the date half: scan the
  * index, apply the duration band, hydrate the survivors.
@@ -821,13 +825,17 @@ export async function gatherPoolSurvivors(
     return { considered, durationPassed: 0, survivorDurations, candidates: [], capped: false };
 
   // Hydration is the only network cost in this rung, and it is bounded.
+  survivors.sort((a, b) =>
+    (a.hydrationAttemptedAt ?? "").localeCompare(b.hydrationAttemptedAt ?? ""),
+  );
   const queue = survivors.slice(0, maxHydrations);
   const capped = survivors.length > queue.length;
   if (capped) {
     log("eporner pool: hydration cap reached", {
       scene: scene.id,
       survivors: survivors.length,
-      capped: queue.length,
+      hydrated: queue.length,
+      omittedCandidates: survivors.length - queue.length,
     });
   }
   // Hydration is the only network cost in this rung, and it is bounded TWICE:
@@ -844,7 +852,16 @@ export async function gatherPoolSurvivors(
   // likely to draw a 429 from eporner.
   const hydrated = await mapIsolated(
     queue,
-    (video) => hydrate(video, { store, fetcher, now }),
+    async (video) => {
+      const attemptOffset = hydrationAttemptOffsets.get(now) ?? 0;
+      hydrationAttemptOffsets.set(now, attemptOffset + 1);
+      store.markPoolHydrationAttempt(
+        video.id,
+        video.uploader,
+        new Date(now.getTime() + attemptOffset).toISOString(),
+      );
+      return hydrate(video, { store, fetcher, now });
+    },
     POOL_HYDRATION_CONCURRENCY,
   );
   const candidates = hydrated
@@ -895,7 +912,9 @@ export function createPoolLookup(options: PoolLookupOptions) {
       return {
         ...emptyMatch,
         candidatesConsidered: considered,
-        rejected: durationPassed > 0 ? "none" : "duration",
+        hydrationCapped: gathered.capped,
+        omittedCandidates: Math.max(0, durationPassed - (options.maxHydrations ?? 40)),
+        rejected: gathered.capped ? "incomplete" : durationPassed > 0 ? "none" : "duration",
       };
     }
 
@@ -933,6 +952,7 @@ export function createPoolLookup(options: PoolLookupOptions) {
       rejectedByDate,
       unknownDate,
       hydrationCapped: gathered.capped,
+      omittedCandidates: Math.max(0, durationPassed - (options.maxHydrations ?? 40)),
     };
     // If no candidates passed the date half, preserve that rejection in the
     // rung result. Otherwise a null pick means that no candidate could be
@@ -944,7 +964,7 @@ export function createPoolLookup(options: PoolLookupOptions) {
         ...emptyMatch,
         ...counts,
         fallbackCandidates: eligible,
-        rejected: eligible.length ? "none" : "date",
+        rejected: gathered.capped ? "incomplete" : eligible.length ? "none" : "date",
       };
 
     const videoId = epornerVideoId(match.candidate.url);
@@ -993,6 +1013,7 @@ const emptyMatch: PoolMatch = {
   rejectedByDate: 0,
   unknownDate: 0,
   hydrationCapped: false,
+  omittedCandidates: 0,
   fallbackCandidates: [],
   rejected: "none",
 };
