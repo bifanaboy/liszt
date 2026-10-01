@@ -22,3 +22,6 @@ package-lock.json
 # Per-developer local agent state - gitignored, never on a shared branch, and
 # not what CI sees.
 .kilo/
+
+# Prose changes must not block code checks or Render deploys.
+**/*.md
