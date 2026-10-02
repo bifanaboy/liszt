@@ -100,7 +100,6 @@ be corrected — it is just the setting.
 - **Do the mechanical work.** Handle commands, file edits, and boilerplate
   yourself. Ask only for missing requirements or real decisions.
 
-
 ## 5. Issues people can understand
 
 Search open and closed issues before creating or editing one. Update an existing
@@ -175,3 +174,7 @@ Reconcile bugs with GitHub issues before filing:
   already covers them.
 - Keep related and unrelated problems separate. Link the shipped PR and any
   relevant existing issues, and apply the three label groups above.
+
+## Persistence
+
+All outbound HTTP from this workspace goes through the standard proxy environment variables (HTTP_PROXY/HTTPS_PROXY, lowercase variants, NO_PROXY for exclusions). Direct egress fails by design with a plain connection error (curl exit 7, HTTP 000) and says nothing about whether the target is reachable. Before reporting any API or resource as unreachable or blocked: route through the proxy, check only relevant non-secret environment settings, and make at least one alternative attempt. If a tool ignores the proxy env vars, configure it explicitly. Redact secret values from any command or error output shown. Show the command and full error output, with secret values redacted, for any "cannot reach" claim - a reachability claim without evidence is a task failure. This applies to source APIs (TPDB, StashDB, Traxx) and the GitHub API.
