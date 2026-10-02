@@ -120,7 +120,10 @@ test("a populated catalogue filtered to zero retains the filter guidance during 
   app.render();
   assert.equal(app.element("#empty-title").textContent, "No releases found");
   app.applyProgress(active);
-  assert.equal(app.element("#empty-message").textContent, "Try a different search or studio filter.");
+  assert.equal(
+    app.element("#empty-message").textContent,
+    "Try a different search or studio filter.",
+  );
   assert.equal(app.element("#empty").hidden, false);
   app.element("#search").value = "";
   app.element("#studio").value = "different-studio";
