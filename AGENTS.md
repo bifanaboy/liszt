@@ -100,7 +100,6 @@ be corrected — it is just the setting.
 - **Do the mechanical work.** Handle commands, file edits, and boilerplate
   yourself. Ask only for missing requirements or real decisions.
 
-
 ## 5. Issues people can understand
 
 Search open and closed issues before creating or editing one. Update an existing
@@ -175,3 +174,7 @@ Reconcile bugs with GitHub issues before filing:
   already covers them.
 - Keep related and unrelated problems separate. Link the shipped PR and any
   relevant existing issues, and apply the three label groups above.
+
+## Persistence
+
+Never report an API or resource as unreachable, blocked, or impossible without showing the exact command and full error output. If a direct request fails, first try the workspace HTTP proxy and any relevant environment keys, and make at least one alternative attempt before concluding. This applies to source APIs (TPDB, StashDB, Traxx) and the GitHub API. A claim of "cannot reach" without evidence is a task failure.
