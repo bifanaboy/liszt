@@ -13,6 +13,11 @@ export interface RawScene {
   durationSec?: number | null;
   thumbnailUrl?: string;
   releaseUrl?: string;
+  storeId?: string;
+  launchDate?: string;
+  previewUrl?: string;
+  price?: { regular: string; onSale: boolean; free: boolean };
+
   /** The label's own release code, e.g. madouqu `xb6340`. */
   studioCode?: string;
   tags?: string[];

@@ -72,6 +72,7 @@ source adapters          pipeline              tube ladder            serving
 traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
 Bang!       ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
 Maximo      │            per-source       │    guess fallback   ─┘         │
+ManyVids    │
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -92,13 +93,14 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
 
 ### Sources
 
-Four categories, in `src/sources/registry.ts`.
+Five categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                             | Matcher  |
 | -------------------------------------------- | ------------------------------------- | -------- |
 | Lancelot Styles Evolution, Mambo Perv, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
+| ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
 | fc2cmadb                                     | stub - interface unconfirmed          | yes      |
 
@@ -302,6 +304,54 @@ rule has stopped doing useful work and should be deleted rather than tuned.
 
 ---
 
+## ManyVids and catalogue coverage
+
+ManyVids imports the **full public video list**, starting with Maximo Garcia's
+store (`1003095958`). `LISZT_MANYVIDS_STORE_IDS` accepts comma-separated store ids;
+add `1008105753` for Filou Fitt, or set it explicitly empty to disable the source.
+Each store has its own source health and failure isolation. Store owners are not
+assumed to appear in every video; performer names remain unknown unless supplied.
+
+The first poll and a poll every seven days walk every page. Between full pulls,
+paging stops after a page containing only known video ids. Requests start at least
+400 milliseconds apart per store. Successful snapshots and known ids survive
+restarts in SQLite; a failed page leaves the snapshot and full-pull date untouched.
+As with other sources, catalogue rows remain until they leave the rolling window.
+
+The scene response keeps the store id, original UTC launch timestamp, UTC release
+day, runtime in seconds, price (`regular`, `onSale`, `free`), thumbnail and preview
+URLs, and known tags. Preview clips are metadata, never verified playback links.
+The endpoint currently omits tags: we leave those unknown rather than fetching
+hundreds of tag-filtered lists each run. Tags never limit ingestion. Hidden and
+club-only videos are outside this public source; endpoint changes fail the poll
+and preserve last-good records.
+
+For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
+ManyVids and Traxxx records in the local rolling window. TPDB and StashDB are
+reported as unavailable because this app has no adapters for them. To compare all
+four databases, pass normalized JSON exports:
+
+```sh
+npm run catalogue-coverage -- --tpdb tpdb.json --stashdb stashdb.json --traxxx traxxx.json --manyvids manyvids.json
+```
+
+Each export is an array of `{ id, title, releaseDate, durationSec }` records (or an
+object with a `scenes` array). Dates must be `YYYY-MM-DD`; durations are seconds.
+A supplied empty array means checked and empty; an omitted provider means unknown.
+Export dates/windows should cover the same period for meaningful comparison.
+
+The report contains likely release groups, the union count, and each provider's
+share of that union. Associations require title token similarity of at least 80%,
+release dates within two UTC days, and positive runtimes within three seconds.
+This runtime margin covers the 50:50–50:53 example in #46 and applies only to the
+catalogue audit; playback matching keeps its existing ±1-second tolerance.
+Ambiguous candidates remain separate; every record in a group must agree with
+every other. These are conservative estimates for review, not a completeness
+claim. Original titles, dates and runtimes remain in the report; it chooses no
+provider precedence and does not merge or rewrite stored scenes.
+
+---
+
 ## Configuration
 
 Full list with defaults in `.env.example`. There is no credential and no
@@ -319,6 +369,8 @@ required variable: everything has a working default.
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
 | `LISZT_TRAXXX_WATCHLIST`                        | Vixen `anal` listing | Comma-separated listing URLs; setting it replaces the built-in list.  |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
+| `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
+| `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
 | `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |

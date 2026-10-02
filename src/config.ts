@@ -75,6 +75,9 @@ export const Config = z.object({
   /** Unset: the Maximo Garcia lane reports "not configured" and stays calm. */
   maximoListingUrl: z.string().url().optional(),
 
+  manyvidsStoreIds: z.array(z.string().regex(/^\d+$/)).default(["1003095958"]),
+  manyvidsMinIntervalMs: z.coerce.number().int().min(0).default(400),
+
   // Tube ladder.
   trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
   /**
@@ -179,6 +182,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traxxxWatchlist: list(env.LISZT_TRAXXX_WATCHLIST),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
     maximoListingUrl: optionalValue(env.LISZT_MAXIMO_LISTING_URL),
+    manyvidsStoreIds:
+      env.LISZT_MANYVIDS_STORE_IDS === undefined
+        ? undefined
+        : [
+            ...new Set(
+              env.LISZT_MANYVIDS_STORE_IDS.split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            ),
+          ],
+    manyvidsMinIntervalMs: env.LISZT_MANYVIDS_MIN_INTERVAL_MS,
     trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,
