@@ -151,51 +151,50 @@ export class SqliteStore {
   }
 
   migrate(): void {
-    this.db.exec(
-      "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
-    );
-    const applied = new Set(
-      (
-        this.db.prepare("SELECT version FROM schema_migrations").all() as {
-          version: number;
-        }[]
-      ).map((row) => row.version),
-    );
-    // Two branches originally used version 4. Keep resolver health at 4 and
-    // hydration attempts at 5. A startup with the colliding files could commit
-    // only the pool update before failing; move that ledger entry to its new
-    // number so the missing resolver update runs without losing pool data.
-    if (applied.has(4) && !applied.has(5)) {
-      const poolColumns = this.db.prepare("PRAGMA table_info(pool_videos)").all();
-      const runColumns = this.db.prepare("PRAGMA table_info(runs)").all();
-      if (
-        poolColumns.some((column) => column.name === "hydration_attempted_at") &&
-        !runColumns.some((column) => column.name === "resolver_health")
-      ) {
-        this.db.prepare("UPDATE schema_migrations SET version = 5 WHERE version = 4").run();
-        applied.delete(4);
-        applied.add(5);
+    // Read the ledger and repair the historical collision under the same lock
+    // as the updates. Another process must see the committed schema before it
+    // decides which ALTER TABLE statements still need to run.
+    this.transaction(() => {
+      this.db.exec(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+      );
+      const applied = new Set(
+        (
+          this.db.prepare("SELECT version FROM schema_migrations").all() as {
+            version: number;
+          }[]
+        ).map((row) => row.version),
+      );
+      // Two branches originally used version 4. Keep resolver health at 4 and
+      // hydration attempts at 5. A startup with the colliding files could commit
+      // only the pool update before failing; move that ledger entry to its new
+      // number so the missing resolver update runs without losing pool data.
+      if (applied.has(4) && !applied.has(5)) {
+        const poolColumns = this.db.prepare("PRAGMA table_info(pool_videos)").all();
+        const runColumns = this.db.prepare("PRAGMA table_info(runs)").all();
+        if (
+          poolColumns.some((column) => column.name === "hydration_attempted_at") &&
+          !runColumns.some((column) => column.name === "resolver_health")
+        ) {
+          this.db.prepare("UPDATE schema_migrations SET version = 5 WHERE version = 4").run();
+          applied.delete(4);
+          applied.add(5);
+        }
       }
-    }
-    const files = readdirSync(MIGRATIONS_DIR)
-      .filter((file) => file.endsWith(".sql"))
-      .sort();
-    for (const file of files) {
-      const version = Number(file.split("_")[0]);
-      if (!Number.isFinite(version) || applied.has(version)) continue;
-      const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
-      this.db.exec("BEGIN IMMEDIATE");
-      try {
+      const files = readdirSync(MIGRATIONS_DIR)
+        .filter((file) => file.endsWith(".sql"))
+        .sort();
+      for (const file of files) {
+        const version = Number(file.split("_")[0]);
+        if (!Number.isFinite(version) || applied.has(version)) continue;
+        const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
         this.db.exec(sql);
         this.db
           .prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)")
           .run(version, new Date().toISOString());
-        this.db.exec("COMMIT");
-      } catch (error) {
-        this.db.exec("ROLLBACK");
-        throw error;
+        applied.add(version);
       }
-    }
+    });
   }
 
   /** Run `body` inside one transaction, rolling back on any throw. */

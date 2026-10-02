@@ -4,9 +4,87 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 
 const migrations = new URL("../src/core/store/migrations/", import.meta.url);
+
+test("two processes starting migrations together both finish successfully", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "liszt-migrations-concurrent-"));
+  const path = join(dir, "catalogue.db");
+  const db = new DatabaseSync(path);
+  try {
+    db.exec("PRAGMA journal_mode = WAL;");
+    for (const [index, file] of [
+      "0001_init.sql",
+      "0002_drop_sessions.sql",
+      "0003_pool_video_views.sql",
+    ].entries()) {
+      db.exec(readFileSync(new URL(file, migrations), "utf8"));
+      db.prepare("INSERT INTO schema_migrations VALUES (?, ?)").run(index + 1, "original");
+    }
+    // The collision could leave only this update committed at version 4.
+    db.exec("ALTER TABLE pool_videos ADD COLUMN hydration_attempted_at TEXT;");
+    db.prepare("INSERT INTO schema_migrations VALUES (4, ?)").run("original");
+  } finally {
+    db.close();
+  }
+  const barrier = new SharedArrayBuffer(4);
+  const workers: Worker[] = [];
+  try {
+    await Promise.all(
+      Array.from(
+        { length: 2 },
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const worker = new Worker(
+              `
+          const { workerData } = require('node:worker_threads');
+          const { DatabaseSync } = require('node:sqlite');
+          const originalExec = DatabaseSync.prototype.exec;
+          let firstLock = true;
+          DatabaseSync.prototype.exec = function(sql) {
+            if (sql === 'BEGIN IMMEDIATE' && firstLock) {
+              firstLock = false;
+              const arrivals = new Int32Array(workerData.barrier);
+              Atomics.add(arrivals, 0, 1);
+              Atomics.notify(arrivals, 0);
+              while (Atomics.load(arrivals, 0) < 2) {
+                if (Atomics.wait(arrivals, 0, 1, 10000) === 'timed-out') {
+                  throw new Error('second migration worker did not reach its first lock');
+                }
+              }
+            }
+            return originalExec.call(this, sql);
+          };
+          (async () => {
+            const { SqliteStore } = await import(workerData.storeUrl);
+            const store = new SqliteStore(workerData.path);
+            try { store.migrate(); } finally { store.close(); }
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+        `,
+              {
+                eval: true,
+                workerData: {
+                  path,
+                  barrier,
+                  storeUrl: new URL("../src/core/store/sqlite.ts", import.meta.url).href,
+                },
+              },
+            );
+            workers.push(worker);
+            worker.on("error", reject);
+            worker.on("exit", (code) =>
+              code === 0 ? resolve() : reject(new Error(`migration worker exited ${code}`)),
+            );
+          }),
+      ),
+    );
+  } finally {
+    await Promise.all(workers.map((worker) => worker.terminate()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("a fresh catalogue applies both database updates and can migrate again", () => {
   const store = new SqliteStore(":memory:");
