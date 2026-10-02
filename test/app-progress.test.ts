@@ -56,7 +56,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
   const timers = new Map<number, number>();
   let timerId = 0;
   const api = (await runInNewContext(
-    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render }; })()`,
+    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow }; })()`,
     {
       document: { querySelector: element, querySelectorAll: () => [], addEventListener() {} },
       Option: Element,
@@ -70,6 +70,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       clearTimeout: (id: number) => timers.delete(id),
       setInterval: () => ++timerId,
       clearInterval() {},
+      requestAnimationFrame: (callback: () => void) => callback(),
     },
   )) as {
     renderProgress(snapshot: Snapshot): void;
@@ -77,6 +78,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     pollProgress(): Promise<void>;
     apply(data: unknown): void;
     render(): void;
+    showRow(): void;
   };
   return { ...api, element, timers };
 }
@@ -199,6 +201,40 @@ test("a failed completion fetch explains the stale empty snapshot and recovers o
   await app.pollProgress();
   assert.equal(app.element("#empty-title").textContent, "No releases in the catalogue");
 });
+
+for (const [name, latestRun, expectedSummary] of [
+  ["success", { ok: true }, "Catalogue up to date"],
+  [
+    "source and resolver failures",
+    { ok: false, resolverHealth: { errored: 1 } },
+    "Source and resolver failures",
+  ],
+] as const) {
+  test(`a completed ${name} snapshot clears stale active progress`, async () => {
+    const app = await dashboard(async () => response(catalogue));
+    app.applyProgress({
+      ...active,
+      stage: "verifying",
+      link: { done: 25, total: 25, verifyDone: 14, verifyTotal: 25 },
+    } as Snapshot);
+    app.showRow();
+    assert.equal(app.element("#progress-row").hidden, false);
+
+    app.apply({
+      ...catalogue,
+      refreshing: false,
+      latestRun,
+      progress: {
+        ...active,
+        stage: "verifying",
+        link: { done: 25, total: 25, verifyDone: 14, verifyTotal: 25 },
+      },
+    });
+
+    assert.equal(app.element("#progress-row").hidden, true);
+    assert.equal(app.element("#refresh-state").textContent, expectedSummary);
+  });
+}
 
 test("HTML provides the empty-state text targets used by the dashboard", () => {
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");

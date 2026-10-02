@@ -181,7 +181,15 @@ function apply(data) {
   render();
   // The read model carries a snapshot too, so a first paint that lands in the
   // middle of a cycle can already show its stage - the poll takes it from there.
-  applyProgress(data.progress);
+  // `refreshing` is the terminal-state authority. A completed catalogue can
+  // briefly arrive with the previous active progress payload, and replaying it
+  // would reopen a stale progress row until the page is reloaded.
+  const progress = data.progress && typeof data.progress === "object" ? data.progress : {};
+  applyProgress(
+    refreshing
+      ? progress
+      : { ...progress, active: false, stage: progress.stage === "error" ? "error" : "idle" },
+  );
 }
 
 async function load() {
