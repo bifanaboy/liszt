@@ -161,6 +161,22 @@ export class SqliteStore {
         }[]
       ).map((row) => row.version),
     );
+    // Two branches originally used version 4. Keep resolver health at 4 and
+    // hydration attempts at 5. A startup with the colliding files could commit
+    // only the pool update before failing; move that ledger entry to its new
+    // number so the missing resolver update runs without losing pool data.
+    if (applied.has(4) && !applied.has(5)) {
+      const poolColumns = this.db.prepare("PRAGMA table_info(pool_videos)").all();
+      const runColumns = this.db.prepare("PRAGMA table_info(runs)").all();
+      if (
+        poolColumns.some((column) => column.name === "hydration_attempted_at") &&
+        !runColumns.some((column) => column.name === "resolver_health")
+      ) {
+        this.db.prepare("UPDATE schema_migrations SET version = 5 WHERE version = 4").run();
+        applied.delete(4);
+        applied.add(5);
+      }
+    }
     const files = readdirSync(MIGRATIONS_DIR)
       .filter((file) => file.endsWith(".sql"))
       .sort();
