@@ -15,7 +15,12 @@ permissions:
 
 jobs:
   ask:
-    if: github.event.review.user.login == 'coderabbitai[bot]' && github.event.review.state == 'changes_requested'
+    # Same-repo PRs only: a fork PR gets a read-only token here, so the comment would fail.
+    if: github.event.review.user.login == 'coderabbitai[bot]' && github.event.review.state == 'changes_requested' && github.event.pull_request.head.repo.full_name == github.repository
+    # One job per PR at a time, so two quick reviews cannot both post the request.
+    concurrency:
+      group: coderabbit-autofix-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - name: Ask CodeRabbit to apply its own fixes, once per pull request
