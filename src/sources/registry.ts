@@ -2,7 +2,7 @@
  * The source registry. Adding a source is one entry here plus its adapter;
  * everything downstream (sync, matching, serving) reads this list.
  *
- * The four categories, in full:
+ * The five categories, in full:
  *
  *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, plus the checked
  *                   watchlist. No auth, and traxxx replaced TPDB entirely.
@@ -10,7 +10,10 @@
  *                   (traxxx measures no scenes for it; listing is configured).
  *  3. fc2cmadb.com - a named stub. Its interface is unconfirmed.
  *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
+ *  5. ManyVids - public creator store listings, incremental plus weekly full pulls.
  */
+import { createManyVidsSource } from "./manyvids.ts";
+import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
@@ -46,6 +49,9 @@ export const ASIAN_SOURCE_IDS: readonly string[] = Object.freeze([FC2CMADB_ID, M
 export interface RegistryOptions {
   madouquApiBase: string;
   traxxxWatchlist: readonly string[];
+  manyvidsStoreIds?: readonly string[];
+  manyvidsMinIntervalMs?: number;
+  store?: SqliteStore;
   /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
   maximoListingUrl?: string | undefined;
   /** Hosts the Maximo listing and its video pages may live on. */
@@ -57,6 +63,9 @@ export function createSources({
   madouquApiBase,
   traxxxWatchlist,
   maximoListingUrl,
+  manyvidsStoreIds = ["1003095958"],
+  manyvidsMinIntervalMs = 400,
+  store,
   maximoAllowedHosts = [
     "sexlikereal.com",
     "www.sexlikereal.com",
@@ -68,6 +77,9 @@ export function createSources({
     lancelotStylesEvolution,
     mamboPerv,
     createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
+    ...[...new Set(manyvidsStoreIds)].map((storeId) =>
+      createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
+    ),
     createBangOriginalsStudio(),
     createFc2CmadbStudio(),
     createMadouquStudio({ apiBase: madouquApiBase }),

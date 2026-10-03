@@ -58,6 +58,9 @@ async function main(): Promise<void> {
   const sources = createSources({
     madouquApiBase: config.madouquApiBase,
     traxxxWatchlist: config.traxxxWatchlist,
+    manyvidsStoreIds: config.manyvidsStoreIds,
+    manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
+    store,
     ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
