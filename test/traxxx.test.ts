@@ -241,3 +241,52 @@ test("male actors are dropped and the performer list is deduplicated", () => {
   assert.equal(scene.durationSec, 1419);
   assert.equal(scene.provenance?.source, "traxxx.me");
 });
+
+test("a full foreign page is skipped and later matching scenes are fetched until a short page", async () => {
+  const pages: number[] = [];
+  const adapter = createTraxxxStudio({
+    id: "network-vixen-anal",
+    name: "Vixen",
+    kind: "network",
+    slug: "vixen",
+    tags: ["anal"],
+  });
+  const result = await adapter.fetch("2026-01-01", {
+    fetcher: {
+      fetch: async (url) => {
+        const parsed = new URL(url);
+        if (!parsed.searchParams.has("tags")) {
+          return Response.json({ scenes: [], total: 100, limit: 1 });
+        }
+        const page = Number(parsed.searchParams.get("page"));
+        pages.push(page);
+        assert.ok(page <= 3, "pagination must stop on the short page");
+        const scenes =
+          page === 1
+            ? [
+                { id: 1, title: "Foreign old", date: "2025-01-01", network: { slug: "other" } },
+                { id: 2, title: "Foreign recent", date: "2026-03-04", network: { slug: "other" } },
+              ]
+            : Array.from({ length: page === 2 ? 2 : 1 }, (_, index) => ({
+                id: page * 10 + index,
+                title: "Matching",
+                date: "2026-03-04",
+                network: { slug: "vixen" },
+              }));
+        return Response.json({ scenes, total: 5, limit: 2 });
+      },
+      text: async () => "",
+      json: async <T = unknown>() => ({}) as T,
+    },
+    now: new Date("2026-03-05T00:00:00Z"),
+    log: () => {},
+    traxxx: { minIntervalMs: 0 },
+    mapWithConcurrency: async (items, task) => Promise.all(items.map(task)),
+    mapIsolated: async (items, task) => Promise.all(items.map(task)),
+  });
+  assert.deepEqual(pages, [1, 2, 3]);
+  assert.deepEqual(
+    result.scenes.map((scene) => scene.sourceSceneId),
+    ["20", "21", "30"],
+  );
+});

@@ -203,9 +203,23 @@ export class SqliteStore {
     // Repository methods such as `upsertScene` own their small transaction so
     // they stay atomic when called directly. A caller may also group several
     // repository writes into one larger unit; in that case the outermost
-    // transaction owns COMMIT/ROLLBACK and nested calls simply join it.
+    // transaction owns COMMIT/ROLLBACK and nested calls use savepoints so a
+    // caught nested failure cannot leave partial writes in the outer unit.
     if (this.transactionDepth > 0) {
-      return body();
+      const savepoint = `transaction_${this.transactionDepth}`;
+      this.db.exec(`SAVEPOINT ${savepoint}`);
+      this.transactionDepth += 1;
+      try {
+        const value = body();
+        this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+        return value;
+      } catch (error) {
+        this.db.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+        this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+        throw error;
+      } finally {
+        this.transactionDepth -= 1;
+      }
     }
     this.db.exec("BEGIN IMMEDIATE");
     this.transactionDepth += 1;

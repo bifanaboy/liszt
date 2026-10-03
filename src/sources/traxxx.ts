@@ -490,7 +490,6 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
       for (let page = 1; page <= MAX_PAGES; page += 1) {
         const { scenes: records, limit } = pageResult;
         if (!records.length) break;
-        let pageHasRecent = false;
         let reachedWindowBoundary = false;
         for (const record of records) {
           recordsSeen += 1;
@@ -518,10 +517,9 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
             filtered += 1;
             continue;
           }
-          pageHasRecent = true;
           scenes.push(parsed);
         }
-        if (!pageHasRecent || reachedWindowBoundary || records.length < limit) break;
+        if (reachedWindowBoundary || records.length < limit) break;
         pageResult = await client.listScenes(kind, slug, page + 1, PAGE_LIMIT, { tags });
       }
       ctx.log("traxxx: lane complete", {

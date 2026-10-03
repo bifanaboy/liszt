@@ -56,13 +56,18 @@ export function createSources({
     "www.analvids.com",
   ],
 }: RegistryOptions): SourceAdapter[] {
-  return [
+  const sources = [
     lancelotStylesEvolution,
     mamboPerv,
-    ...createTraxxxWatchlistStudios(traxxxWatchlist),
     createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
     createBangOriginalsStudio(),
     createFc2CmadbStudio(),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
+  const watchlist = createTraxxxWatchlistStudios(traxxxWatchlist, [
+    ...sources.map((source) => source.id),
+    ...RETIRED_SOURCE_IDS,
+  ]);
+  sources.splice(2, 0, ...watchlist);
+  return sources;
 }

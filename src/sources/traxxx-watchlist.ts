@@ -44,7 +44,8 @@ export function parseTraxxxListingUrl(raw: string): TraxxxLaneSpec {
       : tagsValue
           .split(",")
           .map((tag) => tag.trim().toLowerCase())
-          .filter(Boolean);
+          .filter(Boolean)
+          .sort();
   if (tagsValue !== null && (!tags.length || tags.some((tag) => !/^[a-z0-9-]+$/.test(tag)))) {
     invalid("tags must contain non-empty slugs");
   }
@@ -54,7 +55,7 @@ export function parseTraxxxListingUrl(raw: string): TraxxxLaneSpec {
   canonical.pathname = `/${kind}/${slug}/scenes/latest/1`;
   if (tags.length) canonical.searchParams.set("tags", tags.join(","));
   return {
-    id: [slug, ...tags].join("-"),
+    id: [kind, slug, ...tags].join("-"),
     kind,
     slug,
     tags,
@@ -74,9 +75,23 @@ function displayName(value: string): string {
     .join(" ");
 }
 
-export function createTraxxxWatchlistStudios(urls: readonly string[]): SourceAdapter[] {
-  return urls.map((url) => {
-    const spec = parseTraxxxListingUrl(url);
+export function createTraxxxWatchlistStudios(
+  urls: readonly string[],
+  reservedIds: readonly string[] = [],
+): SourceAdapter[] {
+  const specs = urls.map(parseTraxxxListingUrl);
+  const seen = new Set<string>();
+  const reserved = new Set(reservedIds);
+  for (const spec of specs) {
+    if (reserved.has(spec.id)) {
+      throw new Error(`Reserved Traxxx watchlist ID "${spec.id}" for ${spec.url}`);
+    }
+    if (seen.has(spec.id)) {
+      throw new Error(`Duplicate Traxxx watchlist ID "${spec.id}" for ${spec.url}`);
+    }
+    seen.add(spec.id);
+  }
+  return specs.map((spec) => {
     return createTraxxxStudio({
       id: spec.id,
       name: displayName(spec.slug),

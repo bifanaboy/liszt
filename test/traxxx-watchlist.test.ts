@@ -13,7 +13,7 @@ test("parses supported network and channel listings with tag slugs", () => {
   assert.deepEqual(
     parseTraxxxListingUrl("https://traxxx.me/network/vixen/scenes/latest/1?tags=anal,bbc"),
     {
-      id: "vixen-anal-bbc",
+      id: "network-vixen-anal-bbc",
       kind: "network",
       slug: "vixen",
       tags: ["anal", "bbc"],
@@ -21,7 +21,7 @@ test("parses supported network and channel listings with tag slugs", () => {
     },
   );
   assert.deepEqual(parseTraxxxListingUrl("https://www.traxxx.me/channel/tushy/scenes/latest/1"), {
-    id: "tushy",
+    id: "channel-tushy",
     kind: "channel",
     slug: "tushy",
     tags: [],
@@ -46,9 +46,9 @@ for (const [name, url] of [
 
 test("the default watchlist creates the Vixen anal lane and stable lane ids", () => {
   assert.deepEqual(TRAXXX_WATCHLIST, ["https://traxxx.me/network/vixen/scenes/latest/1?tags=anal"]);
-  assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), ["vixen-anal"]);
+  assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), ["network-vixen-anal"]);
   const [lane] = createTraxxxWatchlistStudios(TRAXXX_WATCHLIST);
-  assert.equal(lane?.id, "vixen-anal");
+  assert.equal(lane?.id, "network-vixen-anal");
 });
 
 test("configuration replaces the default watchlist and empty input keeps the default", () => {
@@ -64,6 +64,40 @@ test("the registry replaces the retired Tushy lane with watchlist lanes", () => 
     madouquApiBase: "https://example.test",
     traxxxWatchlist: TRAXXX_WATCHLIST,
   }).map((source) => source.id);
-  assert.ok(ids.includes("vixen-anal"));
+  assert.ok(ids.includes("network-vixen-anal"));
   assert.ok(!ids.includes("tushy"));
+});
+
+test("tag order is canonical and channel and network lane IDs differ", () => {
+  const first = parseTraxxxListingUrl(
+    "https://traxxx.me/network/vixen/scenes/latest/1?tags=bbc,anal",
+  );
+  const second = parseTraxxxListingUrl(
+    "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal,bbc",
+  );
+  assert.deepEqual(first, second);
+  const channel = parseTraxxxListingUrl(
+    "https://traxxx.me/channel/vixen/scenes/latest/1?tags=anal,bbc",
+  );
+  assert.notEqual(first.id, channel.id);
+});
+
+test("watchlist rejects duplicate IDs, including reordered tags and ambiguous slugs", () => {
+  for (const urls of [
+    [TRAXXX_WATCHLIST[0]!, TRAXXX_WATCHLIST[0]!],
+    [
+      "https://traxxx.me/network/vixen/scenes/latest/1?tags=bbc,anal",
+      "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal,bbc",
+    ],
+    ["https://traxxx.me/network/vixen-anal/scenes/latest/1", TRAXXX_WATCHLIST[0]!],
+  ]) {
+    assert.throws(() => createTraxxxWatchlistStudios(urls), /Duplicate Traxxx watchlist ID/);
+  }
+});
+
+test("watchlist rejects reserved IDs", () => {
+  assert.throws(
+    () => createTraxxxWatchlistStudios(TRAXXX_WATCHLIST, ["network-vixen-anal"]),
+    /Reserved Traxxx watchlist ID "network-vixen-anal"/,
+  );
 });
