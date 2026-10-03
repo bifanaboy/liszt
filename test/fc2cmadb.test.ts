@@ -671,7 +671,11 @@ test("an incomplete walk fails the source instead of reporting verified-empty", 
 
 interface BaselineRow {
   video_id: string;
-  expected: "accepted" | "censored" | "excluded" | "recheck" | null;
+  /**
+   * The hand judgement, in the classifier's own words: either a status, or the
+   * full verdict string for a row the hand judged should be excluded.
+   */
+  expected: "accepted" | "no playable duration (an image set or an unplayable record)" | null;
   censorship_badge?: string | null;
   duration?: string | null;
   reason: string;
@@ -699,24 +703,15 @@ test("classification matches the independently checked baseline", () => {
       notFound: false,
       releaseDate: baselineDoc.checked_on,
       title: "",
+      // The baseline records the page's censorship field and length only. A real
+      // record can also be excluded for a safety or trans tag, which the baseline
+      // cannot see - so an exclusion here is compared by its full verdict, and a
+      // tag-driven one would disagree loudly rather than be waved through.
       tags: [],
     });
-    // An exclusion the baseline could not see - a safety or trans tag on the real
-    // record - is a correct outcome and not a mismatch. Everything else must agree.
-    if (
-      verdict.status === "excluded" &&
-      verdict.verdict !== row.expected &&
-      !/exclusion|no playable/.test(verdict.verdict)
-    ) {
-      mismatches.push(
-        `${row.video_id}: said ${row.expected} (${row.reason}), got ${verdict.verdict}`,
-      );
-      continue;
-    }
-    if (verdict.status !== "excluded" && verdict.status !== row.expected) {
-      mismatches.push(
-        `${row.video_id}: said ${row.expected} (${row.reason}), got ${verdict.status}`,
-      );
+    const actual = verdict.status === "excluded" ? verdict.verdict : verdict.status;
+    if (actual !== row.expected) {
+      mismatches.push(`${row.video_id}: said ${row.expected} (${row.reason}), got ${actual}`);
     }
   }
   assert.deepEqual(mismatches, [], `${mismatches.length} baseline rows disagreed`);

@@ -1,12 +1,12 @@
 {
-  "note": "Independently hand-checked classification for 319 FC2 releases listed under fc2cmadb.com/tags/\\u30a2\\u30ca\\u30eb on 2026-10-03. Each row was read from its own detail page and judged by the rules below, WITHOUT running this repository's code against it - that is what makes it a check on the parser rather than a snapshot of the parser.\\n\\n  removed   the detail page no longer exists\\n  censored  the detail page carries the censorship badge\\n  recheck   no duration on the page, so the length cannot be compared\\n  accepted  uncensored, with a duration\\n  null      NOT READ - the site answered HTTP 429 before the walk reached this record. A null row is not evidence of anything; it is here so the walk's incompleteness is measurable.",
+  "note": "Independently hand-checked classification for 319 FC2 releases listed under fc2cmadb.com/tags/\\u30a2\\u30ca\\u30eb on 2026-10-03. Each row was read from its own detail page and judged by the rules below, WITHOUT running this repository's code against it - that is what makes it a check on the parser rather than a snapshot of the parser.\n\n  removed   the detail page no longer exists\n  censored  the detail page carries the censorship badge\n  no playable duration (an image set or an unplayable record)\n           the 'length' slot holds an IMAGE COUNT rather than a length (two rows: 4940877\n           at 60 images and 4715577 at 161 images). fc2cmadb carries image sets beside\n           videos, so such a record can never match an upload's length, and is excluded\n           rather than retried for ever.\n  accepted  uncensored, with a duration\n  null      NOT READ - the site answered HTTP 429 before the walk reached this record. A null row is not evidence of anything; it is here so the walk's incompleteness is measurable.",
   "checked_on": "2026-10-03",
   "rows": [
     {
       "video_id": "4981628",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:39:09",
       "reason": "uncensored, duration 02:39:09"
     },
@@ -14,7 +14,7 @@
       "video_id": "4979341",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:37:24",
       "reason": "uncensored, duration 02:37:24"
     },
@@ -22,7 +22,7 @@
       "video_id": "4978708",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:08:34",
       "reason": "uncensored, duration 02:08:34"
     },
@@ -30,7 +30,7 @@
       "video_id": "4975031",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "14:40",
       "reason": "uncensored, duration 14:40"
     },
@@ -38,7 +38,7 @@
       "video_id": "4975023",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "17:26",
       "reason": "uncensored, duration 17:26"
     },
@@ -46,7 +46,7 @@
       "video_id": "4974654",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:53:42",
       "reason": "uncensored, duration 01:53:42"
     },
@@ -54,7 +54,7 @@
       "video_id": "4972315",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:47:01",
       "reason": "uncensored, duration 01:47:01"
     },
@@ -62,7 +62,7 @@
       "video_id": "4961496",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "38:27",
       "reason": "uncensored, duration 38:27"
     },
@@ -70,7 +70,7 @@
       "video_id": "4948493",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:37:49",
       "reason": "uncensored, duration 02:37:49"
     },
@@ -78,7 +78,7 @@
       "video_id": "4948009",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "13:01",
       "reason": "uncensored, duration 13:01"
     },
@@ -86,7 +86,7 @@
       "video_id": "4947237",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:33:21",
       "reason": "uncensored, duration 01:33:21"
     },
@@ -94,23 +94,23 @@
       "video_id": "4946122",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:36:37",
       "reason": "uncensored, duration 01:36:37"
     },
     {
       "video_id": "4940877",
-      "expected": "recheck",
+      "expected": "no playable duration (an image set or an unplayable record)",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
-      "duration": "60枚",
-      "reason": "no duration on the page"
+      "censorship_badge": "\u7121",
+      "duration": "60\u679a",
+      "reason": "the 'length' slot holds an IMAGE COUNT (60 images), not a length - fc2cmadb carries image sets beside videos, so it can never match an upload (60 images)"
     },
     {
       "video_id": "4940637",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:04:33",
       "reason": "uncensored, duration 01:04:33"
     },
@@ -118,7 +118,7 @@
       "video_id": "4940220",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:42:45",
       "reason": "uncensored, duration 01:42:45"
     },
@@ -126,7 +126,7 @@
       "video_id": "4938776",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "13:41",
       "reason": "uncensored, duration 13:41"
     },
@@ -134,7 +134,7 @@
       "video_id": "4938457",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:00:29",
       "reason": "uncensored, duration 01:00:29"
     },
@@ -142,7 +142,7 @@
       "video_id": "4929598",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:54:55",
       "reason": "uncensored, duration 01:54:55"
     },
@@ -150,7 +150,7 @@
       "video_id": "4929512",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "42:03",
       "reason": "uncensored, duration 42:03"
     },
@@ -158,7 +158,7 @@
       "video_id": "4928405",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:21:18",
       "reason": "uncensored, duration 01:21:18"
     },
@@ -184,7 +184,7 @@
       "video_id": "4921031",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:31:16",
       "reason": "uncensored, duration 02:31:16"
     },
@@ -192,7 +192,7 @@
       "video_id": "4920874",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:06:31",
       "reason": "uncensored, duration 01:06:31"
     },
@@ -200,7 +200,7 @@
       "video_id": "4920307",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "03:05:19",
       "reason": "uncensored, duration 03:05:19"
     },
@@ -208,7 +208,7 @@
       "video_id": "4917942",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "22:17",
       "reason": "uncensored, duration 22:17"
     },
@@ -216,7 +216,7 @@
       "video_id": "4917039",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "44:53",
       "reason": "uncensored, duration 44:53"
     },
@@ -224,7 +224,7 @@
       "video_id": "4915289",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:42:29",
       "reason": "uncensored, duration 01:42:29"
     },
@@ -232,7 +232,7 @@
       "video_id": "4915119",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:12:02",
       "reason": "uncensored, duration 01:12:02"
     },
@@ -240,7 +240,7 @@
       "video_id": "4912570",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "19:45",
       "reason": "uncensored, duration 19:45"
     },
@@ -248,7 +248,7 @@
       "video_id": "4910714",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:03:52",
       "reason": "uncensored, duration 02:03:52"
     },
@@ -256,7 +256,7 @@
       "video_id": "4910686",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:33:53",
       "reason": "uncensored, duration 01:33:53"
     },
@@ -264,7 +264,7 @@
       "video_id": "4907806",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "58:51",
       "reason": "uncensored, duration 58:51"
     },
@@ -272,7 +272,7 @@
       "video_id": "4906459",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:38:35",
       "reason": "uncensored, duration 01:38:35"
     },
@@ -280,7 +280,7 @@
       "video_id": "4902168",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:35:28",
       "reason": "uncensored, duration 01:35:28"
     },
@@ -288,7 +288,7 @@
       "video_id": "4899749",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:46:44",
       "reason": "uncensored, duration 02:46:44"
     },
@@ -296,7 +296,7 @@
       "video_id": "4898377",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:54:40",
       "reason": "uncensored, duration 02:54:40"
     },
@@ -304,7 +304,7 @@
       "video_id": "4897193",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:23:35",
       "reason": "uncensored, duration 02:23:35"
     },
@@ -312,7 +312,7 @@
       "video_id": "4893243",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "03:15:00",
       "reason": "uncensored, duration 03:15:00"
     },
@@ -320,7 +320,7 @@
       "video_id": "4890847",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:00:17",
       "reason": "uncensored, duration 02:00:17"
     },
@@ -328,7 +328,7 @@
       "video_id": "4886819",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:16:17",
       "reason": "uncensored, duration 02:16:17"
     },
@@ -336,7 +336,7 @@
       "video_id": "4884935",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:06:48",
       "reason": "uncensored, duration 01:06:48"
     },
@@ -362,7 +362,7 @@
       "video_id": "4872003",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:33:02",
       "reason": "uncensored, duration 02:33:02"
     },
@@ -370,7 +370,7 @@
       "video_id": "4870877",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:26:49",
       "reason": "uncensored, duration 01:26:49"
     },
@@ -378,7 +378,7 @@
       "video_id": "4869802",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:52:22",
       "reason": "uncensored, duration 02:52:22"
     },
@@ -386,7 +386,7 @@
       "video_id": "4867745",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:54:36",
       "reason": "uncensored, duration 01:54:36"
     },
@@ -394,7 +394,7 @@
       "video_id": "4864999",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:59:55",
       "reason": "uncensored, duration 01:59:55"
     },
@@ -402,7 +402,7 @@
       "video_id": "4857680",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:10:58",
       "reason": "uncensored, duration 02:10:58"
     },
@@ -410,7 +410,7 @@
       "video_id": "4852331",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:15:03",
       "reason": "uncensored, duration 01:15:03"
     },
@@ -418,7 +418,7 @@
       "video_id": "4852327",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:11:34",
       "reason": "uncensored, duration 01:11:34"
     },
@@ -426,7 +426,7 @@
       "video_id": "4852318",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:36:15",
       "reason": "uncensored, duration 01:36:15"
     },
@@ -434,7 +434,7 @@
       "video_id": "4852010",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:54:18",
       "reason": "uncensored, duration 02:54:18"
     },
@@ -442,7 +442,7 @@
       "video_id": "4848780",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:29:02",
       "reason": "uncensored, duration 01:29:02"
     },
@@ -450,7 +450,7 @@
       "video_id": "4848293",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:28:16",
       "reason": "uncensored, duration 01:28:16"
     },
@@ -458,7 +458,7 @@
       "video_id": "4843128",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:28:14",
       "reason": "uncensored, duration 02:28:14"
     },
@@ -466,7 +466,7 @@
       "video_id": "4842763",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "55:39",
       "reason": "uncensored, duration 55:39"
     },
@@ -474,7 +474,7 @@
       "video_id": "4842380",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "17:53",
       "reason": "uncensored, duration 17:53"
     },
@@ -482,7 +482,7 @@
       "video_id": "4840896",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:19:52",
       "reason": "uncensored, duration 02:19:52"
     },
@@ -490,7 +490,7 @@
       "video_id": "4839574",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "15:02",
       "reason": "uncensored, duration 15:02"
     },
@@ -498,7 +498,7 @@
       "video_id": "4839342",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:56:15",
       "reason": "uncensored, duration 02:56:15"
     },
@@ -506,7 +506,7 @@
       "video_id": "4832584",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:59:19",
       "reason": "uncensored, duration 01:59:19"
     },
@@ -514,7 +514,7 @@
       "video_id": "4832448",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:10:10",
       "reason": "uncensored, duration 01:10:10"
     },
@@ -540,7 +540,7 @@
       "video_id": "4823954",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:36:20",
       "reason": "uncensored, duration 01:36:20"
     },
@@ -548,7 +548,7 @@
       "video_id": "4822944",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:30:11",
       "reason": "uncensored, duration 02:30:11"
     },
@@ -556,7 +556,7 @@
       "video_id": "4818328",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:21:33",
       "reason": "uncensored, duration 02:21:33"
     },
@@ -564,7 +564,7 @@
       "video_id": "4816199",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "15:08",
       "reason": "uncensored, duration 15:08"
     },
@@ -572,7 +572,7 @@
       "video_id": "4816119",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:58:49",
       "reason": "uncensored, duration 02:58:49"
     },
@@ -580,7 +580,7 @@
       "video_id": "4810298",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:40:36",
       "reason": "uncensored, duration 01:40:36"
     },
@@ -588,7 +588,7 @@
       "video_id": "4809088",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:04:49",
       "reason": "uncensored, duration 01:04:49"
     },
@@ -596,7 +596,7 @@
       "video_id": "4808567",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "20:53",
       "reason": "uncensored, duration 20:53"
     },
@@ -604,7 +604,7 @@
       "video_id": "4806202",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:40:27",
       "reason": "uncensored, duration 01:40:27"
     },
@@ -612,7 +612,7 @@
       "video_id": "4804696",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "15:45",
       "reason": "uncensored, duration 15:45"
     },
@@ -620,7 +620,7 @@
       "video_id": "4800746",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "20:36",
       "reason": "uncensored, duration 20:36"
     },
@@ -628,7 +628,7 @@
       "video_id": "4799484",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:59:40",
       "reason": "uncensored, duration 02:59:40"
     },
@@ -636,7 +636,7 @@
       "video_id": "4798066",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:03:00",
       "reason": "uncensored, duration 02:03:00"
     },
@@ -644,7 +644,7 @@
       "video_id": "4797227",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:30:38",
       "reason": "uncensored, duration 01:30:38"
     },
@@ -652,7 +652,7 @@
       "video_id": "4793619",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:05:29",
       "reason": "uncensored, duration 02:05:29"
     },
@@ -660,7 +660,7 @@
       "video_id": "4792544",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:53:01",
       "reason": "uncensored, duration 01:53:01"
     },
@@ -668,7 +668,7 @@
       "video_id": "4792518",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "22:24",
       "reason": "uncensored, duration 22:24"
     },
@@ -676,7 +676,7 @@
       "video_id": "4789158",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:53:06",
       "reason": "uncensored, duration 01:53:06"
     },
@@ -684,7 +684,7 @@
       "video_id": "4787847",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "16:44",
       "reason": "uncensored, duration 16:44"
     },
@@ -692,7 +692,7 @@
       "video_id": "4784886",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:46:36",
       "reason": "uncensored, duration 01:46:36"
     },
@@ -718,7 +718,7 @@
       "video_id": "4777126",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "20:38",
       "reason": "uncensored, duration 20:38"
     },
@@ -726,7 +726,7 @@
       "video_id": "4776881",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "14:58",
       "reason": "uncensored, duration 14:58"
     },
@@ -734,7 +734,7 @@
       "video_id": "4775294",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:56:41",
       "reason": "uncensored, duration 01:56:41"
     },
@@ -742,7 +742,7 @@
       "video_id": "4774509",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:10:17",
       "reason": "uncensored, duration 01:10:17"
     },
@@ -750,7 +750,7 @@
       "video_id": "4772346",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "03:31:23",
       "reason": "uncensored, duration 03:31:23"
     },
@@ -758,7 +758,7 @@
       "video_id": "4770684",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:13:34",
       "reason": "uncensored, duration 02:13:34"
     },
@@ -766,7 +766,7 @@
       "video_id": "4770652",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:34:56",
       "reason": "uncensored, duration 01:34:56"
     },
@@ -774,7 +774,7 @@
       "video_id": "4769509",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "14:21",
       "reason": "uncensored, duration 14:21"
     },
@@ -782,7 +782,7 @@
       "video_id": "4768132",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:10:12",
       "reason": "uncensored, duration 01:10:12"
     },
@@ -790,7 +790,7 @@
       "video_id": "4766956",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:40:37",
       "reason": "uncensored, duration 01:40:37"
     },
@@ -798,7 +798,7 @@
       "video_id": "4762278",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "20:35",
       "reason": "uncensored, duration 20:35"
     },
@@ -806,7 +806,7 @@
       "video_id": "4759434",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:15:54",
       "reason": "uncensored, duration 02:15:54"
     },
@@ -814,7 +814,7 @@
       "video_id": "4756599",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "26:14",
       "reason": "uncensored, duration 26:14"
     },
@@ -822,7 +822,7 @@
       "video_id": "4756181",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:53:44",
       "reason": "uncensored, duration 02:53:44"
     },
@@ -830,7 +830,7 @@
       "video_id": "4753991",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:36:47",
       "reason": "uncensored, duration 01:36:47"
     },
@@ -838,7 +838,7 @@
       "video_id": "4751577",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "15:23",
       "reason": "uncensored, duration 15:23"
     },
@@ -846,7 +846,7 @@
       "video_id": "4747813",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "18:35",
       "reason": "uncensored, duration 18:35"
     },
@@ -854,7 +854,7 @@
       "video_id": "4743489",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "18:25",
       "reason": "uncensored, duration 18:25"
     },
@@ -862,7 +862,7 @@
       "video_id": "4741734",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:14:53",
       "reason": "uncensored, duration 02:14:53"
     },
@@ -870,7 +870,7 @@
       "video_id": "4740623",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "17:31",
       "reason": "uncensored, duration 17:31"
     },
@@ -896,7 +896,7 @@
       "video_id": "4724890",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "19:34",
       "reason": "uncensored, duration 19:34"
     },
@@ -904,7 +904,7 @@
       "video_id": "4721615",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:04:26",
       "reason": "uncensored, duration 01:04:26"
     },
@@ -912,7 +912,7 @@
       "video_id": "4721415",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:27:35",
       "reason": "uncensored, duration 02:27:35"
     },
@@ -920,7 +920,7 @@
       "video_id": "4720764",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "20:53",
       "reason": "uncensored, duration 20:53"
     },
@@ -928,7 +928,7 @@
       "video_id": "4720134",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:55:08",
       "reason": "uncensored, duration 02:55:08"
     },
@@ -936,7 +936,7 @@
       "video_id": "4719990",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "49:11",
       "reason": "uncensored, duration 49:11"
     },
@@ -944,7 +944,7 @@
       "video_id": "4717645",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "13:12",
       "reason": "uncensored, duration 13:12"
     },
@@ -952,23 +952,23 @@
       "video_id": "4716749",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:21:59",
       "reason": "uncensored, duration 02:21:59"
     },
     {
       "video_id": "4715577",
-      "expected": "recheck",
+      "expected": "no playable duration (an image set or an unplayable record)",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
-      "duration": "161枚",
-      "reason": "no duration on the page"
+      "censorship_badge": "\u7121",
+      "duration": "161\u679a",
+      "reason": "the 'length' slot holds an IMAGE COUNT (60 images), not a length - fc2cmadb carries image sets beside videos, so it can never match an upload (161 images)"
     },
     {
       "video_id": "4715130",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "20:54",
       "reason": "uncensored, duration 20:54"
     },
@@ -976,7 +976,7 @@
       "video_id": "4714987",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:20:29",
       "reason": "uncensored, duration 02:20:29"
     },
@@ -984,7 +984,7 @@
       "video_id": "4712188",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:06:34",
       "reason": "uncensored, duration 02:06:34"
     },
@@ -992,7 +992,7 @@
       "video_id": "4707343",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "16:55",
       "reason": "uncensored, duration 16:55"
     },
@@ -1000,7 +1000,7 @@
       "video_id": "4706424",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:30:08",
       "reason": "uncensored, duration 01:30:08"
     },
@@ -1008,7 +1008,7 @@
       "video_id": "4704597",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "13:48",
       "reason": "uncensored, duration 13:48"
     },
@@ -1016,7 +1016,7 @@
       "video_id": "4698290",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:02:01",
       "reason": "uncensored, duration 02:02:01"
     },
@@ -1024,7 +1024,7 @@
       "video_id": "4690304",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:08:24",
       "reason": "uncensored, duration 02:08:24"
     },
@@ -1032,7 +1032,7 @@
       "video_id": "4689198",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "10:14",
       "reason": "uncensored, duration 10:14"
     },
@@ -1040,7 +1040,7 @@
       "video_id": "4687039",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "51:01",
       "reason": "uncensored, duration 51:01"
     },
@@ -1048,7 +1048,7 @@
       "video_id": "4685250",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "15:04",
       "reason": "uncensored, duration 15:04"
     },
@@ -1074,7 +1074,7 @@
       "video_id": "4677343",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "11:37",
       "reason": "uncensored, duration 11:37"
     },
@@ -1082,7 +1082,7 @@
       "video_id": "4676840",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:12:30",
       "reason": "uncensored, duration 02:12:30"
     },
@@ -1090,7 +1090,7 @@
       "video_id": "4675240",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:44:47",
       "reason": "uncensored, duration 02:44:47"
     },
@@ -1098,7 +1098,7 @@
       "video_id": "4673533",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:23:04",
       "reason": "uncensored, duration 02:23:04"
     },
@@ -1106,7 +1106,7 @@
       "video_id": "4673385",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "12:23",
       "reason": "uncensored, duration 12:23"
     },
@@ -1114,7 +1114,7 @@
       "video_id": "4671205",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:03:35",
       "reason": "uncensored, duration 02:03:35"
     },
@@ -1122,7 +1122,7 @@
       "video_id": "4667364",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:41:27",
       "reason": "uncensored, duration 02:41:27"
     },
@@ -1130,7 +1130,7 @@
       "video_id": "4666026",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "21:37",
       "reason": "uncensored, duration 21:37"
     },
@@ -1138,7 +1138,7 @@
       "video_id": "4664791",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:15:33",
       "reason": "uncensored, duration 02:15:33"
     },
@@ -1146,7 +1146,7 @@
       "video_id": "4661219",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:12:08",
       "reason": "uncensored, duration 02:12:08"
     },
@@ -1154,7 +1154,7 @@
       "video_id": "4660749",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:07:42",
       "reason": "uncensored, duration 01:07:42"
     },
@@ -1162,7 +1162,7 @@
       "video_id": "4660728",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:49:50",
       "reason": "uncensored, duration 01:49:50"
     },
@@ -1170,7 +1170,7 @@
       "video_id": "4659255",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "14:56",
       "reason": "uncensored, duration 14:56"
     },
@@ -1178,7 +1178,7 @@
       "video_id": "4658299",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:43:26",
       "reason": "uncensored, duration 01:43:26"
     },
@@ -1186,7 +1186,7 @@
       "video_id": "4656566",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:51:58",
       "reason": "uncensored, duration 01:51:58"
     },
@@ -1194,7 +1194,7 @@
       "video_id": "4656375",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:11:25",
       "reason": "uncensored, duration 01:11:25"
     },
@@ -1202,7 +1202,7 @@
       "video_id": "4656261",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "59:40",
       "reason": "uncensored, duration 59:40"
     },
@@ -1210,7 +1210,7 @@
       "video_id": "4655414",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "10:32",
       "reason": "uncensored, duration 10:32"
     },
@@ -1218,7 +1218,7 @@
       "video_id": "4648384",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:23:25",
       "reason": "uncensored, duration 01:23:25"
     },
@@ -1226,7 +1226,7 @@
       "video_id": "4647959",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "15:28",
       "reason": "uncensored, duration 15:28"
     },
@@ -1252,7 +1252,7 @@
       "video_id": "4635890",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "17:58",
       "reason": "uncensored, duration 17:58"
     },
@@ -1260,7 +1260,7 @@
       "video_id": "4633963",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "51:26",
       "reason": "uncensored, duration 51:26"
     },
@@ -1268,7 +1268,7 @@
       "video_id": "4628278",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:20:27",
       "reason": "uncensored, duration 01:20:27"
     },
@@ -1276,7 +1276,7 @@
       "video_id": "4626127",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "16:12",
       "reason": "uncensored, duration 16:12"
     },
@@ -1284,7 +1284,7 @@
       "video_id": "4621758",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:03:51",
       "reason": "uncensored, duration 01:03:51"
     },
@@ -1292,7 +1292,7 @@
       "video_id": "4616452",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "10:48",
       "reason": "uncensored, duration 10:48"
     },
@@ -1300,7 +1300,7 @@
       "video_id": "4616398",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "04:56:43",
       "reason": "uncensored, duration 04:56:43"
     },
@@ -1308,7 +1308,7 @@
       "video_id": "4615397",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "49:25",
       "reason": "uncensored, duration 49:25"
     },
@@ -1316,7 +1316,7 @@
       "video_id": "4613616",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:54:40",
       "reason": "uncensored, duration 01:54:40"
     },
@@ -1324,7 +1324,7 @@
       "video_id": "4609450",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "02:15:29",
       "reason": "uncensored, duration 02:15:29"
     },
@@ -1332,7 +1332,7 @@
       "video_id": "4608119",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:06:46",
       "reason": "uncensored, duration 01:06:46"
     },
@@ -1340,7 +1340,7 @@
       "video_id": "4608005",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "17:25",
       "reason": "uncensored, duration 17:25"
     },
@@ -1348,7 +1348,7 @@
       "video_id": "4602961",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:06:07",
       "reason": "uncensored, duration 01:06:07"
     },
@@ -1356,7 +1356,7 @@
       "video_id": "4595451",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:18:21",
       "reason": "uncensored, duration 01:18:21"
     },
@@ -1364,7 +1364,7 @@
       "video_id": "4593886",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "56:38",
       "reason": "uncensored, duration 56:38"
     },
@@ -1372,7 +1372,7 @@
       "video_id": "4593848",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:53:14",
       "reason": "uncensored, duration 01:53:14"
     },
@@ -1380,7 +1380,7 @@
       "video_id": "4591422",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "21:26",
       "reason": "uncensored, duration 21:26"
     },
@@ -1388,7 +1388,7 @@
       "video_id": "4590630",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:05:08",
       "reason": "uncensored, duration 01:05:08"
     },
@@ -1396,7 +1396,7 @@
       "video_id": "4589910",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:09:34",
       "reason": "uncensored, duration 01:09:34"
     },
@@ -1404,7 +1404,7 @@
       "video_id": "4588359",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "53:02",
       "reason": "uncensored, duration 53:02"
     },
@@ -1430,7 +1430,7 @@
       "video_id": "4580671",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:31:44",
       "reason": "uncensored, duration 01:31:44"
     },
@@ -1438,7 +1438,7 @@
       "video_id": "4578451",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:19:53",
       "reason": "uncensored, duration 01:19:53"
     },
@@ -1446,7 +1446,7 @@
       "video_id": "4577295",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:12:50",
       "reason": "uncensored, duration 01:12:50"
     },
@@ -1454,7 +1454,7 @@
       "video_id": "4576781",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "25:29",
       "reason": "uncensored, duration 25:29"
     },
@@ -1462,7 +1462,7 @@
       "video_id": "4575136",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:54:49",
       "reason": "uncensored, duration 01:54:49"
     },
@@ -1470,7 +1470,7 @@
       "video_id": "4570556",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:42:54",
       "reason": "uncensored, duration 01:42:54"
     },
@@ -1478,7 +1478,7 @@
       "video_id": "4568456",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "18:51",
       "reason": "uncensored, duration 18:51"
     },
@@ -1486,7 +1486,7 @@
       "video_id": "4567536",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:15:50",
       "reason": "uncensored, duration 01:15:50"
     },
@@ -1494,7 +1494,7 @@
       "video_id": "4566639",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:49:37",
       "reason": "uncensored, duration 01:49:37"
     },
@@ -1502,7 +1502,7 @@
       "video_id": "4564610",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "10:58",
       "reason": "uncensored, duration 10:58"
     },
@@ -1510,7 +1510,7 @@
       "video_id": "4563877",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:38:45",
       "reason": "uncensored, duration 01:38:45"
     },
@@ -1518,7 +1518,7 @@
       "video_id": "4560307",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:02:52",
       "reason": "uncensored, duration 01:02:52"
     },
@@ -1526,7 +1526,7 @@
       "video_id": "4559550",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "22:01",
       "reason": "uncensored, duration 22:01"
     },
@@ -1534,7 +1534,7 @@
       "video_id": "4553613",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "56:54",
       "reason": "uncensored, duration 56:54"
     },
@@ -1542,7 +1542,7 @@
       "video_id": "4550156",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "22:02",
       "reason": "uncensored, duration 22:02"
     },
@@ -1550,7 +1550,7 @@
       "video_id": "4548532",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:15:40",
       "reason": "uncensored, duration 01:15:40"
     },
@@ -1558,7 +1558,7 @@
       "video_id": "4544829",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:03:42",
       "reason": "uncensored, duration 01:03:42"
     },
@@ -1566,7 +1566,7 @@
       "video_id": "4543700",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:27:14",
       "reason": "uncensored, duration 01:27:14"
     },
@@ -1574,7 +1574,7 @@
       "video_id": "4543239",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "50:51",
       "reason": "uncensored, duration 50:51"
     },
@@ -1582,7 +1582,7 @@
       "video_id": "4540283",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:30:56",
       "reason": "uncensored, duration 01:30:56"
     },
@@ -1608,7 +1608,7 @@
       "video_id": "4535193",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:52:20",
       "reason": "uncensored, duration 01:52:20"
     },
@@ -1616,7 +1616,7 @@
       "video_id": "4531761",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:08:06",
       "reason": "uncensored, duration 01:08:06"
     },
@@ -1624,7 +1624,7 @@
       "video_id": "4528894",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "55:50",
       "reason": "uncensored, duration 55:50"
     },
@@ -1632,7 +1632,7 @@
       "video_id": "4526249",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:24:45",
       "reason": "uncensored, duration 01:24:45"
     },
@@ -1640,7 +1640,7 @@
       "video_id": "4525347",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:14:53",
       "reason": "uncensored, duration 01:14:53"
     },
@@ -1648,7 +1648,7 @@
       "video_id": "4524700",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "55:31",
       "reason": "uncensored, duration 55:31"
     },
@@ -1656,7 +1656,7 @@
       "video_id": "4524098",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:10:11",
       "reason": "uncensored, duration 01:10:11"
     },
@@ -1664,7 +1664,7 @@
       "video_id": "4523382",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "57:07",
       "reason": "uncensored, duration 57:07"
     },
@@ -1672,7 +1672,7 @@
       "video_id": "4522368",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:35:10",
       "reason": "uncensored, duration 01:35:10"
     },
@@ -1680,7 +1680,7 @@
       "video_id": "4518216",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:10:44",
       "reason": "uncensored, duration 01:10:44"
     },
@@ -1688,7 +1688,7 @@
       "video_id": "4517340",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:16:31",
       "reason": "uncensored, duration 01:16:31"
     },
@@ -1696,7 +1696,7 @@
       "video_id": "4513882",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "17:34",
       "reason": "uncensored, duration 17:34"
     },
@@ -1704,7 +1704,7 @@
       "video_id": "4513384",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:46:11",
       "reason": "uncensored, duration 01:46:11"
     },
@@ -1712,7 +1712,7 @@
       "video_id": "4511842",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "56:25",
       "reason": "uncensored, duration 56:25"
     },
@@ -1720,7 +1720,7 @@
       "video_id": "4511690",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "01:02:01",
       "reason": "uncensored, duration 01:02:01"
     },
@@ -1728,7 +1728,7 @@
       "video_id": "4511268",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "59:50",
       "reason": "uncensored, duration 59:50"
     },
@@ -1736,7 +1736,7 @@
       "video_id": "4510522",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "無",
+      "censorship_badge": "\u7121",
       "duration": "19:47",
       "reason": "uncensored, duration 19:47"
     },
