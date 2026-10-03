@@ -30,7 +30,15 @@ jobs:
           checks=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs" --jq '[.check_runs[] | select(.name == "check")] | length')
           running=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$sha" --json status --jq 'length')
           echo "main=$sha check_runs=$checks ci_runs=$running"
+          # Only the tip matters: Render deploys main's newest commit, so an older
+          # commit that missed its check is already superseded by the tip.
+          # If main moved while we looked, do nothing; the next run checks the new tip.
+          now=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$now" != "$sha" ]; then
+            echo "main moved from $sha to $now, leaving it to the next run"
+            exit 0
+          fi
           if [ "$checks" -eq 0 ] && [ "$running" -eq 0 ]; then
             gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref main
-            echo "started ci on main"
+            echo "started ci on main for $sha"
           fi
