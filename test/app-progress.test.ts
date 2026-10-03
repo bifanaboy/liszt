@@ -57,6 +57,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     return elements.get(selector)!;
   };
   const timers = new Map<number, number>();
+  const callbacks = new Map<number, () => void>();
   let timerId = 0;
   const api = (await runInNewContext(
     `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow }; })()`,
@@ -69,11 +70,15 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       sourceScenes,
       studioChoices,
       visibleSourceStatuses,
-      setTimeout: (_callback: unknown, delay: number) => {
+      setTimeout: (callback: () => void, delay: number) => {
         timers.set(++timerId, delay);
+        callbacks.set(timerId, callback);
         return timerId;
       },
-      clearTimeout: (id: number) => timers.delete(id),
+      clearTimeout: (id: number) => {
+        timers.delete(id);
+        callbacks.delete(id);
+      },
       setInterval: () => ++timerId,
       clearInterval() {},
       requestAnimationFrame: (callback: () => void) => callback(),
@@ -86,7 +91,16 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     render(): void;
     showRow(): void;
   };
-  return { ...api, element, timers };
+  const runTimers = (delay: number) => {
+    for (const [id, scheduledDelay] of [...timers]) {
+      if (scheduledDelay !== delay) continue;
+      const callback = callbacks.get(id)!;
+      timers.delete(id);
+      callbacks.delete(id);
+      callback();
+    }
+  };
+  return { ...api, element, timers, runTimers };
 }
 
 const response = (body: unknown) => ({ ok: true, json: async () => body });
@@ -232,7 +246,9 @@ for (const [name, latestRun, expectedSummary] of [
   ],
 ] as const) {
   test(`a completed ${name} snapshot clears stale active progress`, async () => {
-    const app = await dashboard(async () => response(catalogue));
+    const app = await dashboard(async (url) =>
+      response(url === "/api/progress" ? { progress: active } : catalogue),
+    );
     app.applyProgress({
       ...active,
       stage: "verifying",
@@ -254,8 +270,46 @@ for (const [name, latestRun, expectedSummary] of [
 
     assert.equal(app.element("#progress-row").hidden, true);
     assert.equal(app.element("#refresh-state").textContent, expectedSummary);
+
+    await app.pollProgress();
+    app.runTimers(1200);
+    assert.equal(app.element("#progress-row").hidden, true);
+    assert.equal(app.element("#refresh").disabled, false);
+    assert.equal(app.element("#refresh-state").textContent, expectedSummary);
+    assert.deepEqual([...app.timers.values()], [20000]);
   });
 }
+
+test("a new run remains visible after completion and a delayed snapshot of the completed run", async () => {
+  let progress = active;
+  const app = await dashboard(async (url) =>
+    response(url === "/api/progress" ? { progress } : catalogue),
+  );
+  app.applyProgress(active);
+  app.runTimers(1200);
+  app.applyProgress(idle);
+  await settle();
+  assert.equal(app.element("#progress-row").hidden, true);
+
+  await app.pollProgress();
+  app.runTimers(1200);
+  assert.equal(app.element("#progress-row").hidden, true);
+  assert.equal(app.element("#progress-live").textContent, "Refresh finished");
+
+  progress = { ...active, runId: "new-run", stage: "finishing" };
+  await app.pollProgress();
+  app.runTimers(1200);
+  assert.equal(app.element("#progress-row").hidden, false);
+  assert.equal(app.element("#refresh").disabled, true);
+  assert.equal(app.element("#overall-note").textContent, "Finishing up");
+  assert.equal(app.element("#progress-live").textContent, "Refresh started");
+
+  progress = active;
+  await app.pollProgress();
+  assert.equal(app.element("#progress-row").hidden, false);
+  assert.equal(app.element("#overall-note").textContent, "Finishing up");
+  assert.deepEqual([...app.timers.values()], [2000]);
+});
 
 test("HTML provides the empty-state text targets used by the dashboard", () => {
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");

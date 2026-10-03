@@ -232,6 +232,7 @@ let elapsedTimer = null;
 let rowShown = false;
 let primed = false;
 let announcedRun = null;
+let completedRun = null;
 
 /** Coerce a progress value to a finite number, using zero when conversion fails. */
 const num = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
@@ -362,9 +363,12 @@ function syncRefreshChrome(active) {
 function applyProgress(next, reloadOnCompletion = true) {
   const wasActive = Boolean(progressState.active);
   const previousRun = progressState.runId || null;
+  // A delayed active snapshot must not revive a run already observed ending.
+  if (next?.active && next.runId && next.runId === completedRun) return wasActive;
   progressState = next && typeof next === "object" ? next : { active: false, stage: "idle" };
   const active = Boolean(progressState.active);
   const run = progressState.runId || null;
+  if (!active) completedRun = run || previousRun || completedRun;
   const newRun = primed && run !== null && run !== previousRun;
 
   // The live region carries exactly two messages per run. The first snapshot of
