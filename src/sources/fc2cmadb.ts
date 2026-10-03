@@ -97,6 +97,9 @@ export class Fc2SourceError extends Error {
   }
 }
 
+/** A definitive removal response for a detail URL, distinct from an unreadable source. */
+export class Fc2RemovedRecordError extends Fc2SourceError {}
+
 /** Throttling. Its own name because it is the one failure that resolves. */
 export class Fc2RateLimitedError extends Fc2SourceError {
   constructor() {
@@ -564,13 +567,15 @@ export function createFc2Client(
   const waitListing = pacing(listingGate, listingMinIntervalMs, sleep);
   const waitDetail = pacing(detailGate, detailMinIntervalMs, sleep);
 
-  async function html(url: string, wait: () => Promise<void>): Promise<string> {
+  async function html(url: string, wait: () => Promise<void>, detail = false): Promise<string> {
     await wait();
     const response = await ctx.fetcher.fetch(url, {
       headers: { accept: "text/html,application/xhtml+xml" },
     });
     if (response.status === 429) throw new Fc2RateLimitedError();
     if (response.status === 404 || response.status === 410) {
+      if (detail)
+        throw new Fc2RemovedRecordError(`record removed from the site (HTTP ${response.status})`);
       throw new Fc2SourceError(`fc2cmadb.com has no page at ${url} (HTTP ${response.status})`);
     }
     if (!response.ok) {
@@ -589,7 +594,7 @@ export function createFc2Client(
     async getArticle(videoId) {
       if (!/^\d+$/.test(videoId)) throw new Fc2ShapeError(`"${videoId}" is not a release id`);
       const detail = parseFc2Detail(
-        extractInertiaPage(await html(fc2RecordUrl(videoId), waitDetail)),
+        extractInertiaPage(await html(fc2RecordUrl(videoId), waitDetail, true)),
       );
       if (detail.videoId !== videoId)
         throw new Fc2ShapeError(`expected article ${videoId}, saw ${detail.videoId}`);
@@ -819,6 +824,16 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         try {
           detail = await client.getArticle(candidate.videoId);
         } catch (error) {
+          if (error instanceof Fc2RemovedRecordError) {
+            excludedSceneIds.add(candidate.videoId);
+            store?.decideFc2Candidate(candidate.videoId, "excluded", error.message, {
+              checkedAt: now.toISOString(),
+              recheckAt: null,
+              scene: null,
+            });
+            checked += 1;
+            continue;
+          }
           // A failed detail read is NOT a classification. Retrying the record next
           // sync costs one paced request; guessing a verdict costs the lane its
           // honesty. It therefore stays pending, and stays due.
@@ -868,12 +883,16 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         )
           continue;
         const accepted = fresh.get(record.videoId);
-        if (accepted) {
+        if (accepted && withinWindow(accepted.releaseDate, windowStart, now)) {
           scenes.push(accepted);
           continue;
         }
         const cached = states.get(record.videoId);
-        if (cached?.status === "accepted" && cached.scene) {
+        if (
+          cached?.status === "accepted" &&
+          cached.scene &&
+          withinWindow(String(cached.scene.releaseDate), windowStart, now)
+        ) {
           scenes.push(cached.scene as unknown as RawScene);
           continue;
         }

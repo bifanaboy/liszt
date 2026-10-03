@@ -235,12 +235,29 @@ export function relatedFc2VideoIds(
     if (!id || seen.has(id) || exclude.has(id)) continue;
     // The slug IS the urlified title, so the code survives it; the link text is
     // checked too because a short slug can drop the leading digits.
-    const haystack = `${(match[1] as string).replace(/[-_/]+/g, " ")} ${(match[3] as string).replace(/<[^>]+>/g, " ")}`;
+    const slug =
+      (match[1] as string)
+        .replace(/^.*\/(?:video-|hd-porn\/)[A-Za-z0-9]+\/?/, "")
+        .split(/[?#]/)[0] ?? "";
+    const haystack = `${slug.replace(/[-_/]+/g, " ")} ${(match[3] as string).replace(/<[^>]+>/g, " ")}`;
     if (!titleContainsExactCode(haystack, code)) continue;
     seen.add(id);
     ids.push(id);
   }
   return ids;
+}
+
+/** Read a unique uploader-supplied part number; runtime always passes the known release code. */
+function titlePartNumber(title: string, code: string | null): number | null {
+  const found: number[] = [];
+  for (const match of title.matchAll(/(?:\bpart|パート)\s*[[._:-]*\s*([1-9]\d*)\b/gi))
+    found.push(Number(match[1]));
+  if (code && /^\d+$/.test(code)) {
+    const suffix = new RegExp(`(?<!\\d)${code}[ _.-]+([1-9]\\d*)(?=$|[\\s\\[\\]()._-])`, "g");
+    for (const match of title.matchAll(suffix)) found.push(Number(match[1]));
+  }
+  const distinct = new Set(found);
+  return distinct.size === 1 && Number.isSafeInteger(found[0]) ? found[0]! : null;
 }
 
 /**
@@ -252,7 +269,10 @@ export function relatedFc2VideoIds(
  * uniform in uploader, and every duration must be present and pairwise distinct.
  * Anything else leaves every link part-less, and the links are still kept.
  */
-export function groupMultipart(candidates: readonly Fc2EpornerCandidate[]): Map<string, number> {
+export function groupMultipart(
+  candidates: readonly Fc2EpornerCandidate[],
+  code?: string,
+): Map<string, number> {
   const parts = new Map<string, number>();
   if (candidates.length < 2) return parts;
   const uploaders = new Set(candidates.map((candidate) => candidate.uploader ?? ""));
@@ -260,11 +280,15 @@ export function groupMultipart(candidates: readonly Fc2EpornerCandidate[]): Map<
   const durations = candidates.map((candidate) => candidate.durationSec);
   if (durations.some((duration) => duration === null)) return parts;
   if (new Set(durations).size !== durations.length) return parts;
-  // Ordered by duration so "Part 1" is deterministically the shortest file.
-  const ordered = [...candidates].sort(
-    (a, b) => (a.durationSec ?? 0) - (b.durationSec ?? 0) || a.url.localeCompare(b.url),
-  );
-  ordered.forEach((candidate, index) => parts.set(candidate.url, index + 1));
+  const releaseCode =
+    code ??
+    fc2ReleaseCode(candidates[0]?.title) ??
+    candidates[0]?.title.match(/^\s*(\d{4,})(?:\D|$)/)?.[1] ??
+    null;
+  const numbers = candidates.map((candidate) => titlePartNumber(candidate.title, releaseCode));
+  if (numbers.some((number) => number === null) || new Set(numbers).size !== numbers.length)
+    return parts;
+  candidates.forEach((candidate, index) => parts.set(candidate.url, numbers[index]!));
   return parts;
 }
 
@@ -411,6 +435,15 @@ export function createFc2EpornerResolver(
         firstError = firstError ?? "the eporner search response was not JSON";
         break;
       }
+      if (
+        !Array.isArray(parsed) &&
+        (!parsed ||
+          typeof parsed !== "object" ||
+          !Array.isArray((parsed as { videos?: unknown }).videos))
+      ) {
+        firstError = firstError ?? "the eporner API returned a malformed search response";
+        break;
+      }
       pagesRead += 1;
       const rawRows = extractVideoRows(parsed);
       if (!rawRows.length) break;
@@ -476,7 +509,7 @@ export function createFc2EpornerResolver(
     }
 
     const final = [...admitted.values()];
-    const parts = groupMultipart(final);
+    const parts = groupMultipart(final, trimmed);
     return {
       links: final.map((candidate) => ({
         url: candidate.url,
@@ -499,7 +532,7 @@ export function createFc2EpornerResolver(
  * related-walk's evidence test and never has to be trusted separately.
  */
 export function titleFromPage(html: string): string | null {
-  const heading = stripComments(html).match(/<h1[^>]*>([\s\S]{0,300}?)<\/h1>/i)?.[1];
+  const heading = stripComments(html).match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
   const text = (heading ?? "")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")

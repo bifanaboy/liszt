@@ -37,7 +37,7 @@ the tube adapters, and `public/app.js` before updating either document.
   identity gate does not apply. eporner is searched by the bare numeric release
   id, admitted only on a **whole numeric token** (never a substring, never the
   spellings `FC2` or `PPV`). Part numbers are all-or-nothing and require a single
-  uploader with pairwise distinct durations.
+  uploader with pairwise distinct main-video durations and unambiguous title part numbers.
 - An FC2 candidate is `accepted`, `excluded`, or `pending`. **Excluded** means a
   censorship badge, a safety or trans tag, a missing release date, a removed page,
   or no playable duration — fc2cmadb carries image sets beside videos, so "no

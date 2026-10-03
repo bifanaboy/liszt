@@ -1,2314 +1,3198 @@
 {
-  "note": "Independently hand-checked classification for 319 FC2 releases listed under fc2cmadb.com/tags/\\u30a2\\u30ca\\u30eb on 2026-10-03. Each row was read from its own detail page and judged by the rules below, WITHOUT running this repository's code against it - that is what makes it a check on the parser rather than a snapshot of the parser.\n\n  removed   the detail page no longer exists\n  censored  the detail page carries the censorship badge\n  no playable duration (an image set or an unplayable record)\n           the 'length' slot holds an IMAGE COUNT rather than a length (two rows: 4940877\n           at 60 images and 4715577 at 161 images). fc2cmadb carries image sets beside\n           videos, so such a record can never match an upload's length, and is excluded\n           rather than retried for ever.\n  accepted  uncensored, with a duration\n  null      NOT READ - the site answered HTTP 429 before the walk reached this record. A null row is not evidence of anything; it is here so the walk's incompleteness is measurable.",
+  "note": "319 historical candidate IDs from the issue attachment. Expected verdicts combine the earlier independent 197-page badge/duration review with a new independent full-detail review of 199 captures (including all 122 previously unread IDs). Production filtering was never used to generate verdicts. Full title/tag/date regression currently covers only the 199 complete captures; 120 earlier rows still need full-detail evidence. HTTP 429 stopped two paced attempts. No missing fields are filled with invented tags or dates.",
   "checked_on": "2026-10-03",
   "rows": [
     {
       "video_id": "4981628",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:39:09",
-      "reason": "uncensored, duration 02:39:09"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4981628"
     },
     {
       "video_id": "4979341",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:37:24",
-      "reason": "uncensored, duration 02:37:24"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4979341"
     },
     {
       "video_id": "4978708",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:08:34",
-      "reason": "uncensored, duration 02:08:34"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4978708"
     },
     {
       "video_id": "4975031",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "14:40",
-      "reason": "uncensored, duration 14:40"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4975031"
     },
     {
       "video_id": "4975023",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "17:26",
-      "reason": "uncensored, duration 17:26"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4975023"
     },
     {
       "video_id": "4974654",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:53:42",
-      "reason": "uncensored, duration 01:53:42"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4974654"
     },
     {
       "video_id": "4972315",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:47:01",
-      "reason": "uncensored, duration 01:47:01"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4972315"
     },
     {
       "video_id": "4961496",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "38:27",
-      "reason": "uncensored, duration 38:27"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4961496"
     },
     {
       "video_id": "4948493",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:37:49",
-      "reason": "uncensored, duration 02:37:49"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4948493"
     },
     {
       "video_id": "4948009",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "13:01",
-      "reason": "uncensored, duration 13:01"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4948009"
     },
     {
       "video_id": "4947237",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:33:21",
-      "reason": "uncensored, duration 01:33:21"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4947237"
     },
     {
       "video_id": "4946122",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:36:37",
-      "reason": "uncensored, duration 01:36:37"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4946122"
     },
     {
       "video_id": "4940877",
-      "expected": "no playable duration (an image set or an unplayable record)",
+      "expected": "excluded",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
-      "duration": "60\u679a",
-      "reason": "the 'length' slot holds an IMAGE COUNT (60 images), not a length - fc2cmadb carries image sets beside videos, so it can never match an upload (60 images)"
+      "censorship_badge": "無",
+      "duration": "60枚",
+      "reason": "duration is 60枚 (60 images); title calls this 写真集 (photo collection)",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4940877"
     },
     {
       "video_id": "4940637",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:04:33",
-      "reason": "uncensored, duration 01:04:33"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4940637"
     },
     {
       "video_id": "4940220",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:42:45",
-      "reason": "uncensored, duration 01:42:45"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4940220"
     },
     {
       "video_id": "4938776",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "13:41",
-      "reason": "uncensored, duration 13:41"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4938776"
     },
     {
       "video_id": "4938457",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:00:29",
-      "reason": "uncensored, duration 01:00:29"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4938457"
     },
     {
       "video_id": "4929598",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:54:55",
-      "reason": "uncensored, duration 01:54:55"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4929598"
     },
     {
       "video_id": "4929512",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "42:03",
-      "reason": "uncensored, duration 42:03"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4929512"
     },
     {
       "video_id": "4928405",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:21:18",
-      "reason": "uncensored, duration 01:21:18"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4928405"
     },
     {
       "video_id": "4926709",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "21:50",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4926709"
     },
     {
       "video_id": "4923861",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "58:38",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4923861"
     },
     {
       "video_id": "4922053",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "13:44",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4922053"
     },
     {
       "video_id": "4921031",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:31:16",
-      "reason": "uncensored, duration 02:31:16"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4921031"
     },
     {
       "video_id": "4920874",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:06:31",
-      "reason": "uncensored, duration 01:06:31"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4920874"
     },
     {
       "video_id": "4920307",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "03:05:19",
-      "reason": "uncensored, duration 03:05:19"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4920307"
     },
     {
       "video_id": "4917942",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "22:17",
-      "reason": "uncensored, duration 22:17"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4917942"
     },
     {
       "video_id": "4917039",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "44:53",
-      "reason": "uncensored, duration 44:53"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4917039"
     },
     {
       "video_id": "4915289",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:42:29",
-      "reason": "uncensored, duration 01:42:29"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4915289"
     },
     {
       "video_id": "4915119",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:12:02",
-      "reason": "uncensored, duration 01:12:02"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4915119"
     },
     {
       "video_id": "4912570",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "19:45",
-      "reason": "uncensored, duration 19:45"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4912570"
     },
     {
       "video_id": "4910714",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:03:52",
-      "reason": "uncensored, duration 02:03:52"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4910714"
     },
     {
       "video_id": "4910686",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:33:53",
-      "reason": "uncensored, duration 01:33:53"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4910686"
     },
     {
       "video_id": "4907806",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "58:51",
-      "reason": "uncensored, duration 58:51"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4907806"
     },
     {
       "video_id": "4906459",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:38:35",
-      "reason": "uncensored, duration 01:38:35"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4906459"
     },
     {
       "video_id": "4902168",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:35:28",
-      "reason": "uncensored, duration 01:35:28"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4902168"
     },
     {
       "video_id": "4899749",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:46:44",
-      "reason": "uncensored, duration 02:46:44"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4899749"
     },
     {
       "video_id": "4898377",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:54:40",
-      "reason": "uncensored, duration 02:54:40"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4898377"
     },
     {
       "video_id": "4897193",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:23:35",
-      "reason": "uncensored, duration 02:23:35"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4897193"
     },
     {
       "video_id": "4893243",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "03:15:00",
-      "reason": "uncensored, duration 03:15:00"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4893243"
     },
     {
       "video_id": "4890847",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:00:17",
-      "reason": "uncensored, duration 02:00:17"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4890847"
     },
     {
       "video_id": "4886819",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:16:17",
-      "reason": "uncensored, duration 02:16:17"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4886819"
     },
     {
       "video_id": "4884935",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:06:48",
-      "reason": "uncensored, duration 01:06:48"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4884935"
     },
     {
       "video_id": "4880821",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "02:07:19",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4880821"
     },
     {
       "video_id": "4879755",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "56:59",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4879755"
     },
     {
       "video_id": "4874629",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "43:32",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4874629"
     },
     {
       "video_id": "4872003",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:33:02",
-      "reason": "uncensored, duration 02:33:02"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4872003"
     },
     {
       "video_id": "4870877",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:26:49",
-      "reason": "uncensored, duration 01:26:49"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4870877"
     },
     {
       "video_id": "4869802",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:52:22",
-      "reason": "uncensored, duration 02:52:22"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4869802"
     },
     {
       "video_id": "4867745",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:54:36",
-      "reason": "uncensored, duration 01:54:36"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4867745"
     },
     {
       "video_id": "4864999",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:59:55",
-      "reason": "uncensored, duration 01:59:55"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4864999"
     },
     {
       "video_id": "4857680",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:10:58",
-      "reason": "uncensored, duration 02:10:58"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4857680"
     },
     {
       "video_id": "4852331",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:15:03",
-      "reason": "uncensored, duration 01:15:03"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4852331"
     },
     {
       "video_id": "4852327",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:11:34",
-      "reason": "uncensored, duration 01:11:34"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4852327"
     },
     {
       "video_id": "4852318",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:36:15",
-      "reason": "uncensored, duration 01:36:15"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4852318"
     },
     {
       "video_id": "4852010",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:54:18",
-      "reason": "uncensored, duration 02:54:18"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4852010"
     },
     {
       "video_id": "4848780",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:29:02",
-      "reason": "uncensored, duration 01:29:02"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4848780"
     },
     {
       "video_id": "4848293",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:28:16",
-      "reason": "uncensored, duration 01:28:16"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4848293"
     },
     {
       "video_id": "4843128",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:28:14",
-      "reason": "uncensored, duration 02:28:14"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4843128"
     },
     {
       "video_id": "4842763",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "55:39",
-      "reason": "uncensored, duration 55:39"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4842763"
     },
     {
       "video_id": "4842380",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "17:53",
-      "reason": "uncensored, duration 17:53"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4842380"
     },
     {
       "video_id": "4840896",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:19:52",
-      "reason": "uncensored, duration 02:19:52"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4840896"
     },
     {
       "video_id": "4839574",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "15:02",
-      "reason": "uncensored, duration 15:02"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4839574"
     },
     {
       "video_id": "4839342",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:56:15",
-      "reason": "uncensored, duration 02:56:15"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4839342"
     },
     {
       "video_id": "4832584",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:59:19",
-      "reason": "uncensored, duration 01:59:19"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4832584"
     },
     {
       "video_id": "4832448",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:10:10",
-      "reason": "uncensored, duration 01:10:10"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4832448"
     },
     {
       "video_id": "4831983",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "28:51",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4831983"
     },
     {
       "video_id": "4830694",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "13:40",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4830694"
     },
     {
       "video_id": "4829882",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "02:56:00",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4829882"
     },
     {
       "video_id": "4823954",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:36:20",
-      "reason": "uncensored, duration 01:36:20"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4823954"
     },
     {
       "video_id": "4822944",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:30:11",
-      "reason": "uncensored, duration 02:30:11"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4822944"
     },
     {
       "video_id": "4818328",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:21:33",
-      "reason": "uncensored, duration 02:21:33"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4818328"
     },
     {
       "video_id": "4816199",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "15:08",
-      "reason": "uncensored, duration 15:08"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4816199"
     },
     {
       "video_id": "4816119",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:58:49",
-      "reason": "uncensored, duration 02:58:49"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4816119"
     },
     {
       "video_id": "4810298",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:40:36",
-      "reason": "uncensored, duration 01:40:36"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4810298"
     },
     {
       "video_id": "4809088",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:04:49",
-      "reason": "uncensored, duration 01:04:49"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4809088"
     },
     {
       "video_id": "4808567",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "20:53",
-      "reason": "uncensored, duration 20:53"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4808567"
     },
     {
       "video_id": "4806202",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:40:27",
-      "reason": "uncensored, duration 01:40:27"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4806202"
     },
     {
       "video_id": "4804696",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "15:45",
-      "reason": "uncensored, duration 15:45"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4804696"
     },
     {
       "video_id": "4800746",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "20:36",
-      "reason": "uncensored, duration 20:36"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4800746"
     },
     {
       "video_id": "4799484",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:59:40",
-      "reason": "uncensored, duration 02:59:40"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4799484"
     },
     {
       "video_id": "4798066",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:03:00",
-      "reason": "uncensored, duration 02:03:00"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4798066"
     },
     {
       "video_id": "4797227",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:30:38",
-      "reason": "uncensored, duration 01:30:38"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4797227"
     },
     {
       "video_id": "4793619",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:05:29",
-      "reason": "uncensored, duration 02:05:29"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4793619"
     },
     {
       "video_id": "4792544",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:53:01",
-      "reason": "uncensored, duration 01:53:01"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4792544"
     },
     {
       "video_id": "4792518",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "22:24",
-      "reason": "uncensored, duration 22:24"
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4792518"
     },
     {
       "video_id": "4789158",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:53:06",
-      "reason": "uncensored, duration 01:53:06"
+      "reason": "uncensored, duration 01:53:06",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4789158"
     },
     {
       "video_id": "4787847",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "16:44",
-      "reason": "uncensored, duration 16:44"
+      "reason": "uncensored, duration 16:44",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4787847"
     },
     {
       "video_id": "4784886",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:46:36",
-      "reason": "uncensored, duration 01:46:36"
+      "reason": "uncensored, duration 01:46:36",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4784886"
     },
     {
       "video_id": "4784492",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "27:05",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4784492"
     },
     {
       "video_id": "4783157",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:33:07",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4783157"
     },
     {
       "video_id": "4777960",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:36:06",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4777960"
     },
     {
       "video_id": "4777126",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "20:38",
-      "reason": "uncensored, duration 20:38"
+      "reason": "uncensored, duration 20:38",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4777126"
     },
     {
       "video_id": "4776881",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "14:58",
-      "reason": "uncensored, duration 14:58"
+      "reason": "uncensored, duration 14:58",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4776881"
     },
     {
       "video_id": "4775294",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:56:41",
-      "reason": "uncensored, duration 01:56:41"
+      "reason": "uncensored, duration 01:56:41",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4775294"
     },
     {
       "video_id": "4774509",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:10:17",
-      "reason": "uncensored, duration 01:10:17"
+      "reason": "uncensored, duration 01:10:17",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4774509"
     },
     {
       "video_id": "4772346",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "03:31:23",
-      "reason": "uncensored, duration 03:31:23"
+      "reason": "uncensored, duration 03:31:23",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4772346"
     },
     {
       "video_id": "4770684",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:13:34",
-      "reason": "uncensored, duration 02:13:34"
+      "reason": "uncensored, duration 02:13:34",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4770684"
     },
     {
       "video_id": "4770652",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:34:56",
-      "reason": "uncensored, duration 01:34:56"
+      "reason": "uncensored, duration 01:34:56",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4770652"
     },
     {
       "video_id": "4769509",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "14:21",
-      "reason": "uncensored, duration 14:21"
+      "reason": "uncensored, duration 14:21",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4769509"
     },
     {
       "video_id": "4768132",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:10:12",
-      "reason": "uncensored, duration 01:10:12"
+      "reason": "uncensored, duration 01:10:12",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4768132"
     },
     {
       "video_id": "4766956",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:40:37",
-      "reason": "uncensored, duration 01:40:37"
+      "reason": "uncensored, duration 01:40:37",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4766956"
     },
     {
       "video_id": "4762278",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "20:35",
-      "reason": "uncensored, duration 20:35"
+      "reason": "uncensored, duration 20:35",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4762278"
     },
     {
       "video_id": "4759434",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:15:54",
-      "reason": "uncensored, duration 02:15:54"
+      "reason": "uncensored, duration 02:15:54",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4759434"
     },
     {
       "video_id": "4756599",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "26:14",
-      "reason": "uncensored, duration 26:14"
+      "reason": "uncensored, duration 26:14",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4756599"
     },
     {
       "video_id": "4756181",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:53:44",
-      "reason": "uncensored, duration 02:53:44"
+      "reason": "uncensored, duration 02:53:44",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4756181"
     },
     {
       "video_id": "4753991",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:36:47",
-      "reason": "uncensored, duration 01:36:47"
+      "reason": "uncensored, duration 01:36:47",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4753991"
     },
     {
       "video_id": "4751577",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "15:23",
-      "reason": "uncensored, duration 15:23"
+      "reason": "uncensored, duration 15:23",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4751577"
     },
     {
       "video_id": "4747813",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "18:35",
-      "reason": "uncensored, duration 18:35"
+      "reason": "uncensored, duration 18:35",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4747813"
     },
     {
       "video_id": "4743489",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "18:25",
-      "reason": "uncensored, duration 18:25"
+      "reason": "uncensored, duration 18:25",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4743489"
     },
     {
       "video_id": "4741734",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:14:53",
-      "reason": "uncensored, duration 02:14:53"
+      "reason": "uncensored, duration 02:14:53",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4741734"
     },
     {
       "video_id": "4740623",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "17:31",
-      "reason": "uncensored, duration 17:31"
+      "reason": "uncensored, duration 17:31",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4740623"
     },
     {
       "video_id": "4738195",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "02:30:46",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4738195"
     },
     {
       "video_id": "4734532",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "02:44:55",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4734532"
     },
     {
       "video_id": "4732065",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "17:16",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4732065"
     },
     {
       "video_id": "4724890",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "19:34",
-      "reason": "uncensored, duration 19:34"
+      "reason": "uncensored, duration 19:34",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4724890"
     },
     {
       "video_id": "4721615",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:04:26",
-      "reason": "uncensored, duration 01:04:26"
+      "reason": "uncensored, duration 01:04:26",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4721615"
     },
     {
       "video_id": "4721415",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:27:35",
-      "reason": "uncensored, duration 02:27:35"
+      "reason": "uncensored, duration 02:27:35",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4721415"
     },
     {
       "video_id": "4720764",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "20:53",
-      "reason": "uncensored, duration 20:53"
+      "reason": "uncensored, duration 20:53",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4720764"
     },
     {
       "video_id": "4720134",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:55:08",
-      "reason": "uncensored, duration 02:55:08"
+      "reason": "uncensored, duration 02:55:08",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4720134"
     },
     {
       "video_id": "4719990",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "49:11",
-      "reason": "uncensored, duration 49:11"
+      "reason": "uncensored, duration 49:11",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4719990"
     },
     {
       "video_id": "4717645",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "13:12",
-      "reason": "uncensored, duration 13:12"
+      "reason": "uncensored, duration 13:12",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4717645"
     },
     {
       "video_id": "4716749",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:21:59",
-      "reason": "uncensored, duration 02:21:59"
+      "reason": "uncensored, duration 02:21:59",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4716749"
     },
     {
       "video_id": "4715577",
-      "expected": "no playable duration (an image set or an unplayable record)",
+      "expected": "excluded",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
-      "duration": "161\u679a",
-      "reason": "the 'length' slot holds an IMAGE COUNT (60 images), not a length - fc2cmadb carries image sets beside videos, so it can never match an upload (161 images)"
+      "censorship_badge": "無",
+      "duration": "161枚",
+      "reason": "the 'length' slot holds an IMAGE COUNT (60 images), not a length - fc2cmadb carries image sets beside videos, so it can never match an upload (161 images)",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4715577"
     },
     {
       "video_id": "4715130",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "20:54",
-      "reason": "uncensored, duration 20:54"
+      "reason": "uncensored, duration 20:54",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4715130"
     },
     {
       "video_id": "4714987",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:20:29",
-      "reason": "uncensored, duration 02:20:29"
+      "reason": "uncensored, duration 02:20:29",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4714987"
     },
     {
       "video_id": "4712188",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:06:34",
-      "reason": "uncensored, duration 02:06:34"
+      "reason": "uncensored, duration 02:06:34",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4712188"
     },
     {
       "video_id": "4707343",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "16:55",
-      "reason": "uncensored, duration 16:55"
+      "reason": "uncensored, duration 16:55",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4707343"
     },
     {
       "video_id": "4706424",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:30:08",
-      "reason": "uncensored, duration 01:30:08"
+      "reason": "uncensored, duration 01:30:08",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4706424"
     },
     {
       "video_id": "4704597",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "13:48",
-      "reason": "uncensored, duration 13:48"
+      "reason": "uncensored, duration 13:48",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4704597"
     },
     {
       "video_id": "4698290",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:02:01",
-      "reason": "uncensored, duration 02:02:01"
+      "reason": "uncensored, duration 02:02:01",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4698290"
     },
     {
       "video_id": "4690304",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:08:24",
-      "reason": "uncensored, duration 02:08:24"
+      "reason": "uncensored, duration 02:08:24",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4690304"
     },
     {
       "video_id": "4689198",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "10:14",
-      "reason": "uncensored, duration 10:14"
+      "reason": "uncensored, duration 10:14",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4689198"
     },
     {
       "video_id": "4687039",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "51:01",
-      "reason": "uncensored, duration 51:01"
+      "reason": "uncensored, duration 51:01",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4687039"
     },
     {
       "video_id": "4685250",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "15:04",
-      "reason": "uncensored, duration 15:04"
+      "reason": "uncensored, duration 15:04",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4685250"
     },
     {
       "video_id": "4684829",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "02:15:58",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4684829"
     },
     {
       "video_id": "4680424",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:17:37",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4680424"
     },
     {
       "video_id": "4678357",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:06:50",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4678357"
     },
     {
       "video_id": "4677343",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "11:37",
-      "reason": "uncensored, duration 11:37"
+      "reason": "uncensored, duration 11:37",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4677343"
     },
     {
       "video_id": "4676840",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:12:30",
-      "reason": "uncensored, duration 02:12:30"
+      "reason": "uncensored, duration 02:12:30",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4676840"
     },
     {
       "video_id": "4675240",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:44:47",
-      "reason": "uncensored, duration 02:44:47"
+      "reason": "uncensored, duration 02:44:47",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4675240"
     },
     {
       "video_id": "4673533",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:23:04",
-      "reason": "uncensored, duration 02:23:04"
+      "reason": "uncensored, duration 02:23:04",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4673533"
     },
     {
       "video_id": "4673385",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "12:23",
-      "reason": "uncensored, duration 12:23"
+      "reason": "uncensored, duration 12:23",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4673385"
     },
     {
       "video_id": "4671205",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:03:35",
-      "reason": "uncensored, duration 02:03:35"
+      "reason": "uncensored, duration 02:03:35",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4671205"
     },
     {
       "video_id": "4667364",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:41:27",
-      "reason": "uncensored, duration 02:41:27"
+      "reason": "uncensored, duration 02:41:27",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4667364"
     },
     {
       "video_id": "4666026",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "21:37",
-      "reason": "uncensored, duration 21:37"
+      "reason": "uncensored, duration 21:37",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4666026"
     },
     {
       "video_id": "4664791",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:15:33",
-      "reason": "uncensored, duration 02:15:33"
+      "reason": "uncensored, duration 02:15:33",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4664791"
     },
     {
       "video_id": "4661219",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:12:08",
-      "reason": "uncensored, duration 02:12:08"
+      "reason": "uncensored, duration 02:12:08",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4661219"
     },
     {
       "video_id": "4660749",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:07:42",
-      "reason": "uncensored, duration 01:07:42"
+      "reason": "uncensored, duration 01:07:42",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4660749"
     },
     {
       "video_id": "4660728",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:49:50",
-      "reason": "uncensored, duration 01:49:50"
+      "reason": "uncensored, duration 01:49:50",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4660728"
     },
     {
       "video_id": "4659255",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "14:56",
-      "reason": "uncensored, duration 14:56"
+      "reason": "uncensored, duration 14:56",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4659255"
     },
     {
       "video_id": "4658299",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:43:26",
-      "reason": "uncensored, duration 01:43:26"
+      "reason": "uncensored, duration 01:43:26",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4658299"
     },
     {
       "video_id": "4656566",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:51:58",
-      "reason": "uncensored, duration 01:51:58"
+      "reason": "uncensored, duration 01:51:58",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4656566"
     },
     {
       "video_id": "4656375",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:11:25",
-      "reason": "uncensored, duration 01:11:25"
+      "reason": "uncensored, duration 01:11:25",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4656375"
     },
     {
       "video_id": "4656261",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "59:40",
-      "reason": "uncensored, duration 59:40"
+      "reason": "uncensored, duration 59:40",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4656261"
     },
     {
       "video_id": "4655414",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "10:32",
-      "reason": "uncensored, duration 10:32"
+      "reason": "uncensored, duration 10:32",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4655414"
     },
     {
       "video_id": "4648384",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:23:25",
-      "reason": "uncensored, duration 01:23:25"
+      "reason": "uncensored, duration 01:23:25",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4648384"
     },
     {
       "video_id": "4647959",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "15:28",
-      "reason": "uncensored, duration 15:28"
+      "reason": "uncensored, duration 15:28",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4647959"
     },
     {
       "video_id": "4647804",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "34:34",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4647804"
     },
     {
       "video_id": "4637147",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:41:24",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4637147"
     },
     {
       "video_id": "4636518",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:03:33",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4636518"
     },
     {
       "video_id": "4635890",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "17:58",
-      "reason": "uncensored, duration 17:58"
+      "reason": "uncensored, duration 17:58",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4635890"
     },
     {
       "video_id": "4633963",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "51:26",
-      "reason": "uncensored, duration 51:26"
+      "reason": "uncensored, duration 51:26",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4633963"
     },
     {
       "video_id": "4628278",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:20:27",
-      "reason": "uncensored, duration 01:20:27"
+      "reason": "uncensored, duration 01:20:27",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4628278"
     },
     {
       "video_id": "4626127",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "16:12",
-      "reason": "uncensored, duration 16:12"
+      "reason": "uncensored, duration 16:12",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4626127"
     },
     {
       "video_id": "4621758",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:03:51",
-      "reason": "uncensored, duration 01:03:51"
+      "reason": "uncensored, duration 01:03:51",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4621758"
     },
     {
       "video_id": "4616452",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "10:48",
-      "reason": "uncensored, duration 10:48"
+      "reason": "uncensored, duration 10:48",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4616452"
     },
     {
       "video_id": "4616398",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "04:56:43",
-      "reason": "uncensored, duration 04:56:43"
+      "reason": "uncensored, duration 04:56:43",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4616398"
     },
     {
       "video_id": "4615397",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "49:25",
-      "reason": "uncensored, duration 49:25"
+      "reason": "uncensored, duration 49:25",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4615397"
     },
     {
       "video_id": "4613616",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:54:40",
-      "reason": "uncensored, duration 01:54:40"
+      "reason": "uncensored, duration 01:54:40",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4613616"
     },
     {
       "video_id": "4609450",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "02:15:29",
-      "reason": "uncensored, duration 02:15:29"
+      "reason": "uncensored, duration 02:15:29",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4609450"
     },
     {
       "video_id": "4608119",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:06:46",
-      "reason": "uncensored, duration 01:06:46"
+      "reason": "uncensored, duration 01:06:46",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4608119"
     },
     {
       "video_id": "4608005",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "17:25",
-      "reason": "uncensored, duration 17:25"
+      "reason": "uncensored, duration 17:25",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4608005"
     },
     {
       "video_id": "4602961",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:06:07",
-      "reason": "uncensored, duration 01:06:07"
+      "reason": "uncensored, duration 01:06:07",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4602961"
     },
     {
       "video_id": "4595451",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:18:21",
-      "reason": "uncensored, duration 01:18:21"
+      "reason": "uncensored, duration 01:18:21",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4595451"
     },
     {
       "video_id": "4593886",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "56:38",
-      "reason": "uncensored, duration 56:38"
+      "reason": "uncensored, duration 56:38",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4593886"
     },
     {
       "video_id": "4593848",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:53:14",
-      "reason": "uncensored, duration 01:53:14"
+      "reason": "uncensored, duration 01:53:14",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4593848"
     },
     {
       "video_id": "4591422",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "21:26",
-      "reason": "uncensored, duration 21:26"
+      "reason": "uncensored, duration 21:26",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4591422"
     },
     {
       "video_id": "4590630",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:05:08",
-      "reason": "uncensored, duration 01:05:08"
+      "reason": "uncensored, duration 01:05:08",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4590630"
     },
     {
       "video_id": "4589910",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:09:34",
-      "reason": "uncensored, duration 01:09:34"
+      "reason": "uncensored, duration 01:09:34",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4589910"
     },
     {
       "video_id": "4588359",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "53:02",
-      "reason": "uncensored, duration 53:02"
+      "reason": "uncensored, duration 53:02",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4588359"
     },
     {
       "video_id": "4585135",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:46:43",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4585135"
     },
     {
       "video_id": "4584592",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:46:43",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4584592"
     },
     {
       "video_id": "4582784",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:41:08",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4582784"
     },
     {
       "video_id": "4580671",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:31:44",
-      "reason": "uncensored, duration 01:31:44"
+      "reason": "uncensored, duration 01:31:44",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4580671"
     },
     {
       "video_id": "4578451",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:19:53",
-      "reason": "uncensored, duration 01:19:53"
+      "reason": "uncensored, duration 01:19:53",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4578451"
     },
     {
       "video_id": "4577295",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:12:50",
-      "reason": "uncensored, duration 01:12:50"
+      "reason": "uncensored, duration 01:12:50",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4577295"
     },
     {
       "video_id": "4576781",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "25:29",
-      "reason": "uncensored, duration 25:29"
+      "reason": "uncensored, duration 25:29",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4576781"
     },
     {
       "video_id": "4575136",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:54:49",
-      "reason": "uncensored, duration 01:54:49"
+      "reason": "uncensored, duration 01:54:49",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4575136"
     },
     {
       "video_id": "4570556",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:42:54",
-      "reason": "uncensored, duration 01:42:54"
+      "reason": "uncensored, duration 01:42:54",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4570556"
     },
     {
       "video_id": "4568456",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "18:51",
-      "reason": "uncensored, duration 18:51"
+      "reason": "uncensored, duration 18:51",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4568456"
     },
     {
       "video_id": "4567536",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:15:50",
-      "reason": "uncensored, duration 01:15:50"
+      "reason": "uncensored, duration 01:15:50",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4567536"
     },
     {
       "video_id": "4566639",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:49:37",
-      "reason": "uncensored, duration 01:49:37"
+      "reason": "uncensored, duration 01:49:37",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4566639"
     },
     {
       "video_id": "4564610",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "10:58",
-      "reason": "uncensored, duration 10:58"
+      "reason": "uncensored, duration 10:58",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4564610"
     },
     {
       "video_id": "4563877",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:38:45",
-      "reason": "uncensored, duration 01:38:45"
+      "reason": "uncensored, duration 01:38:45",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4563877"
     },
     {
       "video_id": "4560307",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:02:52",
-      "reason": "uncensored, duration 01:02:52"
+      "reason": "uncensored, duration 01:02:52",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4560307"
     },
     {
       "video_id": "4559550",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "22:01",
-      "reason": "uncensored, duration 22:01"
+      "reason": "uncensored, duration 22:01",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4559550"
     },
     {
       "video_id": "4553613",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "56:54",
-      "reason": "uncensored, duration 56:54"
+      "reason": "uncensored, duration 56:54",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4553613"
     },
     {
       "video_id": "4550156",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "22:02",
-      "reason": "uncensored, duration 22:02"
+      "reason": "uncensored, duration 22:02",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4550156"
     },
     {
       "video_id": "4548532",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:15:40",
-      "reason": "uncensored, duration 01:15:40"
+      "reason": "uncensored, duration 01:15:40",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4548532"
     },
     {
       "video_id": "4544829",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:03:42",
-      "reason": "uncensored, duration 01:03:42"
+      "reason": "uncensored, duration 01:03:42",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4544829"
     },
     {
       "video_id": "4543700",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:27:14",
-      "reason": "uncensored, duration 01:27:14"
+      "reason": "uncensored, duration 01:27:14",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4543700"
     },
     {
       "video_id": "4543239",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "50:51",
-      "reason": "uncensored, duration 50:51"
+      "reason": "uncensored, duration 50:51",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4543239"
     },
     {
       "video_id": "4540283",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:30:56",
-      "reason": "uncensored, duration 01:30:56"
+      "reason": "uncensored, duration 01:30:56",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4540283"
     },
     {
       "video_id": "4540255",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:09:59",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4540255"
     },
     {
       "video_id": "4538602",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:49:36",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4538602"
     },
     {
       "video_id": "4538281",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "14:46",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4538281"
     },
     {
       "video_id": "4535193",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:52:20",
-      "reason": "uncensored, duration 01:52:20"
+      "reason": "uncensored, duration 01:52:20",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4535193"
     },
     {
       "video_id": "4531761",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:08:06",
-      "reason": "uncensored, duration 01:08:06"
+      "reason": "uncensored, duration 01:08:06",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4531761"
     },
     {
       "video_id": "4528894",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "55:50",
-      "reason": "uncensored, duration 55:50"
+      "reason": "uncensored, duration 55:50",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4528894"
     },
     {
       "video_id": "4526249",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:24:45",
-      "reason": "uncensored, duration 01:24:45"
+      "reason": "uncensored, duration 01:24:45",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4526249"
     },
     {
       "video_id": "4525347",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:14:53",
-      "reason": "uncensored, duration 01:14:53"
+      "reason": "uncensored, duration 01:14:53",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4525347"
     },
     {
       "video_id": "4524700",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "55:31",
-      "reason": "uncensored, duration 55:31"
+      "reason": "uncensored, duration 55:31",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4524700"
     },
     {
       "video_id": "4524098",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:10:11",
-      "reason": "uncensored, duration 01:10:11"
+      "reason": "uncensored, duration 01:10:11",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4524098"
     },
     {
       "video_id": "4523382",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "57:07",
-      "reason": "uncensored, duration 57:07"
+      "reason": "uncensored, duration 57:07",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4523382"
     },
     {
       "video_id": "4522368",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:35:10",
-      "reason": "uncensored, duration 01:35:10"
+      "reason": "uncensored, duration 01:35:10",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4522368"
     },
     {
       "video_id": "4518216",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:10:44",
-      "reason": "uncensored, duration 01:10:44"
+      "reason": "uncensored, duration 01:10:44",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4518216"
     },
     {
       "video_id": "4517340",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:16:31",
-      "reason": "uncensored, duration 01:16:31"
+      "reason": "uncensored, duration 01:16:31",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4517340"
     },
     {
       "video_id": "4513882",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "17:34",
-      "reason": "uncensored, duration 17:34"
+      "reason": "uncensored, duration 17:34",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4513882"
     },
     {
       "video_id": "4513384",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:46:11",
-      "reason": "uncensored, duration 01:46:11"
+      "reason": "uncensored, duration 01:46:11",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4513384"
     },
     {
       "video_id": "4511842",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "56:25",
-      "reason": "uncensored, duration 56:25"
+      "reason": "uncensored, duration 56:25",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4511842"
     },
     {
       "video_id": "4511690",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "01:02:01",
-      "reason": "uncensored, duration 01:02:01"
+      "reason": "uncensored, duration 01:02:01",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4511690"
     },
     {
       "video_id": "4511268",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "59:50",
-      "reason": "uncensored, duration 59:50"
+      "reason": "uncensored, duration 59:50",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4511268"
     },
     {
       "video_id": "4510522",
       "expected": "accepted",
       "checked_on": "2026-10-03",
-      "censorship_badge": "\u7121",
+      "censorship_badge": "無",
       "duration": "19:47",
-      "reason": "uncensored, duration 19:47"
+      "reason": "uncensored, duration 19:47",
+      "evidence_status": "prior-badge-and-duration-only",
+      "source_url": "https://fc2cmadb.com/articles/4510522"
     },
     {
       "video_id": "4505698",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:07:05",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4505698"
     },
     {
       "video_id": "4501996",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:03:42",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4501996"
     },
     {
       "video_id": "4499801",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:33:59",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4499801"
     },
     {
       "video_id": "4497510",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:02:41",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4497510"
     },
     {
       "video_id": "4484295",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:07:48",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4484295"
     },
     {
       "video_id": "4483564",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:02:19",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4483564"
     },
     {
       "video_id": "4482960",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "51:04",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4482960"
     },
     {
       "video_id": "4479781",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:09:20",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4479781"
     },
     {
       "video_id": "4476274",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "51:45",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4476274"
     },
     {
       "video_id": "4476028",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "11:05",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4476028"
     },
     {
       "video_id": "4475943",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "58:04",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4475943"
     },
     {
       "video_id": "4472017",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "11:40",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4472017"
     },
     {
       "video_id": "4467786",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "11:03",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4467786"
     },
     {
       "video_id": "4467397",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "16:43",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4467397"
     },
     {
       "video_id": "4466259",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "10:13",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4466259"
     },
     {
       "video_id": "4465441",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "10:56",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4465441"
     },
     {
       "video_id": "4462228",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:02:41",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4462228"
     },
     {
       "video_id": "4461938",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "24:06",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4461938"
     },
     {
       "video_id": "4461921",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "17:39",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4461921"
     },
     {
       "video_id": "4460589",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "12:06",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4460589"
     },
     {
       "video_id": "4452858",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:04:43",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4452858"
     },
     {
       "video_id": "4450891",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:09:18",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4450891"
     },
     {
       "video_id": "4448440",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "07:16",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4448440"
     },
     {
       "video_id": "4443393",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:33:50",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4443393"
     },
     {
       "video_id": "4439304",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "13:14",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4439304"
     },
     {
       "video_id": "4439286",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "21:19",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4439286"
     },
     {
       "video_id": "4425936",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "22:07",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4425936"
     },
     {
       "video_id": "4425929",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "13:01",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4425929"
     },
     {
       "video_id": "4411811",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "29:27",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4411811"
     },
     {
       "video_id": "4410758",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "40:01",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4410758"
     },
     {
       "video_id": "4406984",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "excluded",
+      "checked_on": "2026-10-03",
+      "reason": "duration is empty (no playable duration)",
+      "censorship_badge": "無",
+      "duration": "",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4406984"
     },
     {
       "video_id": "4406243",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "27:31",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4406243"
     },
     {
       "video_id": "4398557",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:25:08",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4398557"
     },
     {
       "video_id": "4398173",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "39:19",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4398173"
     },
     {
       "video_id": "4384193",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:04:34",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4384193"
     },
     {
       "video_id": "4382449",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "46:07",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4382449"
     },
     {
       "video_id": "4378187",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "37:54",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4378187"
     },
     {
       "video_id": "4372726",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "27:22",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4372726"
     },
     {
       "video_id": "4365537",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "excluded",
+      "checked_on": "2026-10-03",
+      "reason": "duration is empty (no playable duration)",
+      "censorship_badge": "無",
+      "duration": "",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4365537"
     },
     {
       "video_id": "4364209",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "41:50",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4364209"
     },
     {
       "video_id": "4362195",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "32:23",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4362195"
     },
     {
       "video_id": "4361271",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "46:06",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4361271"
     },
     {
       "video_id": "4356825",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:01:02",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4356825"
     },
     {
       "video_id": "4352613",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "40:29",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4352613"
     },
     {
       "video_id": "4349847",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "26:50",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4349847"
     },
     {
       "video_id": "4329956",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:01:47",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4329956"
     },
     {
       "video_id": "4307838",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "50:12",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4307838"
     },
     {
       "video_id": "4172532",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:15:58",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4172532"
     },
     {
       "video_id": "4143477",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "34:53",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4143477"
     },
     {
       "video_id": "4075681",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "53:36",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4075681"
     },
     {
       "video_id": "4070958",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:03:15",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4070958"
     },
     {
       "video_id": "4057791",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:07:55",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4057791"
     },
     {
       "video_id": "4057763",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "53:12",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4057763"
     },
     {
       "video_id": "4047379",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:22:43",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/4047379"
     },
     {
       "video_id": "3851876",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:16:38",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3851876"
     },
     {
       "video_id": "3840126",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "38:01",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3840126"
     },
     {
       "video_id": "3678439",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "51:47",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3678439"
     },
     {
       "video_id": "3620571",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:40:38",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3620571"
     },
     {
       "video_id": "3618859",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "49:37",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3618859"
     },
     {
       "video_id": "3617172",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:09:38",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3617172"
     },
     {
       "video_id": "3556268",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:15:23",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3556268"
     },
     {
       "video_id": "3366694",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:03:02",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3366694"
     },
     {
       "video_id": "3340961",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "51:52",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3340961"
     },
     {
       "video_id": "3192265",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "29:40",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3192265"
     },
     {
       "video_id": "3188603",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "41:02",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3188603"
     },
     {
       "video_id": "3093169",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:02:04",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3093169"
     },
     {
       "video_id": "3086493",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:28:19",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3086493"
     },
     {
       "video_id": "3069527",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "06:26",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3069527"
     },
     {
       "video_id": "3058906",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "51:53",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/3058906"
     },
     {
       "video_id": "2909312",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "32:49",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2909312"
     },
     {
       "video_id": "2889197",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:00:23",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2889197"
     },
     {
       "video_id": "2882704",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "47:25",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2882704"
     },
     {
       "video_id": "2865976",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:20:15",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2865976"
     },
     {
       "video_id": "2769292",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:04:23",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2769292"
     },
     {
       "video_id": "2584181",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:12:35",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2584181"
     },
     {
       "video_id": "2244709",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:03:59",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2244709"
     },
     {
       "video_id": "2229202",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "excluded",
+      "checked_on": "2026-10-03",
+      "reason": "release_date is null; tag 女装子 is also crossdress evidence",
+      "censorship_badge": "無",
+      "duration": "49:09",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2229202"
     },
     {
       "video_id": "2174703",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:39:01",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/2174703"
     },
     {
       "video_id": "1923783",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:00:52",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1923783"
     },
     {
       "video_id": "1893097",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:00:31",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1893097"
     },
     {
       "video_id": "1875972",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:03:01",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1875972"
     },
     {
       "video_id": "1863967",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:07:59",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1863967"
     },
     {
       "video_id": "1788964",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "03:21",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1788964"
     },
     {
       "video_id": "1717711",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "53:05",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1717711"
     },
     {
       "video_id": "1608070",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "15:36",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1608070"
     },
     {
       "video_id": "1552261",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "55:11",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1552261"
     },
     {
       "video_id": "1458358",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "excluded",
+      "checked_on": "2026-10-03",
+      "reason": "release_date is null",
+      "censorship_badge": "無",
+      "duration": "19:56",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1458358"
     },
     {
       "video_id": "1420708",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:08:05",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1420708"
     },
     {
       "video_id": "1353077",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "25:47",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1353077"
     },
     {
       "video_id": "1318845",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "05:00",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1318845"
     },
     {
       "video_id": "1236577",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "45:45",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1236577"
     },
     {
       "video_id": "1202470",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "54:55",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1202470"
     },
     {
       "video_id": "1154822",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "27:24",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/1154822"
     },
     {
       "video_id": "929839",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "01:00:15",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/929839"
     },
     {
       "video_id": "572937",
-      "expected": null,
-      "checked_on": null,
-      "reason": "not read: the site answered 429 before the walk reached this record"
+      "expected": "accepted",
+      "checked_on": "2026-10-03",
+      "reason": "Independent title, full-tag, badge, date and duration review; no exclusion matched.",
+      "censorship_badge": "無",
+      "duration": "59:21",
+      "evidence_status": "full-detail",
+      "source_url": "https://fc2cmadb.com/articles/572937"
     }
-  ]
+  ],
+  "reference_sha256": "a2cf1555aebffc81e411cf19abf73d3373263dc83f336dc94ae9337884993de7",
+  "full_detail_count": 199
 }

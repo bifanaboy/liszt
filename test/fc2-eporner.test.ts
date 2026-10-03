@@ -177,6 +177,12 @@ test("a page does not re-offer itself", () => {
   assert.ok(!ids.includes("a1b2c3"));
 });
 
+test("a video id cannot consume the title-gated related budget", () => {
+  const html =
+    '<a href="/video-A4979341Z/unrelated/">Unrelated title</a><a href="/video-good/4979341-part-2/">4979341 part2</a>';
+  assert.deepEqual(relatedFc2VideoIds(html, "4979341", { bound: 1 }), ["good"]);
+});
+
 test("the related walk is bounded", () => {
   const ids = relatedFc2VideoIds(fixture("eporner-fc2-video-a1b2c3.html"), "4979341", {
     exclude: new Set(["a1b2c3"]),
@@ -195,7 +201,7 @@ function candidate(
   return {
     id,
     url: `https://www.eporner.com/video-${id}/`,
-    title: `FC2-PPV-4979341 ${id}`,
+    title: `FC2-PPV-4979341 Part ${{ a: 1, b: 2, c: 3 }[id] ?? 1}`,
     durationSec,
     uploader,
   };
@@ -208,7 +214,7 @@ test("one uploader with distinct durations earns part numbers", () => {
     candidate("b", 1290, "Fc2Ripper"),
   ]);
   assert.equal(parts.size, 3);
-  // Ordered by duration, so the label is deterministic rather than search-order.
+  // Part numbers come from titles, independently of search order or duration.
   assert.equal(parts.get("https://www.eporner.com/video-a/"), 1);
   assert.equal(parts.get("https://www.eporner.com/video-b/"), 2);
   assert.equal(parts.get("https://www.eporner.com/video-c/"), 3);
@@ -720,4 +726,78 @@ test("an HTML challenge on a candidate page cannot turn a search hit into a veri
   const result = await lookup("4979341");
   assert.deepEqual(result.links, []);
   assert.match(result.error ?? "", /exact-code video/);
+});
+
+test("part labels follow title order rather than ranking files by duration", () => {
+  const parts = groupMultipart([
+    { ...candidate("a", 1500, "Uploader"), title: "FC2-PPV-4979341 Part 1" },
+    { ...candidate("b", 1200, "Uploader"), title: "FC2-PPV-4979341 Part 2" },
+  ]);
+  assert.equal(parts.get("https://www.eporner.com/video-a/"), 1);
+  assert.equal(parts.get("https://www.eporner.com/video-b/"), 2);
+});
+
+test("unknown or conflicting title part numbers suppress labels for the whole group", () => {
+  for (const title of ["4979341", "4979341 Part 1", "4979341 Part 2 Part 3"]) {
+    const parts = groupMultipart([
+      { ...candidate("a", 1500, "Uploader"), title: "4979341 Part 1" },
+      { ...candidate("b", 1200, "Uploader"), title },
+    ]);
+    assert.equal(parts.size, 0);
+  }
+});
+
+test("standalone release-code suffixes preserve the uploader's numbered parts", () => {
+  const parts = groupMultipart([
+    { ...candidate("a", 1500, "Uploader"), title: "4979341 1 [Release]" },
+    { ...candidate("b", 1200, "Uploader"), title: "4979341-2" },
+  ]);
+  assert.equal(parts.get("https://www.eporner.com/video-a/"), 1);
+  assert.equal(parts.get("https://www.eporner.com/video-b/"), 2);
+});
+
+test("long titles on live exact-code pages remain readable", () => {
+  const title = titleFromPage(fixture("eporner-fc2-live-9oUclvtEj8J.html"));
+  assert.ok(title);
+  assert.ok(titleContainsExactCode(title, "4979341"));
+});
+
+test("the captured live search retains all five independently readable exact-code uploads", async () => {
+  const search = fixture("eporner-fc2-live-search-4979341.json");
+  const rows = (JSON.parse(search) as { videos: { id: string; url: string }[] }).videos;
+  const routes: Record<string, string> = { "https://www.eporner.com/api/v2/video/search/": search };
+  for (const row of rows) routes[row.url] = fixture(`eporner-fc2-live-${row.id}.html`);
+  const lookup = createFc2EpornerResolver(resolverFetcher(routes), {
+    searchPages: 1,
+    relatedBound: 0,
+    minIntervalMs: 0,
+    sleep: noSleep,
+  });
+  const result = await lookup("4979341");
+  assert.equal(result.error, undefined);
+  assert.deepEqual(
+    new Set(result.links.map((link) => link.url)),
+    new Set(rows.map((row) => row.url)),
+  );
+  assert.equal(result.links.length, 5);
+  assert.ok(result.links.every((link) => link.uploader !== null));
+  assert.ok(
+    result.links.every((link) => link.part === undefined),
+    "the two actual uploaders cannot form one multipart group",
+  );
+});
+
+test("an error-shaped JSON search response is reported as failure rather than clean absence", async () => {
+  for (const body of [{ error: "temporarily unavailable" }, { videos: "changed" }, null]) {
+    const fetcher: Fetcher = {
+      ...resolverFetcher({}),
+      async fetch() {
+        return Response.json(body);
+      },
+    };
+    const lookup = createFc2EpornerResolver(fetcher, { minIntervalMs: 0, sleep: noSleep });
+    const result = await lookup("4979341");
+    assert.deepEqual(result.links, []);
+    assert.match(result.error ?? "", /malformed search/);
+  }
 });

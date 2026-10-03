@@ -10,6 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
   classifyFc2Candidate,
@@ -864,65 +865,61 @@ test("an incomplete walk fails the source instead of reporting verified-empty", 
 
 interface BaselineRow {
   video_id: string;
-  /**
-   * The hand judgement, in the classifier's own words: either a status, or the
-   * full verdict string for a row the hand judged should be excluded.
-   */
-  expected: "accepted" | "no playable duration (an image set or an unplayable record)" | null;
+  expected: "accepted" | "excluded" | "pending";
+  evidence_status: "full-detail" | "prior-badge-and-duration-only";
   censorship_badge?: string | null;
   duration?: string | null;
   reason: string;
 }
+const baselineDoc = JSON.parse(fixture("fc2-candidate-baseline.json")) as {
+  reference_sha256: string;
+  full_detail_count: number;
+  checked_on: string;
+  rows: BaselineRow[];
+};
+const detailCorpus = JSON.parse(fixture("fc2-candidate-details.json")) as {
+  captures: { url: string; checked_at: string; article: Record<string, unknown> }[];
+};
 
-const baselineDoc = JSON.parse(
-  readFileSync(join(FIXTURES, "fc2-candidate-baseline.json"), "utf8"),
-) as { note: string; checked_on: string; rows: BaselineRow[] };
-
-test("classification matches the independently checked baseline", () => {
-  // The baseline was built by opening each candidate's own detail page and
-  // recording what the SITE said - its censorship field, its duration - and then
-  // judging each row by hand against the documented rules. The classifier in
-  // src/sources/fc2cmadb.ts was never run to produce it, which is what makes this
-  // a check on the classifier rather than a snapshot of it. A `null` row is one
-  // the walk never reached; it is skipped, and counted separately below.
-  const rows = baselineDoc.rows.filter((row) => row.expected !== null);
-  assert.ok(rows.length >= 190, `the baseline should be substantial, saw ${rows.length}`);
-
-  const mismatches: string[] = [];
-  for (const row of rows) {
-    const verdict = classifyFc2Candidate({
-      censored: row.censorship_badge ?? null,
-      durationSec: parseClockDuration(row.duration ?? null),
-      notFound: false,
-      releaseDate: baselineDoc.checked_on,
-      title: "",
-      // The baseline records the page's censorship field and length only. A real
-      // record can also be excluded for a safety or trans tag, which the baseline
-      // cannot see - so an exclusion here is compared by its full verdict, and a
-      // tag-driven one would disagree loudly rather than be waved through.
-      tags: [],
-    });
-    const actual = verdict.status === "excluded" ? verdict.verdict : verdict.status;
-    if (actual !== row.expected) {
-      mismatches.push(`${row.video_id}: said ${row.expected} (${row.reason}), got ${actual}`);
-    }
-  }
-  assert.deepEqual(mismatches, [], `${mismatches.length} baseline rows disagreed`);
+test("the independent verdict baseline preserves the full attached historical corpus", () => {
+  const reference = readFileSync(join(FIXTURES, "fc2-candidate-reference.csv"));
+  assert.equal(createHash("sha256").update(reference).digest("hex"), baselineDoc.reference_sha256);
+  const referenceIds = [...reference.toString().matchAll(/^FC2-PPV-(\d+),/gm)].map(
+    (match) => match[1]!,
+  );
+  assert.equal(referenceIds.length, 319);
+  assert.equal(baselineDoc.rows.length, 319);
+  assert.deepEqual(new Set(baselineDoc.rows.map((row) => row.video_id)), new Set(referenceIds));
+  assert.ok(
+    baselineDoc.rows.every((row) => ["accepted", "excluded", "pending"].includes(row.expected)),
+  );
 });
 
-test("the baseline's unread remainder is measurable, and that is why pending exists", () => {
-  // 197 of the 319 listed releases could be read before fc2cmadb.com started
-  // answering HTTP 429. The 122 that could not are recorded as `null` rather than
-  // guessed, because an unread record is exactly what `pending` is for: it stays
-  // owed, it is retried, and it stops the lane claiming a verified-empty source.
-  const unread = baselineDoc.rows.filter((row) => row.expected === null);
-  const read = baselineDoc.rows.filter((row) => row.expected !== null);
-  assert.equal(read.length + unread.length, baselineDoc.rows.length);
-  assert.ok(unread.length > 50, `the unread remainder should be recorded, saw ${unread.length}`);
-  assert.ok(
-    unread.every((row) => /429|not read/i.test(row.reason)),
-    "and every unread row says why, rather than asserting a verdict it never got",
+test("actual captured titles and full tags match independently reviewed expected verdicts", () => {
+  const expected = new Map(baselineDoc.rows.map((row) => [row.video_id, row]));
+  assert.equal(detailCorpus.captures.length, baselineDoc.full_detail_count);
+  assert.equal(detailCorpus.captures.length, 199);
+  for (const capture of detailCorpus.captures) {
+    const detail = parseFc2Detail({
+      component: "Articles/Show",
+      props: { article: capture.article },
+      url: capture.url,
+      version: null,
+    });
+    const row = expected.get(detail.videoId)!;
+    assert.equal(row.evidence_status, "full-detail");
+    const verdict = classifyFc2Candidate(detail);
+    assert.equal(verdict.status, row.expected, `${detail.videoId}: ${row.reason}`);
+  }
+});
+
+test("the rate-limited remainder stays visibly incomplete without fabricated full-tag evidence", () => {
+  const captured = new Set(
+    detailCorpus.captures.map((capture) => String(capture.article.video_id)),
   );
+  const remaining = baselineDoc.rows.filter((row) => !captured.has(row.video_id));
+  assert.equal(remaining.length, 120);
+  assert.ok(remaining.every((row) => row.evidence_status === "prior-badge-and-duration-only"));
 });
 
 test("a record with an image count instead of a duration is excluded, not retried for ever", () => {
@@ -1038,6 +1035,67 @@ test("the boundary page's historical records consume no detail budget or state",
     assert.equal(result.verifiedEmpty, true);
     assert.equal(store.fc2Candidate("1234567"), null);
     assert.equal(fetcher.calls.filter((url) => url.includes("/articles/")).length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+for (const status of [404, 410]) {
+  test(`a detail page removed with HTTP ${status} is excluded instead of retried forever`, async () => {
+    const store = new SqliteStore(":memory:");
+    store.migrate();
+    try {
+      const base = laneFetcher(
+        [
+          {
+            cursor: null,
+            records: [{ videoId: "4986883", releaseDate: "2026-10-02" }],
+            nextCursor: null,
+          },
+        ],
+        () => fixture("fc2-detail-uncensored.html"),
+      );
+      const fetcher: Fetcher = {
+        ...base,
+        async fetch(url) {
+          return url.includes("/articles/") ? new Response("gone", { status }) : base.fetch(url);
+        },
+      };
+      const result = await createFc2CmadbStudio({ store, sleep: noSleep }).fetch(
+        WINDOW_START,
+        context(fetcher),
+      );
+      assert.deepEqual(result.scenes, []);
+      assert.equal(result.verifiedEmpty, true);
+      assert.equal(store.fc2Candidate("4986883")?.status, "excluded");
+      assert.deepEqual(result.excludedSceneIds, ["4986883"]);
+    } finally {
+      store.close();
+    }
+  });
+}
+
+test("detail dates outside the window cannot be emitted fresh or from cache", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+    const pages = [
+      {
+        cursor: null,
+        records: [{ videoId: "4986883", releaseDate: "2026-10-02" }],
+        nextCursor: null,
+      },
+    ];
+    const detail = fixture("fc2-detail-uncensored.html").replace(
+      '"release_date": "2026-10-02"',
+      '"release_date": "2020-01-01"',
+    );
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const result = await studio.fetch(WINDOW_START, context(laneFetcher(pages, () => detail)));
+      assert.deepEqual(result.scenes, []);
+      assert.equal(result.verifiedEmpty, true);
+    }
   } finally {
     store.close();
   }

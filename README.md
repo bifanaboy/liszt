@@ -236,9 +236,11 @@ spellings `FC2` and `PPV` are never sent — they match thousands of unrelated
 releases.
 
 Part numbers are all-or-nothing. They are assigned only when the group has a
-single uploader (one `/profile/<account>/`) with pairwise distinct durations;
-otherwise no number is claimed, because two accounts sharing a code are two
-releases and two equal durations are the same file twice.
+single uploader (one main-video `vit-uploader` block) with pairwise distinct
+main-video durations and unambiguous title part numbers;
+otherwise no number is claimed. Numbers follow the uploader's title order,
+never shortest-file-first. Two accounts sharing a code are separate uploads,
+and equal durations do not establish parts.
 
 Catalogue sync is paced and bounded: a 2 s listing interval, an 8.5 s detail
 interval, 20 detail checks per sync, and a 7-day recheck. A candidate's status
