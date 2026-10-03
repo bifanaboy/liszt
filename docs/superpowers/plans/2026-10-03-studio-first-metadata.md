@@ -34,7 +34,7 @@
 **Files:**
 - Modify: `src/core/schema.ts`
 - Modify: `src/core/store/sqlite.ts`
-- Create: `src/core/store/migrations/0008_studio_metadata.sql`
+- Create: `src/core/store/migrations/0009_studio_metadata.sql`
 - Modify: `src/pipeline/sync.ts`
 - Test: `test/sync.test.ts`
 

@@ -102,7 +102,7 @@ Five categories, in `src/sources/registry.ts`.
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
-| fc2cmadb                                     | stub - interface unconfirmed          | yes      |
+| fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes      |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
 
@@ -234,6 +234,14 @@ candidates that were examined still rotate on the next run — least-recently-
 attempted first, for both the hydration budget and the rows pulled from SQLite —
 so a late candidate becomes reachable rather than being cut off permanently.
 
+Rows whose upload date is known are narrowed by the running time in the database
+query, with the same tolerance the gate itself uses, so an account holding
+thousands of dated uploads cannot spend the whole scan budget on rows the gate
+would reject for free. Those are the rows that need no rotation, and behind them
+sit the undated rows — the ones still waiting for a date from the video API — so
+narrowing early is what keeps that working set reachable at all. A row with no
+recorded running time is still examined rather than assumed away.
+
 ### Sync behaviour
 
 - One source failing does not stop the others; it becomes a run outcome with
@@ -241,8 +249,11 @@ so a late candidate becomes reachable rather than being cut off permanently.
   in-window records**.
 - A source returning no scenes _without asserting_ `verifiedEmpty` fails the run.
   This is what stops a parser bug from replacing a catalogue with silence.
-- Deletion happens only on window expiry. A scene missing from a successful
-  response is kept until it leaves the window.
+- Deletion happens on window expiry, or when a successful source run names a
+  native id in `excludedSceneIds` - the FC2 lane uses that for a record found
+  censored, removed, or matching a documented exclusion. Either way the deletion
+  is scoped to that one source. A scene only absent from a successful response is
+  kept until it leaves the window.
 - Upserts are keyed on the stable id `<source-id>:<source-scene-id>`, so a repeat
   sync converges instead of duplicating.
 - A scene with a live link is not re-matched; re-verify owns it. A scene with no
@@ -418,6 +429,10 @@ required variable: everything has a working default.
 | `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
 | `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
+| `LISZT_FC2_LISTING_MIN_INTERVAL_MS`              | `2000`               | FC2 listing-page spacing.                                             |
+| `LISZT_FC2_DETAIL_MIN_INTERVAL_MS`               | `8500`               | FC2 detail-page spacing; the lane's dominant cost.                    |
+| `LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC`           | `20`                 | Detail checks one sync may read; the rest resume next sync.           |
+| `LISZT_FC2_RECHECK_DAYS`                         | `7`                  | Retries an unmarked censorship badge before retiring it undecided.   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
 | `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |
 | `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `1`                  | Duration band, identical on every rung.                               |

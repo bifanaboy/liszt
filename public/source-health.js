@@ -4,9 +4,13 @@ const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => (
 // It gets its own state so the fix is obvious.
 const CONFIG_ERROR = /not configured|missing\b[^.]*\b(?:key|token|secret|credential)|\b(?:key|token|secret|credential)s?\b[^.]*\b(?:missing|required|invalid|expired|absent)|\benv(?:ironment)? variable|unauthorized|forbidden|HTTP (?:401|403)/i;
 
+const UNIMPLEMENTED_ERROR = /\bnot implemented\b/i;
+
 export function classifySourceStatus(error) {
   if (!error) return "ok";
-  return CONFIG_ERROR.test(String(error)) ? "config" : "failing";
+  const text = String(error);
+  if (UNIMPLEMENTED_ERROR.test(text)) return "unimplemented";
+  return CONFIG_ERROR.test(text) ? "config" : "failing";
 }
 
 export function isLiveLink(link) {
@@ -71,11 +75,19 @@ function formatRefresh(value) {
   return value ? new Date(value).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" }) : "Not yet refreshed";
 }
 
-const STATE_LABEL = { ok: "Sync ok", failing: "Sync failing", config: "Not configured" };
-const STATE_HINT = { config: "Deploy configuration, not a source outage" };
+const STATE_LABEL = { ok: "Sync ok", failing: "Sync failing", config: "Not configured", unimplemented: "Not implemented" };
+const STATE_HINT = {
+  config: "Deploy configuration, not a source outage",
+  unimplemented: "Deploy configuration, not a source outage",
+};
 
 export function sourceStateLabel(error) {
   return STATE_LABEL[classifySourceStatus(error)];
+}
+
+export function sourceCardState(error) {
+  const state = classifySourceStatus(error);
+  return state === "failing" ? "error" : state === "ok" ? "ok" : "setup";
 }
 
 export function renderSourceHealth(source, scenes) {
@@ -87,7 +99,7 @@ export function renderSourceHealth(source, scenes) {
 
 // The catalogue carries at most one compact pointer; the error text itself lives in Sources.
 export function renderSourceHealthSummary(sources) {
-  const counts = { failing: 0, config: 0 };
+  const counts = { failing: 0, config: 0, unimplemented: 0 };
   for (const source of Array.isArray(sources) ? sources : []) {
     const label = classifySourceStatus(source?.lastError);
     if (label !== "ok") counts[label] += 1;
@@ -95,6 +107,7 @@ export function renderSourceHealthSummary(sources) {
   const parts = [];
   if (counts.failing) parts.push(`${counts.failing} source${counts.failing === 1 ? "" : "s"} failing`);
   if (counts.config) parts.push(`${counts.config} source${counts.config === 1 ? "" : "s"} not configured`);
+  if (counts.unimplemented) parts.push(`${counts.unimplemented} source${counts.unimplemented === 1 ? "" : "s"} not implemented`);
   if (!parts.length) return "";
   return `<div class="notice notice--pointer" role="status"><a href="#sources">${escapeHtml(parts.join(" · "))} — see Sources</a></div>`;
 }

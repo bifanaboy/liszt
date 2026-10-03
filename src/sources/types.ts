@@ -82,6 +82,13 @@ export interface SourceLabel {
 export interface SourceResult {
   scenes: RawScene[];
   /**
+   * Native scene IDs the source positively EXCLUDED this run - censored, removed
+   * upstream, or a documented safety / trans exclusion. Distinct from a scene
+   * merely being absent from `scenes`: only an ID named here is deleted from the
+   * catalogue, so a bounded or partial run can never delete what it did not read.
+   */
+  excludedSceneIds?: string[];
+  /**
    * Explicitly true when the source really has no matching records. A result
    * with no scenes and `verifiedEmpty: false` is treated as suspicious and
    * fails the run, which keeps the source's last-good records.
