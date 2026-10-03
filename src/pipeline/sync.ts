@@ -44,6 +44,7 @@ import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
 import type { PoolMatch } from "../tubes/eporner-pool.ts";
 import type { MatchScene } from "../tubes/types.ts";
+import { getStudioMetadataProfile, scrapeReleaseMetadata } from "../sources/studio-metadata.ts";
 
 /** `YYYY-MM-DD` from a `Date`, in UTC. */
 export function dateOnly(date: Date): string {
@@ -211,6 +212,44 @@ export function normaliseScene(
   return parseAtBoundary(Scene, candidate, `sync.scene(${id})`);
 }
 
+const STUDIO_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** Merge one exact-page result without losing verified studio fields on later polls. */
+export function mergeStudioMetadata(
+  raw: RawScene,
+  page: Partial<RawScene> | null,
+  previous?: Scene,
+): RawScene {
+  const merged: RawScene = { ...raw };
+  const fields = [
+    "title",
+    "releaseDate",
+    "performers",
+    "durationSec",
+    "thumbnailUrl",
+    "tags",
+  ] as const;
+  for (const field of fields) {
+    if (page?.[field] !== undefined && page[field] !== null) {
+      Object.assign(merged, { [field]: page[field] });
+      continue;
+    }
+    if (previous?.fieldProvenance[field] === "studio-site") {
+      Object.assign(merged, { [field]: previous[field] });
+    }
+  }
+  merged.fieldProvenance = {
+    ...previous?.fieldProvenance,
+    ...raw.fieldProvenance,
+    ...page?.fieldProvenance,
+  };
+  // Preserve the current catalogue record as the required provenance entry;
+  // page provenance is appended by the caller after normalization.
+  merged.provenance = raw.provenance;
+  merged.metadataPoor = Boolean(raw.metadataPoor) || !merged.durationSec || merged.durationSec <= 0;
+  return merged;
+}
+
 export interface SyncLookups {
   poolLookup: ((scene: MatchScene, now: Date) => Promise<PoolMatch | null>) | null;
   sxyprnLookup: ((scene: MatchScene) => Promise<SxyprnMatch[]>) | null;
@@ -319,6 +358,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const from = dateOnly(new Date(now.getTime() - windowDays * 86_400_000));
     const runId = `sync-${now.getTime()}-${randomUUID().slice(0, 8)}`;
     const startedAt = now.toISOString();
+    const studioBudget = { remaining: 50 };
     // The tracker is CYCLE-scoped and is begun by the composition root, before
     // the pool index - the index runs first and its progress must survive. A
     // direct caller that never began it (a test, or `createSync` used on its
@@ -340,7 +380,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         error: null,
       });
       log.info("sync started", { runId, reason, window: { from, to } });
-      const outcomes = await fanOut(from, now);
+      const outcomes = await fanOut(from, now, studioBudget);
       const { matched, resolved, reverified, rejections, winners, expired, windowScenes } =
         await linkAndTally(from, to, now);
       return tally(
@@ -356,7 +396,11 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
   };
 
   /** Phase 1: every source, in isolation, one completion per configured adapter. */
-  async function fanOut(from: string, now: Date): Promise<RunOutcome[]> {
+  async function fanOut(
+    from: string,
+    now: Date,
+    studioBudget: { remaining: number },
+  ): Promise<RunOutcome[]> {
     progress?.stage("populating");
     return mapWithConcurrency(
       [...sources],
@@ -383,11 +427,77 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           // One bulk read, not one per record: the stored links have to reach
           // `normaliseScene` so the metadata upsert preserves them.
           const existing = store.getScenesByIds(result.scenes.map((raw) => sceneKey(adapter, raw)));
+          const pages = new Map<RawScene, Partial<RawScene> | null>();
+          const checkedAt = new Map<RawScene, string>();
+          const traxxxScenes = result.scenes
+            .flatMap((raw) => {
+              if (raw.source !== "traxxx.me" || !raw.releaseUrl) return [];
+              const profile = getStudioMetadataProfile(raw.releaseUrl);
+              if (!profile) return [];
+              const previous = existing.get(sceneKey(adapter, raw));
+              if (
+                previous &&
+                profile.fields.every((field) => previous.fieldProvenance[field] === "studio-site")
+              ) {
+                return [];
+              }
+              const attemptedAt = previous?.studioMetadataCheckedAt;
+              if (
+                attemptedAt &&
+                now.getTime() - new Date(attemptedAt).getTime() < STUDIO_RETRY_MS
+              ) {
+                return [];
+              }
+              return [{ raw, previous, attemptedAt }];
+            })
+            .sort((a, b) => {
+              if (!a.attemptedAt && b.attemptedAt) return -1;
+              if (a.attemptedAt && !b.attemptedAt) return 1;
+              if (!a.attemptedAt && !b.attemptedAt) {
+                return a.raw.releaseDate.localeCompare(b.raw.releaseDate);
+              }
+              return (
+                (a.attemptedAt ? Date.parse(a.attemptedAt) : 0) -
+                (b.attemptedAt ? Date.parse(b.attemptedAt) : 0)
+              );
+            });
+          const selected = traxxxScenes.slice(0, studioBudget.remaining);
+          studioBudget.remaining -= selected.length;
+          for (const { raw } of selected) {
+            checkedAt.set(raw, now.toISOString());
+            try {
+              pages.set(raw, await scrapeReleaseMetadata(raw.releaseUrl!, fetcher));
+            } catch (error) {
+              pages.set(raw, null);
+              log.warn("sync: studio metadata lookup failed; keeping catalogue values", {
+                source: adapter.id,
+                scene: raw.sourceSceneId,
+                error: (error as Error).message,
+              });
+            }
+          }
           store.transaction(() => {
             for (const raw of result.scenes) {
               try {
                 const previous = existing.get(sceneKey(adapter, raw));
-                store.upsertScene(normaliseScene(adapter, raw, now, previous));
+                const merged = mergeStudioMetadata(raw, pages.get(raw) ?? null, previous);
+                const scene = normaliseScene(adapter, merged, now, previous, checkedAt.get(raw));
+                const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
+                const unique = new Map(
+                  provenance.map((item) => [
+                    `${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`,
+                    item,
+                  ]),
+                );
+                if (pages.get(raw)?.provenance) {
+                  const item = pages.get(raw)!.provenance!;
+                  unique.set(`${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`, {
+                    ...item,
+                    fetchedAt: now.toISOString(),
+                  } as Scene["provenance"][number]);
+                }
+                scene.provenance = [...unique.values()];
+                store.upsertScene(scene);
                 count += 1;
               } catch (error) {
                 log.warn("sync: skipped an invalid record", {

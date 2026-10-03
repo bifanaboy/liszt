@@ -89,6 +89,191 @@ test("studio metadata attempt time survives normalization and a store round trip
   }
 });
 
+test("sync prefers exact studio metadata and keeps Traxxx values for fields the page omits", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let calls = 0;
+  const fetcher = {
+    async fetch() {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          data: {
+            findOneVideo: {
+              slug: "hotel-vixen-season-3-episode-12-it-got-better",
+              title: "Studio title",
+              releaseDate: "2026-03-01T00:00:00Z",
+              runLength: "00:25:51",
+              models: [{ name: "Nicole Kitt" }],
+              categories: [{ name: "Anal" }],
+              images: { poster: [] },
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const sync = createSync({
+    store,
+    sources: [
+      adapter("traxxx-watchlist", async () => ({
+        scenes: [
+          raw("vixen-1", {
+            source: "traxxx.me",
+            studioId: "tushy",
+            studio: "Tushy",
+            releaseUrl:
+              "https://www.tushy.com/videos/hotel-vixen-season-3-episode-12-it-got-better",
+            durationSec: 1500,
+            performers: ["Traxxx Performer"],
+          }),
+        ],
+        verifiedEmpty: false,
+      })),
+    ],
+    fetcher,
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("test");
+    const scene = store.getScene("traxxx-watchlist:tushy:vixen-1");
+    assert.equal(calls, 1);
+    assert.equal(scene?.title, "Studio title");
+    assert.equal(scene?.durationSec, 1551);
+    assert.deepEqual(scene?.performers, ["Nicole Kitt"]);
+    assert.equal(scene?.fieldProvenance.durationSec, "studio-site");
+    assert.equal(scene?.studioMetadataCheckedAt, new Date(NOW).toISOString());
+  } finally {
+    store.close();
+  }
+});
+
+test("incomplete studio metadata retries only after 24 hours", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let now = new Date(NOW);
+  let calls = 0;
+  const fetcher = {
+    async fetch() {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          data: {
+            findOneVideo: {
+              slug: "hotel-vixen-season-3-episode-12-it-got-better",
+              runLength: "00:25:51",
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const sync = createSync({
+    store,
+    sources: [
+      adapter("traxxx-watchlist", async () => ({
+        scenes: [
+          raw("vixen-1", {
+            source: "traxxx.me",
+            studioId: "tushy",
+            releaseUrl:
+              "https://www.tushy.com/videos/hotel-vixen-season-3-episode-12-it-got-better",
+          }),
+        ],
+        verifiedEmpty: false,
+      })),
+    ],
+    fetcher,
+    clock: { now: () => new Date(now) },
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("first");
+    now = new Date(new Date(NOW).getTime() + 23 * 60 * 60 * 1000);
+    await sync("too-soon");
+    assert.equal(calls, 1);
+    now = new Date(new Date(NOW).getTime() + 24 * 60 * 60 * 1000);
+    await sync("due");
+    assert.equal(calls, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("studio detail lookups are capped at 50 scenes per sync", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let calls = 0;
+  const fetcher = {
+    async fetch(_url: string, options: { body?: string } = {}) {
+      calls += 1;
+      const request = JSON.parse(options.body ?? "{}") as {
+        variables?: { videoSlug?: string };
+      };
+      return new Response(
+        JSON.stringify({ data: { findOneVideo: { slug: request.variables?.videoSlug } } }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const scenes = Array.from({ length: 51 }, (_, index) => {
+    const slug = `tushy-release-${index}`;
+    return raw(String(index), {
+      source: "traxxx.me",
+      studioId: "tushy",
+      releaseUrl: `https://www.tushy.com/videos/${slug}`,
+    });
+  });
+  const sync = createSync({
+    store,
+    sources: [adapter("traxxx-watchlist", async () => ({ scenes, verifiedEmpty: false }))],
+    fetcher,
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("test");
+    assert.equal(calls, 50);
+    assert.ok(store.getScene("traxxx-watchlist:tushy:0")?.studioMetadataCheckedAt);
+    assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.studioMetadataCheckedAt, null);
+  } finally {
+    store.close();
+  }
+});
+
 test("one failing source does not stop the others", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();

@@ -81,14 +81,14 @@
 - `mergeStudioMetadata(raw: RawScene, page: Partial<RawScene> | null, previous?: Scene): RawScene` applies current page values first, then prior studio-sourced fields, then current Traxxx values.
 - Sync reserves a global budget of 50 eligible scenes per cycle. New scenes without attempt times run first; due incomplete scenes use the oldest attempt time first.
 
-- [ ] Add `sync uses studio fields first, keeps Traxxx gaps, preserves links, and retries incomplete pages no sooner than 24 hours`.
-- [ ] Run `node --test test/sync.test.ts` and confirm the new behavior fails before implementation.
-- [ ] Select scenes with an applicable profile and no complete set of profile-supported studio fields; retry an incomplete scene only when its previous attempt is at least 24 hours old.
-- [ ] Apply the global 50-scene budget across source fetches; set the attempt timestamp even when the studio request fails.
-- [ ] Merge before normalization and upsert; retain provenance and existing link history.
-- [ ] Mark scenes without a positive duration metadata-poor so the existing `REVIEW` label distinguishes the unresolved gate.
-- [ ] Run `node --test test/sync.test.ts`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check`.
-- [ ] Commit as `feat: prefer studio metadata during sync`.
+- [x] Add sync regression tests for studio precedence, Traxxx fallback, 24-hour retries, and the 50-scene cap; existing link-preservation coverage remains active.
+- [x] Run `node --test test/sync.test.ts` and confirm the new precedence behavior fails before implementation.
+- [x] Select Traxxx scenes with an applicable profile and no complete set of profile-supported studio fields; retry an incomplete scene only when its previous attempt is at least 24 hours old.
+- [x] Apply the global 50-scene budget across source fetches; set the attempt timestamp even when the studio request fails.
+- [x] Merge before normalization and upsert; retain provenance and existing link history.
+- [x] Mark scenes without a positive duration metadata-poor so the existing `REVIEW` label distinguishes the unresolved gate.
+- [x] Run `node --test test/sync.test.ts`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check`.
+- [x] Commit as `feat: prefer studio metadata during sync`.
 
 ### Task 4: Map active studios and document coverage
 
@@ -100,8 +100,8 @@
 **Interfaces:**
 - The registry maps every current Traxxx release host with a corresponding Stash scene-detail scraper. Unmatched hosts remain on Traxxx.
 
-- [ ] Check the default and configurable Traxxx lane definitions against the Stash CommunityScrapers index; add each verified supported host to the registry.
+- [x] Check the active/default and configurable Traxxx lanes against the current CommunityScrapers tree and scene URL definitions; register the Vixen family and Woodman Casting X, plus the existing SexLikeReal and AnalVids scraper hosts.
 - [ ] Leave hosts without a directly applicable scene-detail scraper on Traxxx values.
-- [ ] Add `studio profile registry covers Vixen family and existing direct-page hosts`.
-- [ ] Run `node --test test/studio-metadata.test.ts`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check`.
-- [ ] Commit as `feat: map supported studio detail scrapers`.
+- [x] Add profile registry coverage for Vixen family, SexLikeReal, AnalVids/PissVids/BustyWorld, and Woodman Casting X; verify Woodman extraction follows its Stash scene fields and has no runtime field.
+- [x] Run `node --test test/studio-metadata.test.ts`, `npm run typecheck`, `npm run lint`, `npm run format:check`, and `git diff --check`.
+- [x] Commit as `feat: map supported studio detail scrapers`.
