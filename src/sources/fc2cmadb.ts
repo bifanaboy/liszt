@@ -639,7 +639,14 @@ interface WalkState {
  * walk therefore stops on a page that yields NO record inside the active window
  * rather than on the first out-of-window record, which keeps one backdated page
  * from ending the walk early. Reaching that point means every page above it was
- * examined, which is what `verifiedEmpty` is allowed to assume.
+ * examined, which is what `verifiedEmpty` is allowed to assume - and, because
+ * the page below it was never read, a stop like that reports `edgeStop` so the
+ * emptiness claim is withheld rather than made on a partial read.
+ *
+ * The archive is not walked to its end on every sync: it runs to thousands of
+ * records against a 40-page ceiling, so finishing it would be a guaranteed
+ * ceiling failure rather than a slow success. The edge stop is what keeps the
+ * listing affordable; `edgeStop` is what keeps it honest.
  *
  * A repeated cursor is an incomplete walk and throws. Without that check a
  * cursor the site does not honour would return the same page forever and the
@@ -652,7 +659,19 @@ export async function walkFc2Listing(
     maxPages = DEFAULT_FC2_MAX_LISTING_PAGES,
     log,
   }: { maxPages?: number; log?: (m: string, f?: Record<string, unknown>) => void } = {},
-): Promise<{ records: Fc2ListingRecord[]; pages: number; reachedEnd: boolean }> {
+): Promise<{
+  records: Fc2ListingRecord[];
+  pages: number;
+  reachedEnd: boolean;
+  /**
+   * The walk stopped at the window edge while the site still offered a next
+   * cursor, so pages below it were never examined. `reachedEnd` is true either
+   * way - the walk returned instead of failing - but only this flag says the
+   * walk can vouch for the whole tag, and an empty reading taken from a walk
+   * that did not is not an emptiness anyone verified.
+   */
+  edgeStop: boolean;
+}> {
   const state: WalkState = { cursor: null, pages: 0, seen: new Set() };
   const records: Fc2ListingRecord[] = [];
   const boundary = new Date(`${windowStart}T00:00:00Z`).getTime();
@@ -670,9 +689,15 @@ export async function walkFc2Listing(
     });
     if (!inWindow.length) {
       log?.("fc2: listing walk reached the window edge", { page, records: fresh.length });
-      return { records, pages: page, reachedEnd: true };
+      return {
+        records,
+        pages: page,
+        reachedEnd: true,
+        edgeStop: listing.nextCursor !== null,
+      };
     }
-    if (listing.nextCursor === null) return { records, pages: page, reachedEnd: true };
+    if (listing.nextCursor === null)
+      return { records, pages: page, reachedEnd: true, edgeStop: false };
 
     const seenBefore = state.cursor;
     state.cursor = listing.nextCursor;
@@ -917,8 +942,12 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       // `verifiedEmpty` needs all THREE of: a finished walk, no qualifying
       // record, and no outstanding undecided work. Claiming it while detail
       // checks are still owed would assert a completeness the lane does not have,
-      // and the sync's retention rule would then act on the claim.
-      const verifiedEmpty = scenes.length === 0 && deferred === 0;
+      // and the sync's retention rule would then act on the claim. A walk that
+      // stopped at the window edge with a cursor still in hand has NOT read the
+      // whole tag either, so it cannot vouch for emptiness: an older id can carry
+      // a recent date, and a backdated record the walk never reached would be
+      // reported as a tag that has nothing.
+      const verifiedEmpty = scenes.length === 0 && deferred === 0 && !walk.edgeStop;
       ctx.log("fc2: walk finished", {
         pages: walk.pages,
         candidates: walk.records.length,

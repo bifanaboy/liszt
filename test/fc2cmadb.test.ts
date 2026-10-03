@@ -256,6 +256,45 @@ test("a page entirely outside the window ends the walk without an error", async 
     WINDOW_START,
   );
   assert.ok(walk.reachedEnd);
+  assert.equal(
+    walk.edgeStop,
+    false,
+    "the last page was the end of the tag, so nothing was skipped",
+  );
+});
+
+test("a window-edge stop with a cursor left reports that pages went unread", async () => {
+  // The same stop, but the site still offered a next page. Everything below the
+  // stop is unknown, so the walk must not be usable as proof of emptiness.
+  const fetcher = listingFetcher([
+    {
+      cursor: null,
+      records: [{ videoId: "5000002", releaseDate: "2026-09-30" }],
+      nextCursor: "c1",
+    },
+    {
+      cursor: "c1",
+      records: [{ videoId: "5000001", releaseDate: "2019-01-01" }],
+      nextCursor: "c2",
+    },
+  ]);
+  const walk = await walkFc2Listing(
+    {
+      listAnalTag: async (cursor) =>
+        parseFc2Listing(
+          extractInertiaPage(
+            await fetcher.text(cursor === null ? FC2_LISTING_URL : `${FC2_LISTING_URL}?cursor=c1`),
+          ),
+        ),
+      getArticle: async () => {
+        throw new Error("not used");
+      },
+    },
+    WINDOW_START,
+  );
+  assert.equal(walk.pages, 2);
+  assert.ok(walk.reachedEnd, "it stopped cleanly rather than failing");
+  assert.equal(walk.edgeStop, true, "a page the walk never read was left below the stop");
 });
 
 test("a repeated cursor is an incomplete walk and throws", async () => {
@@ -965,6 +1004,40 @@ for (const changed of ["removed", "censored"] as const) {
     }
   });
 }
+
+test("a walk that stopped early cannot claim the tag is empty", async () => {
+  // The reading that matters: nothing in the window, no work owed, and still no
+  // claim. A page the walk never read could hold a backdated record, and a claim
+  // here would tell the sync the tag was verified empty when it was not checked.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const fetcher = laneFetcher(
+      [
+        {
+          cursor: null,
+          records: [{ videoId: "4986883", releaseDate: "2019-01-01" }],
+          nextCursor: "c1",
+        },
+        {
+          cursor: "c1",
+          records: [{ videoId: "4986700", releaseDate: "2018-01-01" }],
+          nextCursor: "c2",
+        },
+      ],
+      () => undefined,
+    );
+    const result = await createFc2CmadbStudio({ store, sleep: noSleep }).fetch(
+      WINDOW_START,
+      context(fetcher),
+    );
+    assert.deepEqual(result.scenes, []);
+    assert.equal(store.countFc2Pending(), 0, "nothing was left undecided either");
+    assert.equal(result.verifiedEmpty, false, "an unread page is not a verified emptiness");
+  } finally {
+    store.close();
+  }
+});
 
 test("the boundary page's historical records consume no detail budget or state", async () => {
   const store = new SqliteStore(":memory:");
