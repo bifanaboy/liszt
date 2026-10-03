@@ -186,6 +186,35 @@ candidates that were examined still rotate on the next run — least-recently-
 attempted first, for both the hydration budget and the rows pulled from SQLite —
 so a late candidate becomes reachable rather than being cut off permanently.
 
+### The FC2 lane
+
+FC2 releases are a separate path, not a fourth rung. They have no creator studio
+and no performer names, so the ladder's identity gate has nothing to test them
+with. `src/sources/fc2cmadb.ts` walks `fc2cmadb.com/tags/アナル` (tag id 47) by
+cursor, and `src/tubes/fc2-eporner.ts` looks each release up on eporner by its
+**bare numeric id**.
+
+The admission rule is stricter than a substring search on purpose: the id must
+appear as a **whole numeric token** in an eporner title or in an anchor's own
+link text. `4979341` must not admit `14979341` or `49793410`. The forbidden
+spellings `FC2` and `PPV` are never sent — they match thousands of unrelated
+releases.
+
+Part numbers are all-or-nothing. They are assigned only when the group has a
+single uploader (one `/profile/<account>/`) with pairwise distinct durations;
+otherwise no number is claimed, because two accounts sharing a code are two
+releases and two equal durations are the same file twice.
+
+Catalogue sync is paced and bounded: a 2 s listing interval, an 8.5 s detail
+interval, 20 detail checks per sync, and a 7-day recheck. A candidate's status
+is one of `accepted`, `excluded`, or `pending`. **A record is excluded for a
+censorship badge, a safety or trans tag, a missing release date, a removed page,
+or no playable duration** — fc2cmadb carries image sets beside videos, and a
+record with no length can never be matched. `pending` is reserved for work
+genuinely still owed: an unreadable page or an unmarked censorship badge. It is
+retried and, until it clears, the lane reports `verifiedEmpty: false`; an
+incomplete walk fails the source rather than claiming it saw everything.
+
 ### Sync behaviour
 
 - One source failing does not stop the others; it becomes a run outcome with

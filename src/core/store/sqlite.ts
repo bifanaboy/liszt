@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import {
   DeadVideoLink,
+  Fc2Status,
   Scene,
   SourceStatus,
   VideoLink,
@@ -55,6 +56,28 @@ export interface PoolVideo {
    * default here would silently reorder the tiebreak it exists to serve.
    */
   views: number | null;
+}
+
+/**
+ * One FC2 listing candidate and the state of its last detail check.
+ *
+ * `status` is `'accepted' | 'excluded' | 'pending'`. Pending is the honest
+ * third state: fc2cmadb leaves the censorship badge unmarked on most records,
+ * and an unmarked badge is neither a yes nor a no.
+ */
+export interface Fc2Candidate {
+  videoId: string;
+  releaseDate: string;
+  status: Fc2Status;
+  verdict: string;
+  /** The accepted scene, cached so it can be re-emitted without a detail read. */
+  scene: Record<string, unknown> | null;
+  firstSeenAt: string;
+  checkedAt: string | null;
+  /** When an undecided record is due for another detail read; null once decided. */
+  recheckAt: string | null;
+  /** Set when pending work is abandoned; the row is kept for the audit trail. */
+  retiredAt: string | null;
 }
 
 interface SceneRow {
@@ -115,6 +138,9 @@ function linkRowToScene(row: SceneRow, linkRows: Record<string, unknown>[]): Sce
           url: link.url,
           verifiedAt: link.verified_at,
           verifyFailures: Number(link.verify_failures ?? 0),
+          // Absent for every lane but FC2, and absent on rows written before
+          // migration 0006. `optional` keeps both spellings out of the schema.
+          ...(link.part === null || link.part === undefined ? {} : { part: Number(link.part) }),
         },
         `store.link(${row.id})`,
       ),
@@ -288,8 +314,8 @@ export class SqliteStore {
       // handed over a stale set could resurrect a struck URL.
       this.db.prepare("DELETE FROM scene_links WHERE scene_id = ?").run(parsed.id);
       const insert = this.db.prepare(
-        `INSERT INTO scene_links (scene_id, kind, source, url, verified_at, verify_failures, dead_at, dead_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scene_links (scene_id, kind, source, url, verified_at, verify_failures, dead_at, dead_reason, part)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const link of parsed.videoUrls) {
         insert.run(
@@ -301,6 +327,7 @@ export class SqliteStore {
           link.verifyFailures,
           null,
           null,
+          link.part ?? null,
         );
       }
       for (const link of parsed.deadVideoUrls) {
@@ -313,8 +340,13 @@ export class SqliteStore {
     const grouped = new Map<string, Record<string, unknown>[]>();
     if (!sceneIds.length) return grouped;
     const placeholders = sceneIds.map(() => "?").join(",");
+    // The multipart column is added by migration 0006 and does not exist on a
+    // database that has not migrated yet, so the read names it explicitly.
     const rows = this.db
-      .prepare(`SELECT * FROM scene_links WHERE scene_id IN (${placeholders})`)
+      .prepare(
+        `SELECT scene_id, kind, source, url, verified_at, verify_failures, dead_at, dead_reason, part
+           FROM scene_links WHERE scene_id IN (${placeholders})`,
+      )
       .all(...sceneIds) as Record<string, unknown>[];
     for (const row of rows) {
       const key = String(row.scene_id);
@@ -773,6 +805,168 @@ export class SqliteStore {
   close(): void {
     this.db.close();
   }
+
+  // --------------------------------------------------------- fc2_candidates
+
+  /**
+   * Record listing sightings WITHOUT disturbing an existing decision.
+   *
+   * The listing walk runs every cycle and is cheap; the detail walk is slow and
+   * bounded, so it must not repeat work it already did. A whole-row upsert would
+   * do exactly that: a sync re-seeing an accepted record with no verdict yet
+   * computed would overwrite a decided row with the pending default. So an
+   * existing row keeps its status, verdict, cached scene and recheck schedule,
+   * and only the release date moves - because the site does correct dates, and a
+   * corrected date invalidates the cached scene, which is then re-checked rather
+   * than re-emitted from a stale classification.
+   */
+  noteFc2Sightings(
+    records: readonly { videoId: string; releaseDate: string }[],
+    seenAt: string,
+  ): void {
+    if (!records.length) return;
+    const insert = this.db.prepare(
+      `INSERT INTO fc2_candidates
+         (video_id, release_date, status, verdict, scene_json, first_seen_at, checked_at, recheck_at, retired_at)
+       VALUES (?, ?, 'pending', '', NULL, ?, NULL, NULL, NULL)
+       ON CONFLICT (video_id) DO UPDATE SET
+         release_date = excluded.release_date,
+         scene_json = CASE
+           WHEN fc2_candidates.release_date <> excluded.release_date THEN NULL
+           ELSE fc2_candidates.scene_json
+         END`,
+    );
+    this.transaction(() => {
+      for (const record of new Map(records.map((r) => [r.videoId, r])).values()) {
+        insert.run(record.videoId, record.releaseDate, seenAt);
+      }
+    });
+  }
+
+  /** Record one classifier decision, the next recheck, and the accepted scene. */
+  decideFc2Candidate(
+    videoId: string,
+    status: Fc2Status,
+    verdict: string,
+    {
+      checkedAt,
+      recheckAt = null,
+      scene = null,
+    }: { checkedAt: string; recheckAt?: string | null; scene?: Record<string, unknown> | null },
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO fc2_candidates
+           (video_id, release_date, status, verdict, scene_json, first_seen_at, checked_at, recheck_at, retired_at)
+         VALUES (?, '', ?, ?, ?, ?, ?, ?, NULL)
+         ON CONFLICT (video_id) DO UPDATE SET
+           status = excluded.status, verdict = excluded.verdict,
+           scene_json = COALESCE(excluded.scene_json, fc2_candidates.scene_json),
+           checked_at = excluded.checked_at, recheck_at = excluded.recheck_at,
+           retired_at = NULL`,
+      )
+      .run(
+        videoId,
+        status,
+        verdict,
+        scene ? JSON.stringify(scene) : null,
+        checkedAt,
+        checkedAt,
+        recheckAt,
+      );
+  }
+
+  fc2Candidate(videoId: string): Fc2Candidate | null {
+    const row = this.db.prepare("SELECT * FROM fc2_candidates WHERE video_id = ?").get(videoId) as
+      Record<string, unknown> | undefined;
+    return row ? rowToFc2Candidate(row) : null;
+  }
+
+  /** The state of every id asked about; ids with no row are absent. */
+  fc2Candidates(videoIds: readonly string[]): Map<string, Fc2Candidate> {
+    const out = new Map<string, Fc2Candidate>();
+    const unique = [...new Set(videoIds)];
+    for (let offset = 0; offset < unique.length; offset += 500) {
+      const chunk = unique.slice(offset, offset + 500);
+      const placeholders = chunk.map(() => "?").join(",");
+      const rows = this.db
+        .prepare(`SELECT * FROM fc2_candidates WHERE video_id IN (${placeholders})`)
+        .all(...chunk) as Record<string, unknown>[];
+      for (const row of rows) {
+        const candidate = rowToFc2Candidate(row);
+        out.set(candidate.videoId, candidate);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Undecided candidates whose recheck is due, oldest first.
+   *
+   * `recheck_at IS NULL` is the never-checked case and is always due, so both
+   * spellings are folded into one ordered scan. Ordering by `first_seen_at` is
+   * what makes bounded work FAIR rather than merely bounded: a run that stops
+   * after N checks must not keep spending them on the same rows forever.
+   */
+  fc2DueCandidates(now: Date, limit: number): Fc2Candidate[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM fc2_candidates
+           WHERE status = 'pending' AND retired_at IS NULL
+             AND (recheck_at IS NULL OR recheck_at <= ?)
+           ORDER BY first_seen_at ASC, video_id ASC
+           LIMIT ?`,
+      )
+      .all(now.toISOString(), Math.max(0, Math.floor(limit))) as Record<string, unknown>[];
+    return rows.map(rowToFc2Candidate);
+  }
+
+  /**
+   * Abandon pending work whose bounded recheck period has expired.
+   *
+   * The rows are KEPT, with the timestamp, because "we looked and the site still
+   * would not say" is a real fact about this candidate and deleting it would make
+   * the next sync pay for the same pages to rediscover it. They are excluded from
+   * the due queue and from the pending count, which is what stops an unanswerable
+   * record from blocking a verified-empty state forever.
+   */
+  retireFc2StalePending(now: Date): number {
+    return Number(
+      this.db
+        .prepare(
+          `UPDATE fc2_candidates SET retired_at = ?
+             WHERE status = 'pending' AND retired_at IS NULL
+               AND recheck_at IS NOT NULL AND recheck_at <= ?`,
+        )
+        .run(now.toISOString(), now.toISOString()).changes,
+    );
+  }
+
+  /** Drop candidates that have left the rolling window; nothing can revive them. */
+  deleteFc2CandidatesBefore(before: string): number {
+    return Number(
+      this.db.prepare("DELETE FROM fc2_candidates WHERE release_date < ?").run(before).changes,
+    );
+  }
+
+  /** Outstanding undecided work, so a source cannot claim verified-empty. */
+  countFc2Pending(): number {
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM fc2_candidates WHERE status = 'pending' AND retired_at IS NULL",
+      )
+      .get() as { n: number };
+    return row.n;
+  }
+
+  fc2CandidateCounts(): Record<Fc2Status, number> {
+    const rows = this.db
+      .prepare("SELECT status, COUNT(*) AS n FROM fc2_candidates GROUP BY status")
+      .all() as { status: Fc2Status; n: number }[];
+    const counts: Record<Fc2Status, number> = { accepted: 0, excluded: 0, pending: 0 };
+    for (const row of rows) if (row.status in counts) counts[row.status] = row.n;
+    return counts;
+  }
 }
 
 function rowToPoolVideo(row: Record<string, unknown>): PoolVideo {
@@ -789,5 +983,21 @@ function rowToPoolVideo(row: Record<string, unknown>): PoolVideo {
     // NULL rather than left undefined so the two "no count" spellings cannot
     // diverge in `rank`.
     views: row.views === null || row.views === undefined ? null : Number(row.views),
+  };
+}
+
+function rowToFc2Candidate(row: Record<string, unknown>): Fc2Candidate {
+  const scene = row.scene_json;
+  return {
+    videoId: String(row.video_id),
+    releaseDate: (row.release_date as string | null) ?? "",
+    status: String(row.status) as Fc2Status,
+    verdict: (row.verdict as string | null) ?? "",
+    scene:
+      typeof scene === "string" && scene ? (JSON.parse(scene) as Record<string, unknown>) : null,
+    firstSeenAt: String(row.first_seen_at),
+    checkedAt: (row.checked_at as string | null) ?? null,
+    recheckAt: (row.recheck_at as string | null) ?? null,
+    retiredAt: (row.retired_at as string | null) ?? null,
   };
 }

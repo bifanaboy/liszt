@@ -51,17 +51,45 @@ function adapter(
   };
 }
 
-function buildSync(store: SqliteStore, sources: SourceAdapter[], windowDays = 90) {
+function buildSync(
+  store: SqliteStore,
+  sources: SourceAdapter[],
+  windowDays = 90,
+  fetcher: HttpFetcher = new HttpFetcher(),
+) {
   return createSync({
     store,
     sources,
-    fetcher: new HttpFetcher(),
+    fetcher,
     clock: fixedClock(NOW),
     log: new NullLogger(),
     windowDays,
     fetchConcurrency: 2,
     lookups: { poolLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
+  });
+}
+
+/**
+ * A fetcher that fails every request.
+ *
+ * The FC2 lane now talks to a real site rather than throwing a named stub error,
+ * so the tests that care about its FAILURE BEHAVIOUR need a way to make the
+ * network fail without touching the network. `HttpFetcher` already turns any
+ * rejection into a `FetchError`, so denying the transport is enough.
+ */
+function offlineFetcher(): HttpFetcher {
+  const denied = {
+    fetch: async () => {
+      throw new Error("network disabled in tests");
+    },
+  };
+  return new Proxy(new HttpFetcher(), {
+    get(target, property) {
+      if (property === "fetch") return denied.fetch;
+      const value = Reflect.get(target, property) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
   });
 }
 
@@ -562,13 +590,16 @@ test("a tier-0 winner is recorded as LOW CONFIDENCE for eyeballing", async () =>
   store.close();
 });
 
-test("deferred lanes still produce ZERO links after the gate rewrite", async () => {
-  // A scope regression guard, not a target. madouqu and fc2cmadb keep
-  // `matcher: null`, and the gate rewrite must not have made either start
-  // linking - especially not by inferring eligibility from the data.
+test("a metadata-only lane produces ZERO links after the gate rewrite", async () => {
+  // A scope regression guard, not a target. madouqu keeps `matcher: null`, and
+  // the gate rewrite must not have made it start linking - especially not by
+  // inferring eligibility from the data.
+  //
+  // FC2 is NOT in this test any more. It stopped being a metadata-only stub when
+  // its lane was completed, and it is covered by the lane tests instead; leaving
+  // it here would assert a behaviour the app deliberately no longer has.
   const store = new SqliteStore(":memory:");
   store.migrate();
-  const { createFc2CmadbStudio } = await import("../src/sources/fc2cmadb.ts");
   let consulted = 0;
   const count = async (): Promise<PoolMatch> => {
     consulted += 1;
@@ -593,38 +624,39 @@ test("deferred lanes still produce ZERO links after the gate rewrite", async () 
   };
   const sync = buildResolvingSync(
     store,
-    [
-      createFc2CmadbStudio(),
-      adapter("madouqu", async () => ({ scenes: [raw("1")], verifiedEmpty: false }), null),
-    ],
+    [adapter("madouqu", async () => ({ scenes: [raw("1")], verifiedEmpty: false }), null)],
     { poolLookup: count },
   );
   const summary = await sync("test");
-  assert.equal(summary.matched, 0, "neither deferred lane linked");
-  assert.equal(summary.rejections.attempted, 0, "the ladder was never entered for them");
+  assert.equal(summary.matched, 0, "the metadata-only lane did not link");
+  assert.equal(summary.rejections.attempted, 0, "the ladder was never entered for it");
   assert.equal(consulted, 0, "no rung was even asked");
-  for (const id of ["fc2cmadb", "madouqu"]) {
-    const scene = store.getScene(`${id}:1`);
-    assert.equal(scene?.videoUrls.length ?? 0, 0, `${id} stayed unlinked`);
-  }
+  assert.equal(store.getScene("madouqu:1")?.videoUrls.length ?? 0, 0, "it stayed unlinked");
   store.close();
 });
 
-test("the fc2cmadb stub fails its lane cleanly without disturbing the others", async () => {
+test("the fc2cmadb lane fails cleanly when the site is unreachable", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
   const { createFc2CmadbStudio } = await import("../src/sources/fc2cmadb.ts");
-  const sync = buildSync(store, [
-    createFc2CmadbStudio(),
-    adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
-  ]);
+  const sync = buildSync(
+    store,
+    [
+      createFc2CmadbStudio({ sleep: async () => {} }),
+      adapter("good", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+    ],
+    90,
+    offlineFetcher(),
+  );
   const summary = await sync("test");
   const outcomes = new Map(summary.outcomes.map((entry) => [entry.source, entry]));
   assert.equal(outcomes.get("good")?.ok, true);
   assert.equal(summary.windowScenes, 1);
-  // The stub never reports a verified-empty result, so it cannot trip the
-  // suspicious-empty protection and delete a lane.
+  // An unreachable site throws rather than returning an empty result, so the lane
+  // cannot trip the suspicious-empty protection and delete a catalogue it simply
+  // failed to read.
   assert.equal(outcomes.get("fc2cmadb")?.ok, false);
+  assert.match(outcomes.get("fc2cmadb")?.error ?? "", /fc2cmadb|network/i);
   store.close();
 });
 

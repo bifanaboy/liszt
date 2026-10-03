@@ -33,6 +33,18 @@ the tube adapters, and `public/app.js` before updating either document.
   upload-date lag, then URL.
 - The resolver has **two rungs**: Eporner trusted pool, then sxyprn with verified
   post details. There is no third Eporner open-search rung.
+- FC2 is a **separate lane, not a rung**. It has no performer names, so the
+  identity gate does not apply. eporner is searched by the bare numeric release
+  id, admitted only on a **whole numeric token** (never a substring, never the
+  spellings `FC2` or `PPV`). Part numbers are all-or-nothing and require a single
+  uploader with pairwise distinct durations.
+- An FC2 candidate is `accepted`, `excluded`, or `pending`. **Excluded** means a
+  censorship badge, a safety or trans tag, a missing release date, a removed page,
+  or no playable duration — fc2cmadb carries image sets beside videos, so "no
+  duration" is a real shape of record, not a gap in the page. **Pending** is
+  reserved for work still owed (an unreadable page, an unmarked badge); it is
+  retried, and it holds `verifiedEmpty` at `false`. An incomplete walk fails the
+  source rather than claiming it saw everything.
 - If neither rung names a winner, the terminal fallback chooses the highest-view
   retained date-and-duration survivor across both tubes. It is a guess, always
   `confidence: "low"`. The UI labels it **LOW CONFIDENCE**; metadata-poor scenes

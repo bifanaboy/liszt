@@ -34,6 +34,7 @@ import type {
   SourceResult,
 } from "../sources/types.ts";
 import { resolveLinks, emptyRejections, type RungRejections } from "../tubes/resolve.ts";
+import type { Fc2Link } from "../tubes/fc2-eporner.ts";
 import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
 import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch } from "../tubes/sxyprn.ts";
@@ -205,6 +206,11 @@ export function normaliseScene(
 export interface SyncLookups {
   poolLookup: ((scene: MatchScene, now: Date) => Promise<PoolMatch | null>) | null;
   sxyprnLookup: ((scene: MatchScene) => Promise<SxyprnMatch[]>) | null;
+  /**
+   * The FC2 lane's own resolver, applied INSTEAD of both rungs to scenes of the
+   * FC2 source. Null leaves every scene on the shared ladder.
+   */
+  fc2Lookup?: ((code: string) => Promise<Fc2Link[]>) | null;
   /** Optional cap on scenes resolved per cycle. */
   limit?: number;
 }
@@ -441,6 +447,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           laneBySource.get(scene.sourceId) ?? { matcher: null, creatorStudio: false },
         poolLookup: options.lookups.poolLookup,
         sxyprnLookup: options.lookups.sxyprnLookup,
+        ...(options.lookups.fc2Lookup ? { fc2Lookup: options.lookups.fc2Lookup } : {}),
         log: options.log,
         ...(options.lookups.limit !== undefined ? { limit: options.lookups.limit } : {}),
         ...(progress

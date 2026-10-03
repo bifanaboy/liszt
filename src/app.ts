@@ -21,6 +21,7 @@ import { HttpFetcher } from "./core/fetcher.ts";
 import { JsonLogger } from "./core/logger.ts";
 import { SqliteStore } from "./core/store/sqlite.ts";
 import { createSources } from "./sources/registry.ts";
+import { createFc2EpornerResolver, type Fc2Link } from "./tubes/fc2-eporner.ts";
 import { systemClock } from "./sources/types.ts";
 import { createSync } from "./pipeline/sync.ts";
 import { createProgressTracker } from "./pipeline/progress.ts";
@@ -58,6 +59,13 @@ async function main(): Promise<void> {
   const sources = createSources({
     madouquApiBase: config.madouquApiBase,
     traxxxWatchlist: config.traxxxWatchlist,
+    store,
+    fc2: {
+      listingMinIntervalMs: config.fc2ListingMinIntervalMs,
+      detailMinIntervalMs: config.fc2DetailMinIntervalMs,
+      maxDetailChecksPerSync: config.fc2MaxDetailChecksPerSync,
+      recheckDays: config.fc2RecheckDays,
+    },
     ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
@@ -80,6 +88,11 @@ async function main(): Promise<void> {
         durationToleranceSec: config.matchDurationToleranceSec,
       })
     : null;
+  // The FC2 lane bypasses both rungs: it resolves by exact release code, not by
+  // performer evidence. Built here so its request pacing is one instance for the
+  // whole cycle rather than one per scene.
+  const fc2Eporner = createFc2EpornerResolver(fetcher);
+  const fc2Lookup = async (code: string): Promise<Fc2Link[]> => (await fc2Eporner(code)).links;
 
   // One tracker for the whole cycle, begun here because the pool index runs
   // BEFORE `createSync` and is the longest cold-start phase. It is the single
@@ -96,7 +109,7 @@ async function main(): Promise<void> {
     windowDays: config.windowDays,
     fetchConcurrency: config.fetchConcurrency,
     traxxx: { minIntervalMs: config.traxxxMinIntervalMs, cacheTtlMs: config.traxxxCacheTtlMs },
-    lookups: { poolLookup, sxyprnLookup },
+    lookups: { poolLookup, sxyprnLookup, fc2Lookup },
     progress,
   });
 
