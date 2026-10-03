@@ -57,9 +57,10 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     return elements.get(selector)!;
   };
   const timers = new Map<number, number>();
+  const callbacks = new Map<number, () => void>();
   let timerId = 0;
   const api = (await runInNewContext(
-    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render }; })()`,
+    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow }; })()`,
     {
       document: { querySelector: element, querySelectorAll: () => [], addEventListener() {} },
       Option: Element,
@@ -69,13 +70,18 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       sourceScenes,
       studioChoices,
       visibleSourceStatuses,
-      setTimeout: (_callback: unknown, delay: number) => {
+      setTimeout: (callback: () => void, delay: number) => {
         timers.set(++timerId, delay);
+        callbacks.set(timerId, callback);
         return timerId;
       },
-      clearTimeout: (id: number) => timers.delete(id),
+      clearTimeout: (id: number) => {
+        timers.delete(id);
+        callbacks.delete(id);
+      },
       setInterval: () => ++timerId,
       clearInterval() {},
+      requestAnimationFrame: (callback: () => void) => callback(),
     },
   )) as {
     renderProgress(snapshot: Snapshot): void;
@@ -83,8 +89,18 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     pollProgress(): Promise<void>;
     apply(data: unknown): void;
     render(): void;
+    showRow(): void;
   };
-  return { ...api, element, timers };
+  const runTimers = (delay: number) => {
+    for (const [id, scheduledDelay] of [...timers]) {
+      if (scheduledDelay !== delay) continue;
+      const callback = callbacks.get(id)!;
+      timers.delete(id);
+      callbacks.delete(id);
+      callback();
+    }
+  };
+  return { ...api, element, timers, runTimers };
 }
 
 const response = (body: unknown) => ({ ok: true, json: async () => body });
@@ -167,6 +183,21 @@ test("an active retry takes precedence over a previous failed run", async () => 
   assert.equal(app.element("#empty-title").textContent, "Building the catalogue…");
 });
 
+test("a completed catalogue response does not request the catalogue again", async () => {
+  let loads = 0;
+  const app = await dashboard(async () => {
+    loads += 1;
+    return response(catalogue);
+  });
+  app.applyProgress(active);
+
+  app.apply({ ...catalogue, refreshing: false, progress: active });
+  await settle();
+
+  assert.equal(loads, 1);
+  assert.equal(app.element("#empty-title").textContent, "No releases in the catalogue");
+});
+
 test("completion waits for the latest catalogue before showing rows or a final empty state", async () => {
   let loads = 0;
   let finishLoad!: (value: unknown) => void;
@@ -204,6 +235,80 @@ test("a failed completion fetch explains the stale empty snapshot and recovers o
   assert.equal(app.element("#empty-title").textContent, "Unable to load refreshed catalogue");
   await app.pollProgress();
   assert.equal(app.element("#empty-title").textContent, "No releases in the catalogue");
+});
+
+for (const [name, latestRun, expectedSummary] of [
+  ["success", { ok: true }, "Catalogue up to date"],
+  [
+    "source and resolver failures",
+    { ok: false, resolverHealth: { errored: 1 } },
+    "Source and resolver failures",
+  ],
+] as const) {
+  test(`a completed ${name} snapshot clears stale active progress`, async () => {
+    const app = await dashboard(async (url) =>
+      response(url === "/api/progress" ? { progress: active } : catalogue),
+    );
+    app.applyProgress({
+      ...active,
+      stage: "verifying",
+      link: { done: 25, total: 25, verifyDone: 14, verifyTotal: 25 },
+    } as Snapshot);
+    app.showRow();
+    assert.equal(app.element("#progress-row").hidden, false);
+
+    app.apply({
+      ...catalogue,
+      refreshing: false,
+      latestRun,
+      progress: {
+        ...active,
+        stage: "verifying",
+        link: { done: 25, total: 25, verifyDone: 14, verifyTotal: 25 },
+      },
+    });
+
+    assert.equal(app.element("#progress-row").hidden, true);
+    assert.equal(app.element("#refresh-state").textContent, expectedSummary);
+
+    await app.pollProgress();
+    app.runTimers(1200);
+    assert.equal(app.element("#progress-row").hidden, true);
+    assert.equal(app.element("#refresh").disabled, false);
+    assert.equal(app.element("#refresh-state").textContent, expectedSummary);
+    assert.deepEqual([...app.timers.values()], [20000]);
+  });
+}
+
+test("a new run remains visible after completion and a delayed snapshot of the completed run", async () => {
+  let progress = active;
+  const app = await dashboard(async (url) =>
+    response(url === "/api/progress" ? { progress } : catalogue),
+  );
+  app.applyProgress(active);
+  app.runTimers(1200);
+  app.applyProgress(idle);
+  await settle();
+  assert.equal(app.element("#progress-row").hidden, true);
+
+  await app.pollProgress();
+  app.runTimers(1200);
+  assert.equal(app.element("#progress-row").hidden, true);
+  assert.equal(app.element("#progress-live").textContent, "Refresh finished");
+
+  progress = { ...active, runId: "new-run", stage: "finishing" };
+  await app.pollProgress();
+  app.runTimers(1200);
+  assert.equal(app.element("#progress-row").hidden, false);
+  assert.equal(app.element("#refresh").disabled, true);
+  assert.equal(app.element("#overall-note").textContent, "Finishing up");
+  assert.equal(app.element("#progress-live").textContent, "Refresh started");
+
+  progress = active;
+  await app.pollProgress();
+  assert.equal(app.element("#progress-row").hidden, false);
+  assert.equal(app.element("#overall-note").textContent, "Finishing up");
+  assert.deepEqual([...app.timers.values()], [2000]);
 });
 
 test("HTML provides the empty-state text targets used by the dashboard", () => {
