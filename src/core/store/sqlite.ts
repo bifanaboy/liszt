@@ -586,17 +586,28 @@ export class SqliteStore {
    * instead would discard the entire working set, since the window can never be
    * evaluated without it. See `tubes/eporner-pool.ts`.
    *
-   * ORDERED AND CAPPED. The walk inserts newest-first, so `rowid` order IS
-   * newest-first - but that was an accident of SQLite's scan order with nothing
-   * asserting it, and `maxConsidered` in the rung silently assumed it. With no
-   * `ORDER BY` the rows arrived in whatever order the query plan produced, so
-   * the cap cut an arbitrary subset of the account rather than its oldest videos.
-   * `ORDER BY rowid` makes the claim explicit, and the cap bounds the scan in
-   * SQL rather than after materialising every undated row.
+   * ORDERED AND CAPPED, LEAST-RECENTLY-ATTEMPTED FIRST. The walk inserts
+   * newest-first, so `rowid` order IS newest-first - but that was an accident of
+   * SQLite's scan order with nothing asserting it, and `maxConsidered` in the
+   * rung silently assumed it. With no `ORDER BY` the rows arrived in whatever
+   * order the query plan produced, so the cap cut an arbitrary subset of the
+   * account rather than its oldest videos. `ORDER BY rowid` makes the claim
+   * explicit, and the cap bounds the scan in SQL rather than after materialising
+   * every undated row.
+   *
+   * `hydration_attempted_at` leads that order, as it already leads
+   * `poolVideosInWindow`. Ordering by rowid alone made this cap a FIXED window:
+   * the same newest 750 rows on every scene of every run, so an account holding
+   * more than that held identity-bearing candidates the bounded search could
+   * never reach - the least-recently-attempted fairness further down the rung
+   * rotated within the cut and never past it. SQLite sorts NULL first on ASC, so
+   * a never-attempted row still leads and the first pass keeps the newest; every
+   * pass after that rotates the examined rows behind the unattempted tail.
    */
   poolVideosUndated(uploader: string, limit?: number): PoolVideo[] {
     const sql =
-      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL ORDER BY rowid ASC" +
+      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL " +
+      "ORDER BY hydration_attempted_at ASC, rowid ASC" +
       (limit === undefined ? "" : " LIMIT ?");
     const rows = (
       limit === undefined

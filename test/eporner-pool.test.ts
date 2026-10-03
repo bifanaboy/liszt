@@ -305,6 +305,57 @@ test("the undated working set is ordered newest-first and capped in SQL", () => 
   }
 });
 
+test("the undated SQL cap rotates, so the rows it cut become reachable", () => {
+  // The undated working set is capped in SQL by `maxConsidered`, and ordering it
+  // by `rowid` alone made that cap a FIXED window: the same newest rows for every
+  // scene of every run. The fair rotation in the rung rotated *within* the cut
+  // and never past it, so an account holding more undated rows than the cap had
+  // identity-bearing candidates the bounded search could never examine, however
+  // many cycles ran.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      store.upsertPoolVideo({
+        id: `row${index}`,
+        uploader: "Vovick17",
+        title: `row${index}`,
+        added: null,
+        durationSec: 600,
+        hydratedAt: NOW.toISOString(),
+        views: null,
+      });
+    }
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["row0", "row1"],
+      "the first pass examines the newest rows, as before",
+    );
+
+    // A pass over the cut marks its rows, so they rotate behind the unattempted
+    // tail rather than being re-cut on every run.
+    store.markPoolHydrationAttempt("row0", "Vovick17", NOW.toISOString());
+    store.markPoolHydrationAttempt("row1", "Vovick17", new Date(NOW.getTime() + 1).toISOString());
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["row2", "row3"],
+      "the next pass examines rows the previous cap never reached",
+    );
+
+    // With everything attempted, the order is least-recently-attempted first, so
+    // the cut keeps moving instead of parking on one slice of the account.
+    store.markPoolHydrationAttempt("row2", "Vovick17", new Date(NOW.getTime() + 2).toISOString());
+    store.markPoolHydrationAttempt("row3", "Vovick17", new Date(NOW.getTime() + 3).toISOString());
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17").map((row) => row.id),
+      ["row0", "row1", "row2", "row3"],
+      "the longest-idle rows lead, so the cut cycles through the whole account",
+    );
+  } finally {
+    store.close();
+  }
+});
+
 test("a truncated re-walk never prunes by absence", async () => {
   // Prune-by-absence reads "not seen" as "deleted upstream". On a walk that
   // stopped early - past the window, past the watermark, a short page, or the
