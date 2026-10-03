@@ -24,7 +24,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          asked=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '[.[] | select(.body == "@coderabbitai autofix")] | length' | paste -sd+ - | bc)
+          asked=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '.[] | select(.body == "@coderabbitai autofix") | 1' | wc -l)
           if [ "$asked" -ge 1 ]; then
             echo "autofix already requested on #$PR, leaving later rounds to the Kilo fixer"
             exit 0
