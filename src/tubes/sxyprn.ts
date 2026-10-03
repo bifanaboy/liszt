@@ -268,13 +268,17 @@ export function createSxyprnLookup({
     // including unnamed survivors reserved for fallback. Conflating the two
     // would report a healthy source as dead whenever the filter rejected all.
     let verifiedPosts = 0;
+    const detailErrors: string[] = [];
     const verified: SxyprnMatch[] = [];
     for (let index = 0; index < slice.length; index += 1) {
       const item = slice[index] as TubeCandidate & { isExternal: boolean };
       const outcome = fetched[index];
       // A post we could not fetch is never exposed as playback, and is not
       // counted against the source: the ladder moves down instead.
-      if (!outcome || outcome.detail === null) continue;
+      if (!outcome || outcome.detail === null) {
+        if (outcome?.error) detailErrors.push((outcome.error as Error).message);
+        continue;
+      }
       const detail = outcome.detail;
       verifiedPosts += 1;
       // Verify the POST's own title, duration and date, not the search card's:
@@ -308,7 +312,16 @@ export function createSxyprnLookup({
         });
       }
     }
-    if (!verifiedPosts) throw new Error("sxyprn post verification unavailable");
+    // Keep WHY, the same way the search path does. A bare "unavailable" merged
+    // an upstream refusal, a network failure, a parser break and the deadline
+    // into one string, which is why this rung could not be diagnosed from the
+    // outside - and the deadline is the one worth separating, because it is the
+    // only kind the circuit breaker can put a bound on. Capped at three
+    // distinct reasons: the post URLs are never logged, and a runaway list is
+    // not a diagnosis anyone can read.
+    const reasons = [...new Set(detailErrors)].slice(0, 3).join("; ");
+    if (!verifiedPosts)
+      throw new Error(`sxyprn post verification unavailable${reasons ? `: ${reasons}` : ""}`);
     return verified;
   };
 }

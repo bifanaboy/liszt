@@ -173,6 +173,12 @@ A rung error lets the other rung run but contributes no fallback candidates;
 it is not recorded as a clean no-match. With no usable survivor the scene stays
 unlinked for a later cycle. Known-dead URLs are never re-added.
 
+A tube that keeps failing is held off by a circuit breaker rather than retried
+per release, so a broken source costs a bounded number of requests per cycle
+instead of one deadline per release. The break is reported separately from the
+failure that opened it, and each rung's failures are counted on their own, so a
+held-off tube is distinguishable in the logs from a live timeout.
+
 `/api/runs` stores resolver rejection counters separately from catalogue-source
 outcomes. A resolver outage therefore does not mark healthy catalogue polling
 as failed, and the dashboard reports resolver unavailability independently.
