@@ -110,14 +110,18 @@ problem or improvement, not a file name or implementation technique.
 
 Every issue must have exactly one label from each group:
 
-- Estimated agent token use: `cheap`, `fair`, or `expensive`. These are relative
-  planning estimates, not a promise of a bill or a fixed token count. Explain
-  uncertainty when it matters and revise the estimate when scope changes.
+- Urgency: `urgent` or `not urgent`. Judge how quickly the user-facing problem
+  needs attention.
 - Work type: `bug` or `feature`.
-- Effect on app functionality: `minor` or `major`. Judge the user-facing effect,
-  not the amount of code. A small fix can have a major effect.
+- User impact: `major` or `minor`. Judge the effect on users, not the amount of
+  code.
 
 Keep other useful labels. Do not use competing labels from the same group.
+Use the exact label `needs-intel` when more research is needed before the issue
+can describe a clear fix. It is an additional label, not a replacement for the
+three labels above. Remove it once the research is complete and the fix is
+clear. Treat the older `intel required` label as obsolete; replace it with
+`needs-intel` when an issue still needs research, or remove it when it does not.
 
 Use these sections, with as much detail as the work needs:
 
@@ -135,6 +139,14 @@ Use these sections, with as much detail as the work needs:
 
 An idea or research issue is not permission to implement it. Say when a spec
 needs more discussion or when development is deliberately deferred.
+
+Use GitHub's parent/sub-issue relationship to group existing issues only when a
+larger goal has clear, concrete child tasks. The parent describes the outcome;
+children describe work that directly contributes to it. A parent is complete
+when its children are complete and its own acceptance conditions are met. A
+parent/child link groups work but does not imply order. Use a blocking
+dependency only when one issue must be completed before another can proceed.
+Do not invent relationships or create a hierarchy for unrelated work.
 
 ## 6. Start clean and keep it simple
 
@@ -168,12 +180,29 @@ that deployment was not checked. Inspect the actual UI when a change is visual.
 
 Reconcile bugs with GitHub issues before filing:
 
+- File issues about Liszt's features and behavior. Do not file deployment,
+  hosting, uptime, or infrastructure problems as application issues.
 - Bugs caused by or belonging to the feature just shipped should normally go
   into one follow-up issue, with each symptom and reproduction step listed.
 - Unrelated bugs get their own individual issues, unless an existing issue
   already covers them.
 - Keep related and unrelated problems separate. Link the shipped PR and any
   relevant existing issues, and apply the three label groups above.
+
+## 8. Repository documentation and scheduled prompts
+
+- `README.md` is the user-facing guide to the app. Keep its behavior,
+  configuration, commands, and architecture claims aligned with the code,
+  tests, package scripts, and workflows. Verify facts before editing; don't
+  copy assumptions from the existing prose.
+- Treat deployment settings as a separate source of facts. `render.yaml` is
+  not the live service configuration; use only the verified deployment context
+  above or separately authorized read-only evidence for live claims.
+- Keep agent-only workflows out of the app guide. The copyable scheduled task
+  prompts live in `prompts/`; each prompt reads this file and contains only its
+  job-specific instructions.
+- A README audit may edit `README.md` only. Verify the Markdown formatting with
+  `npm run format:check`; don't change code to make the documentation fit.
 
 ## Persistence
 
