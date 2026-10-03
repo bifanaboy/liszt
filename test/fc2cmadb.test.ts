@@ -1192,3 +1192,43 @@ test("detail dates outside the window cannot be emitted fresh or from cache", as
     store.close();
   }
 });
+
+test("FC2 classification matches 60 independently checked detail pages", () => {
+  const baseline = JSON.parse(fixture("fc2-classification-baseline.json")) as {
+    records: {
+      videoId: string;
+      detailUrl: string;
+      title: string;
+      releaseDate: string;
+      duration: string | null;
+      censored: string | null;
+      notFound: boolean;
+      tags: string[];
+      expected: {
+        class: "qualifying" | "censored" | "excluded" | "ambiguous";
+        status: "accepted" | "excluded" | "pending";
+        reason: string;
+      };
+    }[];
+  };
+  const classes = new Set<string>();
+
+  assert.equal(baseline.records.length, 60);
+  assert.equal(new Set(baseline.records.map((record) => record.videoId)).size, 60);
+  for (const record of baseline.records) {
+    assert.match(record.detailUrl, new RegExp(`/articles/${record.videoId}$`));
+    const result = classifyFc2Candidate({
+      title: record.title,
+      releaseDate: record.releaseDate,
+      durationSec: parseClockDuration(record.duration),
+      censored: record.censored,
+      notFound: record.notFound,
+      tags: record.tags,
+    });
+    classes.add(record.expected.class);
+    assert.equal(result.status, record.expected.status, record.videoId);
+    assert.equal(result.verdict, record.expected.reason, record.videoId);
+  }
+
+  assert.deepEqual([...classes].sort(), ["ambiguous", "censored", "excluded", "qualifying"]);
+});
