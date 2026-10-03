@@ -94,6 +94,20 @@ export interface ResolveResult {
 }
 
 /**
+ * One winner, as the run ledger records it.
+ *
+ * The tier alone cannot say whether the ladder considered a scene or merely
+ * guessed at it. The terminal fallback reports whatever tier its survivor
+ * happened to earn, so a tier-0 winner and a fallback are the same observation
+ * from the tier's side, and `rung` is what separates a rung that NAMED the scene
+ * from the guess the ladder makes when no tube can.
+ */
+export interface Winner {
+  rung: Rung | "fallback";
+  tier: IdentityTier;
+}
+
+/**
  * Why each rung declined, accumulated across a run.
  *
  * The point is the "date unavailable for a whole rung" failure mode, which is
@@ -477,8 +491,8 @@ export async function resolveLinks({
   matched: number;
   considered: number;
   rejections: RungRejections;
-  /** The identity tier of every winner this run, for the tier histogram. */
-  tiers: IdentityTier[];
+  /** Which rung produced each winner, with its tier, for the run's own tally. */
+  winners: Winner[];
 }> {
   const eligible = scenes.filter((scene) => {
     if (matcherFor(scene).matcher === null) return false;
@@ -512,10 +526,15 @@ export async function resolveLinks({
     return result;
   });
   const byId = new Map(results.map((result) => [result.scene.id, result.scene]));
-  const tiers: IdentityTier[] = [];
+  const winners: Winner[] = [];
   const changed: Scene[] = [];
   for (const result of results) {
-    if (result.matched && result.tier !== null) tiers.push(result.tier);
+    // A matched scene always carries a rung: `"none"` is the metadata-only lane,
+    // which cannot have matched. Keeping the rung beside the tier is what lets the
+    // run row state a named match and a guess apart.
+    if (result.matched && result.tier !== null && result.rung && result.rung !== "none") {
+      winners.push({ rung: result.rung, tier: result.tier });
+    }
     if (result.changed) changed.push(result.scene);
   }
   return {
@@ -524,6 +543,6 @@ export async function resolveLinks({
     matched,
     considered: queue.length,
     rejections,
-    tiers,
+    winners,
   };
 }

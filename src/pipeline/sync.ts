@@ -33,12 +33,16 @@ import type {
   SourceLabel,
   SourceResult,
 } from "../sources/types.ts";
-import { resolveLinks, emptyRejections, type RungRejections } from "../tubes/resolve.ts";
+import {
+  resolveLinks,
+  emptyRejections,
+  type RungRejections,
+  type Winner,
+} from "../tubes/resolve.ts";
 import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
 import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
 import type { PoolMatch } from "../tubes/eporner-pool.ts";
-import type { IdentityTier } from "../core/matching.ts";
 import type { MatchScene } from "../tubes/types.ts";
 
 /** `YYYY-MM-DD` from a `Date`, in UTC. */
@@ -259,8 +263,8 @@ export interface SyncSummary {
   expired: number;
   /** Per-rung rejection counts, so a mis-tuned gate is visible in the log. */
   rejections: RungRejections;
-  /** Identity tier of each winner, for the tier histogram. */
-  tiers: IdentityTier[];
+  /** Which rung produced each winner, with its tier, for the winner split. */
+  winners: Winner[];
 }
 
 function sourceContext(
@@ -335,11 +339,11 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       });
       log.info("sync started", { runId, reason, window: { from, to } });
       const outcomes = await fanOut(from, now);
-      const { matched, resolved, reverified, rejections, tiers, expired, windowScenes } =
+      const { matched, resolved, reverified, rejections, winners, expired, windowScenes } =
         await linkAndTally(from, to, now);
       return tally(
         { runId, startedAt, from, to, endedAt: clock.now().toISOString(), outcomes, rejections },
-        { matched, resolved, reverified, expired, windowScenes, tiers },
+        { matched, resolved, reverified, expired, windowScenes, winners },
       );
     } catch (error) {
       // The counters stay where they stopped: a failed cycle should still be
@@ -426,7 +430,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     resolved: number;
     reverified: number;
     rejections: RungRejections;
-    tiers: IdentityTier[];
+    winners: Winner[];
     expired: number;
     windowScenes: Scene[];
   }> {
@@ -434,7 +438,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     let resolved = 0;
     let reverified = 0;
     const rejections = emptyRejections();
-    const tiers: IdentityTier[] = [];
+    const winners: Winner[] = [];
 
     if (resolveEnabled) {
       const before = store.listWindow(from, to);
@@ -465,7 +469,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       matched = resolution.matched;
       resolved = resolution.considered;
       Object.assign(rejections, resolution.rejections);
-      tiers.push(...resolution.tiers);
+      winners.push(...resolution.winners);
       for (const scene of resolution.changed) store.upsertScene(scene);
 
       const verify = createLinkVerifier({ fetcher });
@@ -515,7 +519,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             : (byLabelId.get(`${status.sourceId}:${status.labelId}`) ?? 0),
       });
     }
-    return { matched, resolved, reverified, rejections, tiers, expired, windowScenes };
+    return { matched, resolved, reverified, rejections, winners, expired, windowScenes };
   }
 
   /** Phase 4: close the ledger row and hand back the summary. */
@@ -535,11 +539,11 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       reverified: number;
       expired: number;
       windowScenes: Scene[];
-      tiers: IdentityTier[];
+      winners: Winner[];
     },
   ): SyncSummary {
     const { runId, startedAt, from, to, endedAt, outcomes, rejections } = run;
-    const { matched, resolved, reverified, expired, windowScenes, tiers } = counts;
+    const { matched, resolved, reverified, expired, windowScenes, winners } = counts;
     const ok = outcomes.every((outcome) => outcome.ok);
     const error = outcomes.find((outcome) => !outcome.ok)?.error ?? null;
     // Drained here, once, with the resolve stage over: the client is process-wide
@@ -548,6 +552,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     // whose counters describe the ladder as a whole and cannot be attributed to
     // one rung (#71). Flat, because `resolver_health` is read back as numbers.
     const sxyprnRequests = options.lookups.sxyprnRequests?.() ?? { search: 0, details: 0 };
+    const split = winnerSplit(winners);
     store.recordRun({
       id: runId,
       kind: "sync",
@@ -560,6 +565,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         ...rejections,
         sxyprnSearches: sxyprnRequests.search,
         sxyprnDetails: sxyprnRequests.details,
+        ...split,
       },
     });
     // The tier histogram and the rejection counts go in the log, not just the
@@ -577,7 +583,10 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       // The rung's cost in requests. Times the source's pacing floor, this is
       // how long the resolve stage had to take.
       sxyprnRequests,
-      tiers: tierHistogram(tiers),
+      // `matched` counts a named match and a guess alike, so this is the split
+      // that says how much of the headline number was actually identified.
+      winners: split,
+      tiers: tierHistogram(winners),
     });
 
     // The bar collapses here rather than waiting for the caller: the ledger row
@@ -597,14 +606,35 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       reverified,
       expired,
       rejections,
-      tiers,
+      winners,
     };
   }
 }
 
+/**
+ * Winners by provenance, so a run row can say what `matched` counted.
+ *
+ * `matched` is one number over two different things: a rung that NAMED the scene,
+ * and the terminal fallback's flagged guess when no tube could. Both are stored
+ * as links, so the headline figure reads the same either way, and the only way
+ * to tell them apart was to reconstruct it from other counters. These are the
+ * direct reading. `winnerFallback` is the guess count; the other two are the
+ * rungs' individual contributions, which nothing else on the row separates.
+ */
+function winnerSplit(winners: readonly Winner[]): Record<string, number> {
+  const split = { winnerPool: 0, winnerSxyprn: 0, winnerFallback: 0 };
+  for (const winner of winners) {
+    if (winner.rung === "fallback") split.winnerFallback += 1;
+    else if (winner.rung === "sxyprn") split.winnerSxyprn += 1;
+    else split.winnerPool += 1;
+  }
+  return split;
+}
+
 /** Winners per identity tier. A rising tier-0 share is the decoy signal. */
-function tierHistogram(tiers: readonly IdentityTier[]): Record<string, number> {
+function tierHistogram(winners: readonly Winner[]): Record<string, number> {
   const histogram: Record<string, number> = { "0": 0, "1": 0, "2": 0, "3": 0 };
-  for (const tier of tiers) histogram[String(tier)] = (histogram[String(tier)] ?? 0) + 1;
+  for (const winner of winners)
+    histogram[String(winner.tier)] = (histogram[String(winner.tier)] ?? 0) + 1;
   return histogram;
 }

@@ -218,6 +218,13 @@ rung's failures. Counting happens where the request is issued, so a call held
 off by the circuit breaker and a search answered from the in-memory cache both
 cost nothing and count as nothing.
 
+The rung's winners are also counted on the run row, split by where they came
+from: `winnerPool` and `winnerSxyprn` are the links each tube actually named, and
+`winnerFallback` is the number of flagged guesses. `matched` is one figure over
+both — a named match and a guess are both stored as links — so this split is what
+makes the headline number readable, and the dashboard shows the guess count on the
+same line as the truncation and request readings.
+
 The trusted pool searches a bounded number of candidates per scene, so a scene
 with more survivors than that budget is **truncated, not exhausted**. Those
 searches are counted as `incomplete`, never as a clean no-match: the candidates
