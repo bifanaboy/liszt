@@ -197,6 +197,9 @@ export function normaliseScene(
     fieldProvenance: raw.fieldProvenance ?? {},
     metadataPoor: raw.metadataPoor ?? false,
   };
+  for (const field of ["storeId", "launchDate", "previewUrl", "price"] as const) {
+    if (raw[field] !== undefined) candidate[field] = raw[field];
+  }
   if (raw.releaseUrl) candidate.releaseUrl = raw.releaseUrl;
   if (raw.studioCode) candidate.studioCode = raw.studioCode;
   return parseAtBoundary(Scene, candidate, `sync.scene(${id})`);
