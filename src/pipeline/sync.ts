@@ -30,6 +30,7 @@ import type {
   RawScene,
   SourceAdapter,
   SourceContext,
+  SourceLabel,
   SourceResult,
 } from "../sources/types.ts";
 import { resolveLinks, emptyRejections, type RungRejections } from "../tubes/resolve.ts";
@@ -52,6 +53,7 @@ function recordSourceSuccess(
   sceneCount: number,
   now: Date,
   windowDays: number,
+  labels: readonly SourceLabel[] = [],
 ): void {
   store.upsertSource({
     sourceId: adapter.id,
@@ -66,6 +68,24 @@ function recordSourceSuccess(
     lastError: null,
     sceneCount,
   });
+  for (const child of labels) {
+    // Never trust Traxxx's network URL here: observed payloads contain the
+    // literal string "!undefined". Child rows inherit the validated lane
+    // authority object verbatim instead.
+    store.upsertSource({
+      sourceId: adapter.id,
+      labelId: child.labelId,
+      name: adapter.name,
+      label: child.label,
+      authority: adapter.authority,
+      creatorStudio: adapter.creatorStudio ?? false,
+      windowDays,
+      matcher: adapter.matcher,
+      lastSuccessAt: now.toISOString(),
+      lastError: null,
+      sceneCount: child.sceneCount,
+    });
+  }
 }
 
 function recordSourceFailure(
@@ -74,9 +94,8 @@ function recordSourceFailure(
   message: string,
   windowDays: number,
 ): void {
-  const prior = store
-    .listSources()
-    .find((status) => status.sourceId === adapter.id && status.labelId === adapter.id);
+  const priorRows = store.listSources().filter((status) => status.sourceId === adapter.id);
+  const prior = priorRows.find((status) => status.labelId === adapter.id);
   store.upsertSource({
     sourceId: adapter.id,
     labelId: adapter.id,
@@ -92,6 +111,21 @@ function recordSourceFailure(
     lastError: message,
     sceneCount: prior?.sceneCount ?? 0,
   });
+  for (const child of priorRows.filter((status) => status.labelId !== adapter.id)) {
+    store.upsertSource({
+      sourceId: adapter.id,
+      labelId: child.labelId,
+      name: adapter.name,
+      label: child.label,
+      authority: adapter.authority,
+      creatorStudio: adapter.creatorStudio ?? false,
+      windowDays,
+      matcher: adapter.matcher,
+      lastSuccessAt: child.lastSuccessAt,
+      lastError: message,
+      sceneCount: child.sceneCount,
+    });
+  }
 }
 
 /**
@@ -331,19 +365,21 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           // One bulk read, not one per record: the stored links have to reach
           // `normaliseScene` so the metadata upsert preserves them.
           const existing = store.getScenesByIds(result.scenes.map((raw) => sceneKey(adapter, raw)));
-          for (const raw of result.scenes) {
-            try {
-              const previous = existing.get(sceneKey(adapter, raw));
-              store.upsertScene(normaliseScene(adapter, raw, now, previous));
-              count += 1;
-            } catch (error) {
-              log.warn("sync: skipped an invalid record", {
-                source: adapter.id,
-                error: (error as Error).message,
-              });
+          store.transaction(() => {
+            for (const raw of result.scenes) {
+              try {
+                const previous = existing.get(sceneKey(adapter, raw));
+                store.upsertScene(normaliseScene(adapter, raw, now, previous));
+                count += 1;
+              } catch (error) {
+                log.warn("sync: skipped an invalid record", {
+                  source: adapter.id,
+                  error: (error as Error).message,
+                });
+              }
             }
-          }
-          recordSourceSuccess(store, adapter, count, now, windowDays);
+            recordSourceSuccess(store, adapter, count, now, windowDays, result.labels);
+          });
           log.info("sync: source ok", {
             source: adapter.id,
             count,
@@ -442,9 +478,13 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     // Recompute per-source counts from the retained window so a source that
     // failed still shows its real in-window size rather than a stale number.
     const windowScenes = store.listWindow(from, to);
-    const counts = new Map<string, number>();
-    for (const scene of windowScenes)
-      counts.set(scene.sourceId, (counts.get(scene.sourceId) ?? 0) + 1);
+    const bySourceId = new Map<string, number>();
+    const byLabelId = new Map<string, number>();
+    for (const scene of windowScenes) {
+      bySourceId.set(scene.sourceId, (bySourceId.get(scene.sourceId) ?? 0) + 1);
+      const labelKey = `${scene.sourceId}:${scene.labelId}`;
+      byLabelId.set(labelKey, (byLabelId.get(labelKey) ?? 0) + 1);
+    }
     for (const status of store.listSources()) {
       store.upsertSource({
         sourceId: status.sourceId,
@@ -457,7 +497,10 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         matcher: status.matcher,
         lastSuccessAt: status.lastSuccessAt,
         lastError: status.lastError,
-        sceneCount: counts.get(status.sourceId) ?? 0,
+        sceneCount:
+          status.labelId === status.sourceId
+            ? (bySourceId.get(status.sourceId) ?? 0)
+            : (byLabelId.get(`${status.sourceId}:${status.labelId}`) ?? 0),
       });
     }
     return { matched, resolved, reverified, rejections, tiers, expired, windowScenes };

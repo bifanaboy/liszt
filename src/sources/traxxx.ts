@@ -94,6 +94,41 @@ export interface TraxxxScenePage {
   scenes: TraxxxSceneRecord[];
   total: number;
   limit: number;
+  roster: Array<{ slug: string; name: string; count: number }>;
+}
+
+export function parseRoster(body: unknown): Array<{ slug: string; name: string; count: number }> {
+  if (!body || typeof body !== "object") return [];
+  const entries = (body as { aggChannels?: unknown }).aggChannels;
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const value = entry as { slug?: unknown; name?: unknown; count?: unknown };
+    const slug = typeof value.slug === "string" ? value.slug.trim() : "";
+    if (!slug) return [];
+    const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : slug;
+    const parsedCount = Number(value.count);
+    const count = Number.isFinite(parsedCount) && parsedCount >= 0 ? Math.floor(parsedCount) : 0;
+    return [{ slug, name, count }];
+  });
+}
+
+export function recordChannel(
+  record: TraxxxSceneRecord,
+  fallbackSlug: string,
+  fallbackName: string,
+): { slug: string; name: string } {
+  const slug =
+    typeof record.channel?.slug === "string" && record.channel.slug.trim()
+      ? record.channel.slug.trim()
+      : fallbackSlug;
+  const name =
+    typeof record.channel?.name === "string" && record.channel.name.trim()
+      ? record.channel.name.trim()
+      : slug === fallbackSlug
+        ? fallbackName
+        : slug;
+  return { slug, name };
 }
 
 /** The `date` field is serialised as `!Date:<iso>`; a bare ISO also parses. */
@@ -163,11 +198,22 @@ function releaseUrlFor(record: TraxxxSceneRecord, sourceSceneId: string): string
  */
 export function parseTraxxxScene(
   record: TraxxxSceneRecord,
-  { sourceUrl = SCENES_URL }: { sourceUrl?: string } = {},
+  {
+    sourceUrl = SCENES_URL,
+    kind,
+    laneSlug = "",
+    laneName = "",
+  }: {
+    sourceUrl?: string;
+    kind?: TraxxxEntityKind;
+    laneSlug?: string;
+    laneName?: string;
+  } = {},
 ): RawScene {
   const sourceSceneId = record?.id === undefined || record?.id === null ? "" : String(record.id);
   if (!sourceSceneId || !record.title) throw new Error("traxxx scene is missing its ID or title");
   const releaseUrl = releaseUrlFor(record, sourceSceneId);
+  const studio = kind === "network" ? recordChannel(record, laneSlug, laneName) : null;
   return {
     sourceSceneId,
     title: String(record.title).trim(),
@@ -179,6 +225,7 @@ export function parseTraxxxScene(
     tags: tagNames(record.tags),
     source: "traxxx.me",
     provenance: { source: "traxxx.me", sourceUrl, recordUrl: releaseUrl, sourceSceneId },
+    ...(studio ? { studioId: studio.slug, studio: studio.name } : {}),
   };
 }
 
@@ -227,11 +274,14 @@ export interface TraxxxClient {
     slug: string,
     page: number,
     limit?: number,
+    filters?: { tags?: readonly string[] },
   ): Promise<TraxxxScenePage>;
   /** Pull one scene by numeric id. Returns null when the id does not exist. */
   getScene(id: string | number): Promise<TraxxxSceneRecord | null>;
   /** The unfiltered scene total, used to detect a silently-ignored filter. */
   unfilteredTotal(): Promise<number>;
+  /** The same entity without tag filters, used to detect dropped tags. */
+  entityTotal(kind: TraxxxEntityKind, slug: string): Promise<number>;
 }
 
 /** A politeness-bounded, caching traxxx client. One per run keeps pacing local. */
@@ -307,11 +357,13 @@ export function createTraxxxClient(
     slug: string,
     pageNumber: number,
     limit: number,
+    filters: { tags?: readonly string[] } = {},
   ): Promise<TraxxxScenePage> {
     const url = new URL(SCENES_URL);
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("page", String(pageNumber));
     url.searchParams.set("e", entityFilter(kind, slug));
+    if (filters.tags?.length) url.searchParams.set("tags", filters.tags.join(","));
     return cached(url.href, async () => {
       const body = (await requestJson(url.href)) as {
         scenes?: unknown;
@@ -325,16 +377,28 @@ export function createTraxxxClient(
         scenes: body.scenes as TraxxxSceneRecord[],
         total: requiredCount(body.total, "total"),
         limit: optionalCount(body.limit) ?? limit,
+        roster: parseRoster(body),
       } satisfies TraxxxScenePage;
     });
   }
 
   return {
-    listScenes: (kind, slug, pageNumber, limit = PAGE_LIMIT) => page(kind, slug, pageNumber, limit),
+    listScenes: (kind, slug, pageNumber, limit = PAGE_LIMIT, filters = {}) =>
+      page(kind, slug, pageNumber, limit, filters),
     unfilteredTotal: () =>
       cached("unfiltered", async () => {
         const url = new URL(SCENES_URL);
         url.searchParams.set("limit", "1");
+        const body = (await requestJson(url.href)) as { total?: unknown } | null;
+        if (!body || typeof body !== "object")
+          throw new Error("traxxx returned an invalid response");
+        return requiredCount(body.total, "total");
+      }),
+    entityTotal: (kind, slug) =>
+      cached(`entity-total:${kind}:${slug}`, async () => {
+        const url = new URL(SCENES_URL);
+        url.searchParams.set("limit", "1");
+        url.searchParams.set("e", entityFilter(kind, slug));
         const body = (await requestJson(url.href)) as { total?: unknown } | null;
         if (!body || typeof body !== "object")
           throw new Error("traxxx returned an invalid response");
@@ -360,12 +424,18 @@ export async function assertFilterApplies(
   kind: TraxxxEntityKind,
   slug: string,
   limit = PAGE_LIMIT,
+  tags: readonly string[] = [],
 ): Promise<TraxxxScenePage> {
-  const [firstPage, unfiltered] = await Promise.all([
-    client.listScenes(kind, slug, 1, limit),
-    client.unfilteredTotal(),
+  const [firstPage, baseline] = await Promise.all([
+    client.listScenes(kind, slug, 1, limit, { tags }),
+    tags.length ? client.entityTotal(kind, slug) : client.unfilteredTotal(),
   ]);
-  if (unfiltered > 0 && firstPage.total === unfiltered) {
+  if (baseline > 0 && firstPage.total === baseline) {
+    if (tags.length) {
+      throw new Error(
+        `traxxx tag filter ${tags.join(",")} for ${entityFilter(kind, slug)} was ignored`,
+      );
+    }
     throw new Error(
       `traxxx entity filter ${entityFilter(kind, slug)} matched nothing (fell back to the full index)`,
     );
@@ -380,6 +450,8 @@ export interface TraxxxStudioOptions {
   kind: TraxxxEntityKind;
   /** The traxxx slug, e.g. `lancelotstyles` or `vixen` (for a network). */
   slug: string;
+  /** Optional tag slugs supplied by a validated watchlist URL. */
+  tags?: readonly string[];
   creatorStudio?: boolean;
 }
 
@@ -395,7 +467,7 @@ function withinWindow(releaseDate: string, windowStart: string, now: Date): bool
  * sync stays bounded by the window even though the API exposes no date filter.
  */
 export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter {
-  const { id, name, kind, slug, creatorStudio = false } = options;
+  const { id, name, kind, slug, tags = [], creatorStudio = false } = options;
   const filter = entityFilter(kind, slug);
   const authorityUrl = `${SCENES_URL}?e=${encodeURIComponent(filter)}`;
   return {
@@ -406,30 +478,60 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
     creatorStudio,
     async fetch(windowStart, ctx): Promise<SourceResult> {
       const client = createTraxxxClient(ctx);
-      let pageResult = await assertFilterApplies(client, kind, slug);
+      let pageResult = await assertFilterApplies(client, kind, slug, PAGE_LIMIT, tags);
       const scenes: RawScene[] = [];
+      let recordsSeen = 0;
+      let filtered = 0;
+      const labels = pageResult.roster.map((entry) => ({
+        labelId: entry.slug,
+        label: entry.name,
+        sceneCount: entry.count,
+      }));
       for (let page = 1; page <= MAX_PAGES; page += 1) {
         const { scenes: records, limit } = pageResult;
         if (!records.length) break;
-        let pageHasRecent = false;
+        let reachedWindowBoundary = false;
         for (const record of records) {
+          recordsSeen += 1;
           // Second line of defence: a leaked record never lands, even if the
           // total-count guard somehow passed.
           if (!sceneMatchesEntity(record, kind, slug)) {
+            filtered += 1;
             ctx.log(`traxxx: ${filter} page ${page} returned a foreign record`, {
               id: record?.id,
             });
             continue;
           }
-          const parsed = parseTraxxxScene(record, { sourceUrl: authorityUrl });
-          if (!withinWindow(parsed.releaseDate, windowStart, ctx.now)) continue;
-          pageHasRecent = true;
+          const parsed = parseTraxxxScene(record, {
+            sourceUrl: authorityUrl,
+            kind,
+            laneSlug: slug,
+            laneName: name,
+          });
+          if (parsed.releaseDate && parsed.releaseDate < windowStart) {
+            filtered += 1;
+            reachedWindowBoundary = true;
+            continue;
+          }
+          if (!withinWindow(parsed.releaseDate, windowStart, ctx.now)) {
+            filtered += 1;
+            continue;
+          }
           scenes.push(parsed);
         }
-        if (!pageHasRecent || records.length < limit) break;
-        pageResult = await client.listScenes(kind, slug, page + 1);
+        if (reachedWindowBoundary || records.length < limit) break;
+        pageResult = await client.listScenes(kind, slug, page + 1, PAGE_LIMIT, { tags });
       }
-      return { scenes, verifiedEmpty: scenes.length === 0 };
+      ctx.log("traxxx: lane complete", {
+        records: recordsSeen,
+        emitted: scenes.length,
+        filtered,
+      });
+      return {
+        scenes,
+        verifiedEmpty: scenes.length === 0,
+        ...(kind === "network" ? { labels } : {}),
+      };
     },
   };
 }
