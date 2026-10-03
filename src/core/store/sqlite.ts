@@ -695,6 +695,14 @@ export class SqliteStore {
       .run(scannedAt, id, uploader);
   }
 
+  /** Latest scan or hydration attempt, including rows that now have a date. */
+  latestPoolProgressAt(): string | null {
+    const row = this.db
+      .prepare("SELECT MAX(undated_scanned_at) AS progress_at FROM pool_videos")
+      .get() as { progress_at: string | null };
+    return row.progress_at;
+  }
+
   /** The incremental watermark: the newest upload date seen for an uploader. */
   poolWatermark(uploader: string): string | null {
     const row = this.db
