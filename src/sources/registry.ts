@@ -4,14 +4,15 @@
  *
  * The four categories, in full:
  *
- *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, Tushy. No auth, and
- *                   traxxx replaced TPDB entirely.
+ *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, plus the checked
+ *                   watchlist. No auth, and traxxx replaced TPDB entirely.
  *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
  *                   (traxxx measures no scenes for it; listing is configured).
  *  3. fc2cmadb.com - a named stub. Its interface is unconfirmed.
  *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
  */
 import { createTraxxxStudio } from "./traxxx.ts";
+import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
 import { createFc2CmadbStudio } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
@@ -32,15 +33,11 @@ export const mamboPerv = createTraxxxStudio({
   slug: "mamboperv",
 });
 
-export const tushy = createTraxxxStudio({
-  id: "tushy",
-  name: "Tushy",
-  kind: "channel",
-  slug: "tushy",
-});
+export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze(["tushy"]);
 
 export interface RegistryOptions {
   madouquApiBase: string;
+  traxxxWatchlist: readonly string[];
   /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
   maximoListingUrl?: string | undefined;
   /** Hosts the Maximo listing and its video pages may live on. */
@@ -50,6 +47,7 @@ export interface RegistryOptions {
 /** The complete set of adapters run by the sync, in a stable order. */
 export function createSources({
   madouquApiBase,
+  traxxxWatchlist,
   maximoListingUrl,
   maximoAllowedHosts = [
     "sexlikereal.com",
@@ -61,7 +59,7 @@ export function createSources({
   return [
     lancelotStylesEvolution,
     mamboPerv,
-    tushy,
+    ...createTraxxxWatchlistStudios(traxxxWatchlist),
     createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
     createBangOriginalsStudio(),
     createFc2CmadbStudio(),

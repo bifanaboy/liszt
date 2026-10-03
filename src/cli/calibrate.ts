@@ -66,14 +66,15 @@ import {
   type TubeCandidate,
 } from "../core/matching.ts";
 import { createSources } from "../sources/registry.ts";
+import { createTraxxxLaneIds } from "../sources/traxxx-watchlist.ts";
 import { gatherPoolSurvivors, indexPool, type PoolSurvivors } from "../tubes/eporner-pool.ts";
 import { normaliseScene, dateOnly } from "../pipeline/sync.ts";
 import { buildMatchScene } from "../tubes/resolve.ts";
 import type { MatchScene, Rung } from "../tubes/types.ts";
 import type { Scene } from "../core/schema.ts";
 
-/** The traxxx lanes: the only lanes with measured trusted-pool coverage. */
-const TRAXXX_LANE_IDS = new Set(["lancelot-styles-evolution", "mambo-perv", "tushy"]);
+/** Retained fixed Traxxx lanes; configured watchlist lanes are added at runtime. */
+const LEGACY_TRAXXX_LANE_IDS = ["lancelot-styles-evolution", "mambo-perv"];
 
 const DAY_MS = 86_400_000;
 
@@ -263,10 +264,15 @@ async function main(): Promise<void> {
       });
     }
 
+    const traxxxLaneIds = new Set([
+      ...LEGACY_TRAXXX_LANE_IDS,
+      ...createTraxxxLaneIds(config.traxxxWatchlist),
+    ]);
     const sources = createSources({
       madouquApiBase: config.madouquApiBase,
+      traxxxWatchlist: config.traxxxWatchlist,
       ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
-    }).filter((adapter) => TRAXXX_LANE_IDS.has(adapter.id));
+    }).filter((adapter) => traxxxLaneIds.has(adapter.id));
     const windowStart = dateOnly(new Date(now.getTime() - config.windowDays * DAY_MS));
 
     const matchScenes: MatchScene[] = [];

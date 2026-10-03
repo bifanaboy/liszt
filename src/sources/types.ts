@@ -68,6 +68,12 @@ export interface SourceContext {
 }
 
 /** The result of one source fetch. */
+export interface SourceLabel {
+  labelId: string;
+  label: string;
+  sceneCount: number;
+}
+
 export interface SourceResult {
   scenes: RawScene[];
   /**
@@ -76,6 +82,8 @@ export interface SourceResult {
    * fails the run, which keeps the source's last-good records.
    */
   verifiedEmpty: boolean;
+  /** Child labels emitted by one parent polling lane. */
+  labels?: SourceLabel[];
 }
 
 /**

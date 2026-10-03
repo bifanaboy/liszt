@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { createSync, dateOnly, normaliseScene, type SyncLookups } from "../src/pipeline/sync.ts";
 import { createSingleFlight } from "../src/pipeline/scheduler.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
+import { RETIRED_SOURCE_IDS } from "../src/sources/registry.ts";
 import { NullLogger } from "../src/core/logger.ts";
 import { HttpFetcher } from "../src/core/fetcher.ts";
 import { fixedClock } from "../src/sources/types.ts";
@@ -109,6 +110,117 @@ test("source health stores the configured global window on success and failure",
   const sources = new Map(store.listSources().map((entry) => [entry.sourceId, entry]));
   assert.equal(sources.get("madouqu")?.windowDays, 37);
   assert.equal(sources.get("broken")?.windowDays, 37);
+  store.close();
+});
+
+test("one network lane writes child health rows with label-specific final counts", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const sync = buildSync(store, [
+    adapter("vixen-anal", async () => ({
+      scenes: [
+        raw("1", { studioId: "tushy", studio: "Tushy" }),
+        raw("2", { studioId: "blacked", studio: "Blacked" }),
+      ],
+      verifiedEmpty: false,
+      labels: [
+        { labelId: "tushy", label: "Tushy", sceneCount: 100 },
+        { labelId: "blacked", label: "Blacked", sceneCount: 200 },
+      ],
+    })),
+  ]);
+
+  await sync("test");
+  const statuses = new Map(
+    store.listSources().map((status) => [status.sourceId + ":" + status.labelId, status]),
+  );
+  assert.equal(statuses.size, 3);
+  assert.equal(statuses.get("vixen-anal:vixen-anal")?.sceneCount, 2);
+  assert.equal(statuses.get("vixen-anal:tushy")?.sceneCount, 1);
+  assert.equal(statuses.get("vixen-anal:blacked")?.sceneCount, 1);
+  assert.deepEqual(
+    statuses.get("vixen-anal:tushy")?.authority,
+    statuses.get("vixen-anal:vixen-anal")?.authority,
+  );
+  assert.equal(
+    statuses.get("vixen-anal:tushy")?.lastSuccessAt,
+    statuses.get("vixen-anal:vixen-anal")?.lastSuccessAt,
+  );
+  store.close();
+});
+
+test("a failing network lane stamps its existing child rows and keeps their counts", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let healthy = true;
+  const sync = buildSync(store, [
+    adapter("vixen-anal", async () => {
+      if (!healthy) throw new Error("traxxx unavailable");
+      return {
+        scenes: [raw("1", { studioId: "tushy", studio: "Tushy" })],
+        verifiedEmpty: false,
+        labels: [{ labelId: "tushy", label: "Tushy", sceneCount: 1 }],
+      };
+    }),
+  ]);
+  await sync("first");
+  healthy = false;
+  await sync("second");
+
+  const child = store
+    .listSources()
+    .find((status) => status.sourceId === "vixen-anal" && status.labelId === "tushy");
+  assert.match(child?.lastError ?? "", /traxxx unavailable/);
+  assert.equal(child?.sceneCount, 1);
+  assert.ok(child?.lastSuccessAt);
+  store.close();
+});
+
+test("scene and child health writes are atomic for one lane", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const upsertSource = store.upsertSource.bind(store);
+  store.upsertSource = (status) => {
+    if (status.labelId === "tushy") throw new Error("child health write failed");
+    upsertSource(status);
+  };
+  const sync = buildSync(store, [
+    adapter("vixen-anal", async () => ({
+      scenes: [raw("1", { studioId: "tushy", studio: "Tushy" })],
+      verifiedEmpty: false,
+      labels: [{ labelId: "tushy", label: "Tushy", sceneCount: 1 }],
+    })),
+  ]);
+
+  const summary = await sync("test");
+  assert.equal(summary.outcomes[0]?.ok, false);
+  assert.equal(store.getScene("vixen-anal:tushy:1"), null);
+  store.close();
+});
+
+test("explicit retirement prunes only named source ids and keeps a failing active lane", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let activeFails = false;
+  const sync = buildSync(store, [
+    adapter("tushy", async () => ({ scenes: [raw("old")], verifiedEmpty: false })),
+    adapter("active", async () => {
+      if (activeFails) throw new Error("temporary outage");
+      return { scenes: [raw("current")], verifiedEmpty: false };
+    }),
+  ]);
+  await sync("healthy");
+  activeFails = true;
+  await sync("outage");
+
+  assert.equal(store.pruneScenesForUnknownSources(RETIRED_SOURCE_IDS), 1);
+  assert.equal(store.getScene("tushy:old"), null);
+  assert.ok(store.getScene("active:current"));
+  assert.deepEqual(
+    store.listSources().map((status) => status.sourceId),
+    ["active"],
+  );
+  assert.match(store.listSources()[0]?.lastError ?? "", /temporary outage/);
   store.close();
 });
 

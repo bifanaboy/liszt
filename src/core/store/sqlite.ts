@@ -133,6 +133,7 @@ function linkRowToScene(row: SceneRow, linkRows: Record<string, unknown>[]): Sce
 
 export class SqliteStore {
   private readonly db: DatabaseSync;
+  private transactionDepth = 0;
 
   constructor(path: string) {
     // The parent directory is created here rather than left to the platform's
@@ -199,7 +200,15 @@ export class SqliteStore {
 
   /** Run `body` inside one transaction, rolling back on any throw. */
   transaction<T>(body: () => T): T {
+    // Repository methods such as `upsertScene` own their small transaction so
+    // they stay atomic when called directly. A caller may also group several
+    // repository writes into one larger unit; in that case the outermost
+    // transaction owns COMMIT/ROLLBACK and nested calls simply join it.
+    if (this.transactionDepth > 0) {
+      return body();
+    }
     this.db.exec("BEGIN IMMEDIATE");
+    this.transactionDepth += 1;
     try {
       const value = body();
       this.db.exec("COMMIT");
@@ -207,6 +216,8 @@ export class SqliteStore {
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.transactionDepth -= 1;
     }
   }
 
@@ -365,6 +376,21 @@ export class SqliteStore {
       for (const { id } of rows) remove.run(id);
     });
     return rows.map((row) => row.id);
+  }
+
+  /** Remove catalogue and health rows for an explicit set of retired lanes. */
+  pruneScenesForUnknownSources(sourceIds: readonly string[]): number {
+    const retired = [...new Set(sourceIds)];
+    if (!retired.length) return 0;
+    const placeholders = retired.map(() => "?").join(", ");
+    return this.transaction(() => {
+      const scenes = Number(
+        this.db.prepare(`DELETE FROM scenes WHERE source_id IN (${placeholders})`).run(...retired)
+          .changes,
+      );
+      this.db.prepare(`DELETE FROM sources WHERE source_id IN (${placeholders})`).run(...retired);
+      return scenes;
+    });
   }
 
   upsertSource(status: {

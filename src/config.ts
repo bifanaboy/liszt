@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { DEFAULT_FETCH_CONCURRENCY } from "./core/concurrency.ts";
 import { DEFAULT_TIMEOUT_MS } from "./core/fetcher.ts";
+import { TRAXXX_WATCHLIST } from "./sources/traxxx-watchlist.ts";
 
 /** The default trusted pool. Hand-curated; trust is never inferred. */
 export const DEFAULT_TRUSTED_UPLOADERS = Object.freeze([
@@ -69,6 +70,7 @@ export const Config = z.object({
   /** Minimum spacing between traxxx.me requests, and its per-run cache TTL. */
   traxxxMinIntervalMs: z.coerce.number().int().nonnegative().default(250),
   traxxxCacheTtlMs: z.coerce.number().int().positive().default(300_000),
+  traxxxWatchlist: z.array(z.string().min(1)).default([...TRAXXX_WATCHLIST]),
   madouquApiBase: z.string().url().default(DEFAULT_MADOUQU_API_BASE),
   /** Unset: the Maximo Garcia lane reports "not configured" and stays calm. */
   maximoListingUrl: z.string().url().optional(),
@@ -174,6 +176,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sxyprnTimeoutMs: env.LISZT_SXYPRN_TIMEOUT_MS,
     traxxxMinIntervalMs: env.LISZT_TRAXXX_MIN_INTERVAL_MS,
     traxxxCacheTtlMs: env.LISZT_TRAXXX_CACHE_TTL_MS,
+    traxxxWatchlist: list(env.LISZT_TRAXXX_WATCHLIST),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
     maximoListingUrl: optionalValue(env.LISZT_MAXIMO_LISTING_URL),
     trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),

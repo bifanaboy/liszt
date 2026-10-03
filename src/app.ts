@@ -57,6 +57,7 @@ async function main(): Promise<void> {
   const fetcher = new HttpFetcher(config.fetchTimeoutMs);
   const sources = createSources({
     madouquApiBase: config.madouquApiBase,
+    traxxxWatchlist: config.traxxxWatchlist,
     ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
