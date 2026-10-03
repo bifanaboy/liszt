@@ -3,9 +3,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { sourceScenes, studioChoices, visibleSourceStatuses } from "../public/source-health.js";
+import {
+  ASIAN_CATALOGUE,
+  MAIN_CATALOGUE,
+  catalogueId,
+  catalogueScenes,
+  catalogueStats,
+  inCatalogue,
+} from "../public/catalogues.js";
 
+// Every `import ... from "./x.js";` block is dropped, not just the first one: a
+// leftover import is a SyntaxError inside the VM, which would fail the whole
+// dashboard suite rather than one case. The bindings they named are supplied as
+// context globals below, which is also what proves the app only uses the
+// exported surface.
 const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8").replace(
-  /^import[\s\S]*?from "\.\/source-health\.js";\n/,
+  /^import[\s\S]*?from "\.\/[^"]+";\n/gm,
   "",
 );
 
@@ -45,7 +58,7 @@ const idle: Snapshot = { active: false, stage: "idle" };
 const active: Snapshot = { active: true, stage: "populating", runId: "test" };
 const catalogue = { scenes: [], sources: [], progress: idle, latestRun: { ok: true } };
 
-async function dashboard(fetch: (url: string) => Promise<unknown>) {
+async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
   const elements = new Map<string, Element>();
   const element = (selector: string) => {
     if (!elements.has(selector)) {
@@ -56,13 +69,21 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     }
     return elements.get(selector)!;
   };
+  const listeners = new Map<string, (event: unknown) => void>();
   const timers = new Map<number, number>();
   const callbacks = new Map<number, () => void>();
   let timerId = 0;
   const api = (await runInNewContext(
-    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow }; })()`,
+    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow, selectCatalogue }; })()`,
     {
-      document: { querySelector: element, querySelectorAll: () => [], addEventListener() {} },
+      document: {
+        querySelector: element,
+        querySelectorAll: () => [],
+        addEventListener(name: string, handler: (event: unknown) => void) {
+          listeners.set(name, handler);
+        },
+      },
+      location: { hash },
       Option: Element,
       fetch,
       renderSourceHealthSummary: () => "",
@@ -70,6 +91,12 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       sourceScenes,
       studioChoices,
       visibleSourceStatuses,
+      ASIAN_CATALOGUE,
+      MAIN_CATALOGUE,
+      catalogueId,
+      catalogueScenes,
+      catalogueStats,
+      inCatalogue,
       setTimeout: (callback: () => void, delay: number) => {
         timers.set(++timerId, delay);
         callbacks.set(timerId, callback);
@@ -90,6 +117,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     apply(data: unknown): void;
     render(): void;
     showRow(): void;
+    selectCatalogue(id: string): void;
   };
   const runTimers = (delay: number) => {
     for (const [id, scheduledDelay] of [...timers]) {
@@ -100,7 +128,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       callback();
     }
   };
-  return { ...api, element, timers, runTimers };
+  return { ...api, element, timers, runTimers, listeners };
 }
 
 const response = (body: unknown) => ({ ok: true, json: async () => body });
@@ -113,6 +141,63 @@ const release = {
   releaseDate: "2026-10-01",
   performers: [],
 };
+
+const asianRelease = {
+  title: "桃",
+  label: "Peach",
+  labelId: "madouqu-peach",
+  sourceId: "madouqu",
+  releaseDate: "2026-10-02",
+  performers: [],
+};
+
+test("the Asian page shows only the Asian lanes, and its figures are its own", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      asianSourceIds: ["fc2cmadb", "madouqu"],
+      scenes: [{ ...release, sourceId: "lancelot-styles-evolution" }, asianRelease],
+      sources: [
+        {
+          sourceId: "lancelot-styles-evolution",
+          labelId: "lancelot-styles-evolution",
+          name: "LSE",
+        },
+        { sourceId: "madouqu", labelId: "madouqu-peach", name: "Madouqu", label: "Peach" },
+      ],
+    }),
+  );
+  assert.equal(app.element("#catalogue-title").textContent, "Catalogue");
+  assert.match(app.element("#list").innerHTML, /A release/);
+  assert.doesNotMatch(app.element("#list").innerHTML, /桃/);
+  assert.equal(app.element("#stat-scenes").textContent, "1");
+  assert.equal(app.element("#stat-studios").textContent, "1");
+  assert.equal(app.element("#link-rate").textContent, "0% of catalogue");
+
+  app.selectCatalogue("asian");
+  assert.equal(app.element("#catalogue-title").textContent, "Asian");
+  assert.equal(app.element("#stat-scenes").textContent, "1");
+  assert.equal(app.element("#stat-studios").textContent, "1");
+  assert.equal(app.element("#link-rate").textContent, "0% of Asian catalogue");
+  assert.match(app.element("#list").innerHTML, /桃/);
+  assert.doesNotMatch(app.element("#list").innerHTML, /A release/);
+
+  // A studio filter chosen on the other page names a label this page has no row
+  // for, so it is dropped rather than left to empty the list.
+  app.element("#studio").value = "madouqu-peach";
+  app.selectCatalogue("catalogue");
+  assert.match(app.element("#list").innerHTML, /A release/);
+
+  // Sources is not a catalogue: it must not change the page behind it.
+  app.selectCatalogue("sources");
+  assert.match(app.element("#list").innerHTML, /A release/);
+});
+
+test("a #asian link opens the Asian page before the catalogue arrives", async () => {
+  const app = await dashboard(async () => response(catalogue), "#asian");
+  assert.equal(app.element("#catalogue-title").textContent, "Asian");
+  assert.equal(app.element("#empty-title").textContent, "No releases in the catalogue");
+});
 
 test("cold-start empty state explains rebuilding and possible snapshot lag", async () => {
   const app = await dashboard(async () =>
@@ -387,7 +472,9 @@ for (const previousRun of [undefined, "previous-run"]) {
     const app = await dashboard(async (url) => {
       if (url === "/api/progress") return response({ progress });
       loads += 1;
-      return response({ ...catalogue, progress, stats: { total: loads } });
+      // The stat tiles are counted from the rows the page shows, so the reload
+      // has to carry the rows: the second response brings the first release.
+      return response({ ...catalogue, progress, scenes: loads > 1 ? [release] : [] });
     });
     assert.equal(loads, 1, "the initial snapshot does not trigger another load");
     await app.pollProgress();
@@ -397,7 +484,7 @@ for (const previousRun of [undefined, "previous-run"]) {
     await app.pollProgress();
     await settle();
     assert.equal(loads, 2);
-    assert.equal(app.element("#stat-scenes").textContent, "2");
+    assert.equal(app.element("#stat-scenes").textContent, "1");
     assert.equal(app.element("#progress-live").textContent, "");
     await app.pollProgress();
     assert.equal(loads, 2, "the completed run only reloads once");

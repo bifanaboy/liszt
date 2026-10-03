@@ -7,6 +7,7 @@ import { idleProgress, type SyncProgress } from "../pipeline/progress.ts";
 import type { Config } from "../config.ts";
 import type { RunRecord, SqliteStore } from "../core/store/sqlite.ts";
 import type { Scene, SourceStatus } from "../core/schema.ts";
+import { ASIAN_SOURCE_IDS } from "../sources/registry.ts";
 
 export interface WindowStats {
   total: number;
@@ -23,6 +24,14 @@ export interface ReadModel {
   generatedAt: string;
   window: { days: number; from: string; to: string };
   stats: WindowStats;
+  /**
+   * The sources whose releases belong to the Asian catalogue page, so the
+   * dashboard splits the window without hard-coding a lane id of its own.
+   *
+   * Ids, not scene copies: the page is a filter over the scenes already in this
+   * response, which keeps "in the window" and "on this page" the same set.
+   */
+  asianSourceIds: readonly string[];
   scenes: Scene[];
   sources: SourceStatus[];
   latestRun: RunRecord | null;
@@ -59,6 +68,7 @@ export function buildReadModel(
       deadLinks: scenes.reduce((total, scene) => total + scene.deadVideoUrls.length, 0),
       metadataPoor: scenes.filter((scene) => scene.metadataPoor).length,
     },
+    asianSourceIds: ASIAN_SOURCE_IDS,
     scenes,
     sources: store.listSources(),
     latestRun: store.recentRuns(1)[0] ?? null,

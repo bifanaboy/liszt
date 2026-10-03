@@ -44,9 +44,9 @@ arrived, with a one-line 12KB `styles.css`; and `package-lock.json` is npm's to
 write.
 
 What the tools read under `public/` is deliberately split. `npm run lint` parses
-`public/app.js` and `public/source-health.js` — the only browser JS the app
-ships, `app.js` being the sole `<script>` tag in `index.html` with
-`source-health.js` imported from it — so a syntax error in either is caught
+the browser JS the app ships — `public/app.js` and the modules it imports,
+`public/source-health.js` and `public/catalogues.js`, with `app.js` the sole
+`<script>` tag in `index.html` — so a syntax error in any of them is caught
 before it can white-screen the dashboard. Those files run with `no-undef` off,
 since the browser globals they use are not defined in Node and there is no
 `globals` dependency to name them; the rule cannot tell browser globals from
@@ -251,6 +251,15 @@ and `/logout` are not routes: they fall through to the normal unknown-path 404.
 `/api/sources`, not `/api/studios`: "source" is canonical, and one source may
 emit several studio labels. All responses are `no-store`, so no edge caches the
 catalogue, and static serving is path-traversal safe by construction.
+
+The dashboard's release ledger has two pages, **Catalogue** and **Asian**. The
+Asian-language lanes — fc2cmadb and madouqu — have their own page, so the main
+list is not mostly Japanese-language titles; `/api/scenes` carries their ids as
+`asianSourceIds` so the split is decided by the registry rather than by a UI
+string list. Membership is by `sourceId`, so every sub-label of a lane follows
+its lane. Each page counts its own figures — releases in the window, releases
+with a link, and the linking percentage — from the rows it shows, and exports
+only those rows. `LAST REFRESH` stays shared: a cycle refreshes every lane.
 
 The boot sync, the interval, and `POST /api/refresh` all funnel through one
 single-flight runner, so two cycles can never overlap against the same database.

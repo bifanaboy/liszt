@@ -407,6 +407,8 @@ export interface MadouquOptions {
   includeReview?: boolean;
 }
 
+export const MADOUQU_ID = "madouqu";
+
 export function createMadouquStudio({
   apiBase,
   maxPages = 1000,
@@ -416,7 +418,7 @@ export function createMadouquStudio({
   const base = new URL(apiBase).origin;
   const postsUrl = `${apiBase.replace(/\/+$/, "")}/posts`;
   return {
-    id: "madouqu",
+    id: MADOUQU_ID,
     name: "Madouqu (mainland/Taiwan)",
     authority: {
       name: "madouqu.com WordPress REST API",

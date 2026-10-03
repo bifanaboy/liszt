@@ -5,6 +5,14 @@ import {
   studioChoices,
   visibleSourceStatuses,
 } from "./source-health.js";
+import {
+  ASIAN_CATALOGUE,
+  MAIN_CATALOGUE,
+  catalogueId,
+  catalogueScenes,
+  catalogueStats,
+  inCatalogue,
+} from "./catalogues.js";
 
 const $ = (selector) => document.querySelector(selector);
 const list = $("#list");
@@ -20,6 +28,8 @@ const scenesTotal = $("#stat-scenes");
 const linkedTotal = $("#stat-linked");
 const linkRate = $("#link-rate");
 const studiosTotal = $("#stat-studios");
+const catalogueTitle = $("#catalogue-title");
+const catalogueEyebrow = $("#catalogue-eyebrow");
 const lastChecked = $("#last-checked");
 const refreshState = $("#refresh-state");
 const refreshButton = $("#refresh");
@@ -46,6 +56,13 @@ let statuses = [];
 let refreshing = false;
 let catalogueLoaded = false;
 let latestRun = null;
+/** Which catalogue page is showing. The Asian lanes are on their own page (#65). */
+let activeCatalogue = MAIN_CATALOGUE;
+/** The lanes on the Asian page, named by the server rather than guessed here. */
+let asianSourceIds = [];
+const asianView = () => activeCatalogue === ASIAN_CATALOGUE;
+/** The window rows this page shows. */
+const visibleScenes = () => catalogueScenes(scenes, activeCatalogue, asianSourceIds);
 
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 const niceDate = (value) => {
@@ -70,7 +87,7 @@ const linksFor = (scene) => {
 /** Render the filtered, sorted catalogue grouped by release month. */
 function render() {
   const query = search.value.trim().toLocaleLowerCase();
-  const filtered = scenes.filter((scene) =>
+  const filtered = visibleScenes().filter((scene) =>
     (studio.value === "all" || scene.labelId === studio.value) &&
     [scene.title, scene.label, ...(scene.performers || [])].join(" ").toLocaleLowerCase().includes(query));
   filtered.sort((a, b) => sort.value === "title"
@@ -109,7 +126,7 @@ function render() {
 /** Explain an empty view using the catalogue snapshot and the live refresh state. */
 function renderEmptyState(visibleCount = null) {
   // Progress polls only update the explanation; they never rebuild populated rows.
-  if (scenes.length > 0 && visibleCount === null) return;
+  if (visibleScenes().length > 0 && visibleCount === null) return;
   empty.hidden = visibleCount > 0;
   if (empty.hidden) return;
   let title;
@@ -117,7 +134,7 @@ function renderEmptyState(visibleCount = null) {
   if (!catalogueLoaded) {
     title = "Loading catalogue…";
     message = "Waiting for the catalogue response.";
-  } else if (scenes.length > 0) {
+  } else if (visibleScenes().length > 0) {
     title = "No releases found";
     message = "Try a different search or studio filter.";
   } else if (progressState.active || (refreshing && !catalogueReloadPending && !catalogueReloadFailed && progressState.stage !== "error")) {
@@ -158,20 +175,44 @@ function renderSources() {
   }).join("");
 }
 
+/**
+ * Draw the selected catalogue page: its heading, its own figures, and its rows.
+ *
+ * Every number here is counted from the rows the page shows, so the linking
+ * percentage describes the catalogue on screen rather than the whole window.
+ * `LAST REFRESH` is the exception and stays global: a cycle refreshes every lane.
+ */
+function renderCatalogue() {
+  const stats = catalogueStats(scenes, activeCatalogue, asianSourceIds);
+  catalogueTitle.textContent = asianView() ? "Asian" : "Catalogue";
+  catalogueEyebrow.textContent = asianView() ? "FC2 & MADOUQU RELEASES" : "RELEASE LEDGER";
+  document.title = asianView() ? "Liszt — Asian releases" : "Liszt — Recent releases";
+  scenesTotal.textContent = stats.total.toLocaleString();
+  linkedTotal.textContent = stats.live.toLocaleString();
+  linkRate.textContent = `${stats.matchPercent === null ? 0 : stats.matchPercent}% of ${asianView() ? "Asian catalogue" : "catalogue"}`;
+  studiosTotal.textContent = visibleSourceStatuses(statuses).filter((item) => inCatalogue(item, activeCatalogue, asianSourceIds)).length.toLocaleString();
+  // A studio filter names a label on THIS page: one carried over from the other
+  // catalogue is dropped back to "All studios", because a <select> holding no
+  // such option reads as no selection and would silently empty the list.
+  const choices = studioChoices(visibleScenes());
+  const selected = studio.value;
+  const labels = new Set(["all", ...choices.map((item) => item.labelId)]);
+  studio.replaceChildren(new Option("All studios", "all"));
+  studio.insertAdjacentHTML("beforeend", choices.map((item) => `<option value="${esc(item.labelId)}">${esc(item.label)} · ${item.sceneCount}</option>`).join(""));
+  studio.value = labels.has(selected) ? selected : "all";
+  render();
+}
+
 /** Apply a catalogue response to the scene list, source summary, and progress display. */
 function apply(data) {
   scenes = Array.isArray(data.scenes) ? data.scenes : [];
   statuses = Array.isArray(data.sources) ? data.sources : [];
+  asianSourceIds = Array.isArray(data.asianSourceIds) ? data.asianSourceIds : [];
   refreshing = Boolean(data.refreshing);
   catalogueLoaded = true;
   latestRun = data.latestRun || null;
   catalogueReloadPending = false;
   catalogueReloadFailed = false;
-  const stats = data.stats || {};
-  scenesTotal.textContent = Number(stats.total ?? scenes.length).toLocaleString();
-  linkedTotal.textContent = Number(stats.live ?? 0).toLocaleString();
-  linkRate.textContent = `${stats.total ? Math.round((stats.live / stats.total) * 100) : 0}% of catalogue`;
-  studiosTotal.textContent = visibleSourceStatuses(statuses).length.toLocaleString();
   lastChecked.textContent = data.latestRun && data.latestRun.endedAt ? new Date(data.latestRun.endedAt).toLocaleString("en", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
   refreshState.textContent = refreshing
     ? "Refresh in progress…"
@@ -181,12 +222,8 @@ function apply(data) {
         : (Number(data.latestRun.resolverHealth?.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"))
       : "Waiting for first refresh";
   refreshButton.disabled = refreshing;
-  const selected = studio.value;
-  studio.replaceChildren(new Option("All studios", "all"));
-  studio.insertAdjacentHTML("beforeend", studioChoices(scenes).map((item) => `<option value="${esc(item.labelId)}">${esc(item.label)} · ${item.sceneCount}</option>`).join(""));
-  if ([...studio.options].some((option) => option.value === selected)) studio.value = selected;
+  renderCatalogue();
   renderSources();
-  render();
   // The read model carries a snapshot too, so a first paint that lands in the
   // middle of a cycle can already show its stage - the poll takes it from there.
   // `refreshing` is the terminal-state authority. A completed catalogue can
@@ -482,20 +519,34 @@ function csvCell(value) {
 }
 $("#export").addEventListener("click", () => {
   const headings = ["studio", "title", "release_date", "performers", "release_url", "video_sources"];
-  const rows = scenes.map((scene) => [scene.label, scene.title, scene.releaseDate, (scene.performers || []).join("; "), scene.releaseUrl, linksFor(scene).map((item) => item.url).join("; ")]);
+  // The page on screen, not the whole window: an export is what the reader is
+  // looking at, and the file name says which catalogue it came from.
+  const rows = visibleScenes().map((scene) => [scene.label, scene.title, scene.releaseDate, (scene.performers || []).join("; "), scene.releaseUrl, linksFor(scene).map((item) => item.url).join("; ")]);
   const csv = [headings, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  anchor.download = "liszt-catalogue.csv";
+  anchor.download = asianView() ? "liszt-asian-catalogue.csv" : "liszt-catalogue.csv";
   anchor.click();
   URL.revokeObjectURL(anchor.href);
 });
+/** Switch catalogue page. `null` (Sources) leaves the current page alone. */
+function selectCatalogue(id) {
+  const next = catalogueId(id);
+  if (!next || next === activeCatalogue) return;
+  activeCatalogue = next;
+  renderCatalogue();
+}
 document.querySelectorAll("[data-nav]").forEach((link) => link.addEventListener("click", () => {
   document.querySelectorAll("[data-nav]").forEach((item) => item.classList.toggle("active", item === link));
+  selectCatalogue(link.dataset.nav);
 }));
+// The hash is read as well as the click, so a bookmarked `#asian`, and the
+// browser's own back/forward over these anchors, land on the same page.
+document.addEventListener("hashchange", () => selectCatalogue(globalThis.location?.hash));
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); search.focus(); }
 });
+selectCatalogue(globalThis.location?.hash);
 try {
   await load();
 } catch (error) {
