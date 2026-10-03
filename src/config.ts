@@ -65,7 +65,11 @@ export const Config = z.object({
   bootSync: z.boolean().default(true),
   fetchConcurrency: z.coerce.number().int().min(1).max(16).default(DEFAULT_FETCH_CONCURRENCY),
   fetchTimeoutMs: z.coerce.number().int().positive().default(DEFAULT_TIMEOUT_MS),
-  /** Per-call deadline for the optional sxyprn source. */
+  /**
+   * Per-call deadline for the optional sxyprn source, measured from the moment
+   * the call holds the source's request slot. The package paces itself at one
+   * request every 10s, and that wait is deliberately outside this number.
+   */
   sxyprnTimeoutMs: z.coerce.number().int().positive().default(15_000),
   /** Minimum spacing between traxxx.me requests, and its per-run cache TTL. */
   traxxxMinIntervalMs: z.coerce.number().int().nonnegative().default(250),

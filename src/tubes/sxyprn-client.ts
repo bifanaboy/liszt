@@ -9,16 +9,22 @@
  * and `videos.details`. It retries a blocked request on its own unbounded
  * schedule and exposes no abort hook, so from a datacenter IP (where sxyprn
  * answers 403 behind Cloudflare) a single call could otherwise wedge the whole
- * sync. Two wrappers fix that, and both are load-bearing:
+ * sync. It also paces itself (see WHY THERE IS ONE SLOT below). Three wrappers
+ * fix those, and all three are load-bearing:
  *
  *  - `withDeadline` caps one call at `timeoutMs` and drains the abandoned
- *    promise so a late rejection is not an unhandled rejection.
+ *    promise so a late rejection is not an unhandled rejection. The deadline is
+ *    measured from the moment the call holds the request slot, so it bounds the
+ *    REQUEST and not the queue in front of it.
+ *  - One slot at a time. The package answers six requests a minute whatever we
+ *    ask for, so concurrency buys no throughput and only moves each call further
+ *    from the slot it was promised.
  *  - A shared circuit breaker stops the rung asking and the ladder moves on to
  *    eporner immediately rather than paying the deadline once per scene. It
  *    opens on EITHER `maxConsecutiveFailures` in a row OR a failing share of the
  *    last `failureWindow` calls, because the ladder's own concurrency defeats a
- *    consecutive-only rule (see WHY THE FAILING SHARE EXISTS below). The break is
- *    not permanent: after `cooldownMs` one half-open probe is allowed through, so
+ *    consecutive-only rule (see WHY THE FAILING SHARE EXISTS below). The break
+ *    is not permanent: after `cooldownMs` one half-open probe is allowed through, so
  *    a source that recovers (a blocked IP is a transient condition, not a
  *    permanent one) rejoins the ladder without a restart.
  *
@@ -32,6 +38,22 @@
  *  full 15 s deadline, which is the unbounded cost the break existed to prevent.
  *  Counting the share of a window rather than the run closes that hole, and the
  *  consecutive rule stays as the fast path for a source that is simply down.
+ *
+ * WHY THERE IS ONE SLOT, measured against the package at v0.1.0 (#23). The
+ * package's `robots.txt` declares `Crawl-delay: 10`, so it keeps a
+ * PROCESS-WIDE throttle: `reserveRequestSlot` hands every request a start time at
+ * least `DEFAULT_MIN_REQUEST_INTERVAL_MS` (10s) after the previous one, and
+ * `configureRequest` can only raise that interval, never lower it. The wait is
+ * inside the call, before the request is issued. Measured here: the first search
+ * answered in 176ms, the next three each took ~9.9s, and four concurrent searches
+ * took 40.0s. The ladder fans out `fetchConcurrency` scenes (default 4) and a
+ * scene's detail pass runs `detailConcurrency` posts at once, so with a 15s
+ * deadline every call past the first was guaranteed to expire while merely
+ * waiting its turn - which is exactly the production shape: `errored: 110` of
+ * `attempted: 229`, 48%, with no refusal, no network error and no parser break
+ * anywhere in the log. Serializing costs nothing, because the package was never
+ * going to answer more than six requests a minute; it only stops the ladder
+ * throwing away every call that had not reached its slot yet.
  *
  * Everything the matcher gates on is forwarded verbatim - including `uploadDate`
  * and `views`, which are NOT decoration. `details()` is the only pass that
@@ -131,6 +153,9 @@ export function createSxyprnClient(
   // Kept across the break so a source that keeps answering badly cannot buy
   // another full round of deadlines by failing one call between two successes.
   const outcomes: boolean[] = [];
+  // The one request slot. See WHY THERE IS ONE SLOT: the package paces itself,
+  // so a call that arrives early waits here rather than inside its own deadline.
+  let queue: Promise<void> = Promise.resolve();
 
   const failures = (): number => outcomes.reduce((total, ok) => total + (ok ? 0 : 1), 0);
 
@@ -239,11 +264,40 @@ export function createSxyprnClient(
     probing = true;
   };
 
+  /** Whether the break is refusing calls right now, without claiming the probe. */
+  const shut = (): boolean => broken && (Date.now() - openedAt < cooldownMs || probing);
+
+  /**
+   * Take the one request slot, wait for it, and only then start the deadline.
+   *
+   * The wait for the slot is the package's own politeness floor, not a hung
+   * request, so charging it to `timeoutMs` is what turned a healthy source into
+   * a wall of `timed out after 15000ms` (#23). It is also why the break is
+   * checked twice: `shut()` refuses a caller immediately instead of parking it
+   * behind a slot the source is no longer worth holding, and `guard()` runs once
+   * the slot is in hand, which is where the single half-open probe is claimed.
+   * A queued call therefore costs a wait, never a request it did not need.
+   */
+  const inSlot = async <T>(label: string, call: () => Promise<T>): Promise<T> => {
+    if (shut()) throw openError();
+    const ahead = queue;
+    let release = (): void => {};
+    queue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await ahead;
+    try {
+      guard();
+      return await withDeadline(call, label);
+    } finally {
+      release();
+    }
+  };
+
   return {
     videos: {
       search: async (query: string): Promise<{ videos?: SxyprnCard[] }> => {
-        guard();
-        const page = await withDeadline(() => api.videos.search(query, { page: 0 }), "search");
+        const page = await inSlot("search", () => api.videos.search(query, { page: 0 }));
         return {
           videos: (page.videos ?? []).map((video) => {
             const durationSeconds = durationSecondsOf(video);
@@ -259,8 +313,7 @@ export function createSxyprnClient(
         };
       },
       details: async (input: { url: string }): Promise<SxyprnDetail> => {
-        guard();
-        const detail = await withDeadline(() => api.videos.details({ url: input.url }), "details");
+        const detail = await inSlot("details", () => api.videos.details({ url: input.url }));
         const durationSeconds = durationSecondsOf(detail);
         return {
           ...(detail.url !== undefined ? { url: detail.url } : {}),
