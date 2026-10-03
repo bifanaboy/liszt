@@ -477,6 +477,95 @@ test("a cycle with no slow rung installed records zero requests, not a missing k
   store.close();
 });
 
+test("the run ledger splits the winners it counted, so a guess is never read as a match", async () => {
+  // `matched` is one number over two different things: a rung that NAMED the scene,
+  // and the terminal fallback's flagged guess when no tube could. Both are stored
+  // as links and both read as "matched", so a run can report 69 matched when 13
+  // were identified - and the only way to see that was to reconstruct it from
+  // other counters. These three numbers are the direct reading.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const named = (over: Partial<PoolMatch>): PoolMatch => ({
+    url: "https://www.eporner.com/video-abc/",
+    embedUrl: "https://www.eporner.com/embed/abc/",
+    videoId: "abc",
+    uploader: "Vovick17",
+    title: "Marfe compilation",
+    identityTier: 1,
+    lagDays: 2,
+    candidatesConsidered: 40,
+    durationPassed: 1,
+    hydrated: 1,
+    rejectedByDate: 0,
+    unknownDate: 0,
+    hydrationCapped: false,
+    omittedCandidates: 0,
+    fallbackCandidates: [],
+    rejected: null,
+    ...over,
+  });
+  let posts = 0;
+  const sync = buildResolvingSync(
+    store,
+    [
+      adapter("pooled", async () => ({
+        scenes: [raw("1"), raw("2"), raw("3")],
+        verifiedEmpty: false,
+      })),
+    ],
+    {
+      // Scene 1 is named by the pool. Scenes 2 and 3 are not, so the ladder moves
+      // on: scene 2 is named by the slow rung, scene 3 keeps only an unnamed
+      // survivor and takes the terminal fallback.
+      poolLookup: async (scene) =>
+        scene.id === "pooled:1"
+          ? named({})
+          : named({ url: "", embedUrl: "", videoId: "", title: "", rejected: "date" }),
+      sxyprnLookup: async () => {
+        posts += 1;
+        const url = `https://sxyprn.com/post/${posts.toString(16).padStart(13, "0")}.html`;
+        return posts === 1
+          ? [
+              {
+                url,
+                identityTier: 2 as const,
+                lagDays: 1,
+                title: "Marfe compilation",
+                duration: 600,
+                added: "2026-03-02T00:00:00.000Z",
+                views: 900,
+              },
+            ]
+          : [
+              {
+                url,
+                identityTier: 0 as const,
+                lagDays: 1,
+                title: "unrelated clip",
+                duration: 600,
+                added: "2026-03-02T00:00:00.000Z",
+                views: 900,
+              },
+            ];
+      },
+    },
+  );
+
+  const summary = await sync("test");
+  const [run] = store.recentRuns(1);
+  const health = run?.resolverHealth ?? {};
+  assert.equal(summary.matched, 3, "all three are links, and all three count as matched");
+  assert.equal(health.winnerPool, 1);
+  assert.equal(health.winnerSxyprn, 1);
+  assert.equal(health.winnerFallback, 1, "the guess is visible as its own number");
+  assert.equal(
+    (health.winnerPool ?? 0) + (health.winnerSxyprn ?? 0),
+    2,
+    "the two named counters separate the rungs, which no other counter on the row does",
+  );
+  store.close();
+});
+
 /** A sync with the resolve stage switched on, for the ladder's end-to-end tests. */
 function buildResolvingSync(
   store: SqliteStore,
@@ -570,7 +659,7 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
   );
   const summary = await sync("test");
   assert.equal(summary.matched, 1);
-  assert.deepEqual(summary.tiers, [1], "the tier histogram sees the real tier");
+  assert.deepEqual(summary.winners, [{ rung: "eporner-pool", tier: 1 }]);
   const scene = store.getScene("pooled:1");
   assert.ok(scene, "the scene is still stored, just unlinked");
   assert.equal(scene.videoUrls[0]?.url, "https://www.eporner.com/video-abc/");
