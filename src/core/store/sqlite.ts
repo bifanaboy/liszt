@@ -591,13 +591,30 @@ export class SqliteStore {
       );
   }
 
-  poolVideosInWindow(uploader: string, from: string, to: string): PoolVideo[] {
-    return this.db
-      .prepare(
-        "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NOT NULL AND added >= ? AND added <= ? ORDER BY added DESC, hydration_attempted_at ASC, rowid ASC",
-      )
-      .all(uploader, from, to)
-      .map(rowToPoolVideo);
+  /**
+   * Indexed rows for an uploader whose upload date is known and inside the
+   * window, newest first.
+   *
+   * `band` narrows the result by the DURATION gate's own arithmetic, in SQL,
+   * with the same tolerance the rung runs and the same "a row with no duration
+   * is still examined" rule. It is the same narrowing already pushed into SQL
+   * for the undated working set, and it changes what the scan has to look at,
+   * not what the gate accepts.
+   */
+  poolVideosInWindow(
+    uploader: string,
+    from: string,
+    to: string,
+    band?: { durationSec: number; toleranceSec: number },
+  ): PoolVideo[] {
+    const sql =
+      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NOT NULL AND added >= ? AND added <= ?" +
+      (band ? " AND (duration_sec IS NULL OR ABS(duration_sec - ?) <= ?)" : "") +
+      " ORDER BY added DESC, hydration_attempted_at ASC, rowid ASC";
+    const rows = band
+      ? this.db.prepare(sql).all(uploader, from, to, band.durationSec, band.toleranceSec)
+      : this.db.prepare(sql).all(uploader, from, to);
+    return (rows as Record<string, unknown>[]).map(rowToPoolVideo);
   }
 
   /**
