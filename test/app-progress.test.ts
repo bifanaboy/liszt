@@ -659,3 +659,23 @@ test("a failed refresh still reports truncation alongside its source failures", 
     "Last refresh had source failures · search truncated",
   );
 });
+
+test("the last run says what the slow source cost, and what went wrong with it", async () => {
+  // A clean run is not always a cheap one: the ladder tries the fast pool first,
+  // and every scene it could not resolve there costs a ten-second wait at the
+  // slow source. Without that number on screen, a refresh that took twenty
+  // minutes reads exactly like one that took twenty seconds.
+  for (const [resolverHealth, expected] of [
+    [{ sxyprnSearches: 4, sxyprnDetails: 11 }, "Catalogue up to date · 15 slow-source lookups"],
+    [{ sxyprnSearches: 0, sxyprnDetails: 0 }, "Catalogue up to date"],
+    // Nothing was spent, so there is nothing to say, however bad the run was.
+    [
+      { errored: 2, incomplete: 1 },
+      "Catalogue up to date · resolver unavailable · search truncated",
+    ],
+  ] as const) {
+    const app = await dashboard(async () => response(catalogue));
+    app.apply({ ...catalogue, latestRun: { ok: true, resolverHealth } });
+    assert.equal(app.element("#refresh-state").textContent, expected);
+  }
+});

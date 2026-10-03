@@ -63,8 +63,17 @@
  * and `views`, which are NOT decoration. `details()` is the only pass that
  * carries a real date, so dropping either field here silently made the sxyprn
  * rung unable to admit anything.
+ *
+ * WHY THE REQUESTS ARE COUNTED, measured by the slot itself (#71). `attempted`
+ * and `errored` cover the whole ladder, so neither says how many requests this
+ * rung spent, and the run's cost is exactly that number times the package's 10s
+ * floor. The count is taken where the request is handed over, which is the one
+ * place a request can be made - so a call refused by the break, and a search
+ * answered from the lookup's cache, both cost nothing and count nothing, and any
+ * budget added later is enforced at that same choke point rather than somewhere
+ * the queue can go around.
  */
-import type { SxyprnCard, SxyprnClient, SxyprnDetail } from "./sxyprn.ts";
+import type { SxyprnCard, SxyprnClient, SxyprnDetail, SxyprnRequestCount } from "./sxyprn.ts";
 
 interface PackageVideoSummary {
   url?: string;
@@ -160,6 +169,10 @@ export function createSxyprnClient(
   // The one request slot. See WHY THERE IS ONE SLOT: the package paces itself,
   // so a call that arrives early waits here rather than inside its own deadline.
   let queue: Promise<void> = Promise.resolve();
+  // Requests handed to the package since the last `takeRequests()`. Counted
+  // where the request is actually made, not where a call is refused or a search
+  // is served from the lookup's cache, because those cost no floor and no time.
+  const requests: SxyprnRequestCount = { search: 0, details: 0 };
 
   const failures = (): number => outcomes.reduce((total, ok) => total + (ok ? 0 : 1), 0);
 
@@ -224,7 +237,10 @@ export function createSxyprnClient(
    * breaker was left marked "probing" and refused every later call with no way
    * to recover but a restart.
    */
-  const withDeadline = async <T>(call: () => Promise<T>, label: string): Promise<T> => {
+  const withDeadline = async <T>(
+    call: () => Promise<T>,
+    label: keyof SxyprnRequestCount,
+  ): Promise<T> => {
     let timer: NodeJS.Timeout | undefined;
     let pending: Promise<T> | undefined;
     const deadline = new Promise<never>((_, reject) => {
@@ -235,6 +251,11 @@ export function createSxyprnClient(
       timer.unref?.();
     });
     try {
+      // One request, counted as it is made. A request the deadline later abandons
+      // was still spent - the package had it, and the floor ran - so an expired
+      // call counts exactly like an answered one. That is what makes this number
+      // the run's cost: requests x the pacing floor.
+      requests[label] += 1;
       pending = call();
       const value = await Promise.race([pending, deadline]);
       // Only the probe's success wipes the slate. An ordinary success resets the
@@ -282,7 +303,7 @@ export function createSxyprnClient(
    * the slot is in hand, which is where the single half-open probe is claimed.
    * A queued call therefore costs a wait, never a request it did not need.
    */
-  const inSlot = async <T>(label: string, call: () => Promise<T>): Promise<T> => {
+  const inSlot = async <T>(label: keyof SxyprnRequestCount, call: () => Promise<T>): Promise<T> => {
     if (shut()) throw openError();
     const ahead = queue;
     let release = (): void => {};
@@ -332,6 +353,12 @@ export function createSxyprnClient(
           ...(detail.sizeBytes !== undefined ? { sizeBytes: detail.sizeBytes } : {}),
         };
       },
+    },
+    takeRequests: (): SxyprnRequestCount => {
+      const spent = { ...requests };
+      requests.search = 0;
+      requests.details = 0;
+      return spent;
     },
   };
 }

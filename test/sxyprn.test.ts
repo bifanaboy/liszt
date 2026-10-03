@@ -71,6 +71,68 @@ test("details() forwards the two fields the gate cannot do without", async () =>
   assert.equal(detail.durationSeconds, 1418);
 });
 
+test("the requests actually spent are counted, and split by pass", async () => {
+  // The run's cost in time is this count times the source's ten-second pacing
+  // floor, so the count has to mean REQUESTS, not calls. `attempted` and
+  // `errored` cover the whole ladder and cannot be attributed to this rung, which
+  // is why the number has to come from the one place a request is made.
+  const client = createSxyprnClient(
+    packageStub({
+      search: async () => ({ videos: [{ url: POST, title: "Scene", duration: "23:38" }] }),
+      details: async () => ({ url: POST, title: "Scene", duration: "23:38" }),
+    }),
+  );
+
+  await client.videos.search("one");
+  await client.videos.search("two");
+  await client.videos.details({ url: POST });
+  assert.deepEqual(
+    client.takeRequests(),
+    { search: 2, details: 1 },
+    "two scenes searched and one candidate post was verified",
+  );
+
+  // A drain, not a running total: the client outlives any one cycle, and a total
+  // would make every refresh inherit the cost of all the ones before it.
+  assert.deepEqual(
+    client.takeRequests(),
+    { search: 0, details: 0 },
+    "the count is spent once read, so each cycle is charged only for its own",
+  );
+});
+
+test("a call the break refuses costs no request, and an abandoned one still counts", async () => {
+  // Two halves of the same number. A refused call never reached the source, so
+  // counting it would overstate the run's cost by exactly the number of scenes
+  // the ladder skipped. A request the deadline later abandons was still handed
+  // over and the pacing floor still ran, so counting it as nothing would hide the
+  // cost the deadline is there to bound.
+  let calls = 0;
+  const client = createSxyprnClient(
+    packageStub({
+      search: async () => {
+        calls += 1;
+        return new Promise<never>(() => {});
+      },
+    }),
+    { timeoutMs: 40, maxConsecutiveFailures: 1, cooldownMs: 60_000 },
+  );
+  // The deadline timer is unref'd, so a test with nothing else pending would see
+  // the loop drain before the timer fires. Keep it alive the way a server does.
+  const alive = setInterval(() => {}, 5);
+
+  await assert.rejects(client.videos.search("a"), /search timed out after 40ms/);
+  await assert.rejects(client.videos.search("b"), /circuit open/);
+  clearInterval(alive);
+
+  assert.equal(calls, 1, "the refused call never reached the package");
+  assert.deepEqual(
+    client.takeRequests(),
+    { search: 1, details: 0 },
+    "one hung request was spent, and the refused one was not",
+  );
+});
+
 test("a rendered HH:MM:SS duration is parsed rather than dropped", async () => {
   // The package serves a duration string on some shapes and a number on
   // others. Reading only the number means the card carries no duration, the
@@ -365,6 +427,9 @@ function stubClient(over: {
         return detail;
       },
     },
+    // These tests are about what the lookup does with the answers, so nothing
+    // here spends a request the real client would have paced.
+    takeRequests: () => ({ search: 0, details: 0 }),
   };
 }
 

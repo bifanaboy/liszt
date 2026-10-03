@@ -99,7 +99,11 @@ async function main(): Promise<void> {
     windowDays: config.windowDays,
     fetchConcurrency: config.fetchConcurrency,
     traxxx: { minIntervalMs: config.traxxxMinIntervalMs, cacheTtlMs: config.traxxxCacheTtlMs },
-    lookups: { poolLookup, sxyprnLookup },
+    lookups: {
+      poolLookup,
+      sxyprnLookup,
+      ...(sxyprnClient ? { sxyprnRequests: () => sxyprnClient.takeRequests() } : {}),
+    },
     progress,
   });
 

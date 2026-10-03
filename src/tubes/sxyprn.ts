@@ -82,11 +82,32 @@ export interface SxyprnDetail extends SxyprnCard {
   views?: number | string;
 }
 
+/**
+ * Requests the rung actually spent at the source, split by pass.
+ *
+ * The split is the point. Every request costs the package's politeness floor, so
+ * the two together are the run's cost in time; and separately they answer the two
+ * questions a budget decision needs - `search` is how many scenes reached this
+ * rung at all, `details` how many candidate posts had to be verified.
+ */
+export interface SxyprnRequestCount {
+  search: number;
+  details: number;
+}
+
 export interface SxyprnClient {
   videos: {
     search(query: string): Promise<{ videos?: SxyprnCard[] }>;
     details(input: { url: string }): Promise<SxyprnDetail>;
   };
+  /**
+   * Requests issued since the last call, and zero the counter.
+   *
+   * A drain, not a total: the client is process-wide and outlives any one cycle,
+   * so a cumulative figure would let a single refresh be charged for every
+   * refresh before it. One drain per cycle, once the resolve stage is over.
+   */
+  takeRequests(): SxyprnRequestCount;
 }
 
 /** 13 hex chars, e.g. `/post/6ab1a9bec8445.html`. */

@@ -195,6 +195,15 @@ fans several scenes out at once, and a deadline that counted the package's own
 for the source is not a failure, so it is not reported as one, and it is not
 charged to the deadline that exists to bound a request that never answers.
 
+Requests to that source are counted per cycle and stored on the run row as
+`sxyprnSearches` and `sxyprnDetails`, split by pass. Each request costs the
+source's ten-second spacing, so that count is what says how long a refresh took;
+the ladder's own `attempted` and `errored` counters cover both tubes and cannot
+answer it. The dashboard shows the total as **slow-source lookups**, beside the
+rung's failures. Counting happens where the request is issued, so a call held
+off by the circuit breaker and a search answered from the in-memory cache both
+cost nothing and count as nothing.
+
 The trusted pool searches a bounded number of candidates per scene, so a scene
 with more survivors than that budget is **truncated, not exhausted**. Those
 searches are counted as `incomplete`, never as a clean no-match: the candidates
