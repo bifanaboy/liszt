@@ -14,9 +14,9 @@
 import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
-import { createFc2CmadbStudio } from "./fc2cmadb.ts";
+import { createFc2CmadbStudio, FC2CMADB_ID } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
-import { createMadouquStudio } from "./madouqu.ts";
+import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import type { SourceAdapter } from "./types.ts";
 
 export const lancelotStylesEvolution = createTraxxxStudio({
@@ -34,6 +34,14 @@ export const mamboPerv = createTraxxxStudio({
 });
 
 export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze(["tushy"]);
+
+/**
+ * The Asian-language lanes, listed here because the dashboard splits them onto
+ * their own catalogue page (#65). Membership is a presentation fact about a
+ * source, so it belongs beside the adapters rather than in a UI string list
+ * that would silently drift from a renamed id.
+ */
+export const ASIAN_SOURCE_IDS: readonly string[] = Object.freeze([FC2CMADB_ID, MADOUQU_ID]);
 
 export interface RegistryOptions {
   madouquApiBase: string;

@@ -24,3 +24,9 @@
 @keyframes meter-shimmer{from{background-position:220% 0}to{background-position:-20% 0}}
 @media(prefers-reduced-motion:reduce){.progress-row{transition:none}.meter-fill{transition:none}.meter-track.is-indeterminate,.meter-half.is-indeterminate{animation:none;background:var(--panel2)}.meter--overall .meter-half.is-indeterminate{background:var(--panel2)}.is-loading .refresh-icon{animation:none}}
 @media(max-width:760px){.progress-row{grid-template-columns:1fr;gap:14px;padding-top:16px}}
+
+/* The Asian catalogue page (#65). Both nav links scroll to the one release
+   ledger; `.page-anchor` is the `#asian` scroll target that sits at its top,
+   and needs the same scroll offset `#catalogue` already has. */
+.page-anchor{display:block;height:0}
+#asian{scroll-margin-top:16px}

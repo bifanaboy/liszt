@@ -3,9 +3,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { sourceScenes, studioChoices, visibleSourceStatuses } from "../public/source-health.js";
+import {
+  ASIAN_CATALOGUE,
+  MAIN_CATALOGUE,
+  catalogueId,
+  catalogueScenes,
+  catalogueStats,
+  inCatalogue,
+} from "../public/catalogues.js";
 
+// Every `import ... from "./x.js";` block is dropped, not just the first one: a
+// leftover import is a SyntaxError inside the VM, which would fail the whole
+// dashboard suite rather than one case. The bindings they named are supplied as
+// context globals below, which is also what proves the app only uses the
+// exported surface.
 const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8").replace(
-  /^import[\s\S]*?from "\.\/source-health\.js";\n/,
+  /^import[\s\S]*?from "\.\/[^"]+";\n/gm,
   "",
 );
 
@@ -41,11 +54,44 @@ type Snapshot = {
   populate?: { done: number; total: number };
   link?: { done: number; total: number };
 };
+
+/**
+ * A `[data-nav]` link, carrying the one thing `app.js` does to it: mark it
+ * active or not. The ids and the default come from `index.html` rather than from
+ * a list written out here, so adding or reordering a nav link fails a test
+ * instead of quietly leaving this one checking a page that no longer exists.
+ */
+class NavLink {
+  dataset: { nav: string };
+  classes: Set<string>;
+  constructor(dataset: { nav: string }, active = false) {
+    this.dataset = dataset;
+    this.classes = new Set(active ? ["active"] : []);
+  }
+  classList = {
+    toggle: (name: string, on?: boolean) => {
+      if (on) this.classes.add(name);
+      else this.classes.delete(name);
+      return on ?? this.classes.has(name);
+    },
+    add: (name: string) => this.classes.add(name),
+  };
+  addEventListener() {}
+  get active() {
+    return this.classes.has("active");
+  }
+}
+
+const navMarkup = [
+  ...readFileSync(new URL("../public/index.html", import.meta.url), "utf8").matchAll(
+    /<a\b[^>]*\bdata-nav="([^"]+)"[^>]*>/g,
+  ),
+].map((match) => ({ nav: match[1]!, active: /\bclass="active"/.test(match[0]) }));
 const idle: Snapshot = { active: false, stage: "idle" };
 const active: Snapshot = { active: true, stage: "populating", runId: "test" };
 const catalogue = { scenes: [], sources: [], progress: idle, latestRun: { ok: true } };
 
-async function dashboard(fetch: (url: string) => Promise<unknown>) {
+async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
   const elements = new Map<string, Element>();
   const element = (selector: string) => {
     if (!elements.has(selector)) {
@@ -56,13 +102,33 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     }
     return elements.get(selector)!;
   };
+  const listeners = new Map<string, (event: unknown) => void>();
+  // Window-level listeners live apart from the document's, because in a browser
+  // they are not the same thing: `hashchange` is fired at the Window and does not
+  // bubble, so a document listener for it never runs. Sharing one map would let
+  // a handler on the wrong target pass the suite.
+  const windowListeners = new Map<string, (event: unknown) => void>();
   const timers = new Map<number, number>();
   const callbacks = new Map<number, () => void>();
   let timerId = 0;
+  // Fresh links per instance: `app.js` marks them, and one test's hash must not
+  // leave the next one's page already lit.
+  const links = navMarkup.map((link) => new NavLink({ nav: link.nav }, link.active));
+  const place: { hash: string } = { hash };
   const api = (await runInNewContext(
-    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow }; })()`,
+    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow, selectCatalogue }; })()`,
     {
-      document: { querySelector: element, querySelectorAll: () => [], addEventListener() {} },
+      document: {
+        querySelector: element,
+        querySelectorAll: (selector: string) => (selector === "[data-nav]" ? links : []),
+        addEventListener(name: string, handler: (event: unknown) => void) {
+          listeners.set(name, handler);
+        },
+      },
+      addEventListener(name: string, handler: (event: unknown) => void) {
+        windowListeners.set(name, handler);
+      },
+      location: place,
       Option: Element,
       fetch,
       renderSourceHealthSummary: () => "",
@@ -70,6 +136,12 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       sourceScenes,
       studioChoices,
       visibleSourceStatuses,
+      ASIAN_CATALOGUE,
+      MAIN_CATALOGUE,
+      catalogueId,
+      catalogueScenes,
+      catalogueStats,
+      inCatalogue,
       setTimeout: (callback: () => void, delay: number) => {
         timers.set(++timerId, delay);
         callbacks.set(timerId, callback);
@@ -90,6 +162,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
     apply(data: unknown): void;
     render(): void;
     showRow(): void;
+    selectCatalogue(id: string): void;
   };
   const runTimers = (delay: number) => {
     for (const [id, scheduledDelay] of [...timers]) {
@@ -100,7 +173,23 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       callback();
     }
   };
-  return { ...api, element, timers, runTimers };
+  const activeNav = () => links.filter((link) => link.active).map((link) => link.dataset.nav);
+  /** Do what the browser does on a back/forward over these anchors: fire at the Window. */
+  const setHash = (next: string) => {
+    place.hash = next;
+    windowListeners.get("hashchange")?.({});
+  };
+  return {
+    ...api,
+    element,
+    timers,
+    runTimers,
+    listeners,
+    windowListeners,
+    links,
+    activeNav,
+    setHash,
+  };
 }
 
 const response = (body: unknown) => ({ ok: true, json: async () => body });
@@ -113,6 +202,86 @@ const release = {
   releaseDate: "2026-10-01",
   performers: [],
 };
+
+const asianRelease = {
+  title: "桃",
+  label: "Peach",
+  labelId: "madouqu-peach",
+  sourceId: "madouqu",
+  releaseDate: "2026-10-02",
+  performers: [],
+};
+
+test("the Asian page shows only the Asian lanes, and its figures are its own", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      asianSourceIds: ["fc2cmadb", "madouqu"],
+      scenes: [{ ...release, sourceId: "lancelot-styles-evolution" }, asianRelease],
+      sources: [
+        {
+          sourceId: "lancelot-styles-evolution",
+          labelId: "lancelot-styles-evolution",
+          name: "LSE",
+        },
+        { sourceId: "madouqu", labelId: "madouqu-peach", name: "Madouqu", label: "Peach" },
+      ],
+    }),
+  );
+  assert.equal(app.element("#catalogue-title").textContent, "Catalogue");
+  assert.match(app.element("#list").innerHTML, /A release/);
+  assert.doesNotMatch(app.element("#list").innerHTML, /桃/);
+  assert.equal(app.element("#stat-scenes").textContent, "1");
+  assert.equal(app.element("#stat-studios").textContent, "1");
+  assert.equal(app.element("#link-rate").textContent, "0% of catalogue");
+
+  app.selectCatalogue("asian");
+  assert.equal(app.element("#catalogue-title").textContent, "Asian");
+  assert.equal(app.element("#stat-scenes").textContent, "1");
+  assert.equal(app.element("#stat-studios").textContent, "1");
+  assert.equal(app.element("#link-rate").textContent, "0% of Asian catalogue");
+  assert.match(app.element("#list").innerHTML, /桃/);
+  assert.doesNotMatch(app.element("#list").innerHTML, /A release/);
+
+  // A studio filter chosen on the other page names a label this page has no row
+  // for, so it is dropped rather than left to empty the list.
+  app.element("#studio").value = "madouqu-peach";
+  app.selectCatalogue("catalogue");
+  assert.match(app.element("#list").innerHTML, /A release/);
+
+  // Sources is not a catalogue: it must not change the page behind it.
+  app.selectCatalogue("sources");
+  assert.match(app.element("#list").innerHTML, /A release/);
+});
+
+test("a #asian link opens the Asian page before the catalogue arrives", async () => {
+  const app = await dashboard(async () => response(catalogue), "#asian");
+  assert.equal(app.element("#catalogue-title").textContent, "Asian");
+  assert.equal(app.element("#empty-title").textContent, "No releases in the catalogue");
+});
+
+test("the lit nav link follows the hash, not the last click", async () => {
+  // A bookmarked `#asian` opened cold: the page is Asian, so the bar must say so
+  // too, with no click having happened to light anything.
+  const app = await dashboard(async () => response(catalogue), "#asian");
+  assert.deepEqual(app.activeNav(), ["asian"]);
+
+  // Sources lights itself, and leaves the page behind it alone...
+  app.setHash("#sources");
+  assert.deepEqual(app.activeNav(), ["sources"]);
+  assert.equal(app.element("#catalogue-title").textContent, "Asian");
+
+  // ...so going back lands on `#asian` with the catalogue already Asian. The
+  // selection is unchanged, and the bar still has to follow.
+  app.setHash("#asian");
+  assert.deepEqual(app.activeNav(), ["asian"]);
+
+  // No hash means the default link in the HTML stands.
+  const plain = await dashboard(async () => response(catalogue));
+  assert.deepEqual(plain.activeNav(), ["catalogue"]);
+  plain.setHash("");
+  assert.deepEqual(plain.activeNav(), ["catalogue"]);
+});
 
 test("cold-start empty state explains rebuilding and possible snapshot lag", async () => {
   const app = await dashboard(async () =>
@@ -240,9 +409,11 @@ test("a failed completion fetch explains the stale empty snapshot and recovers o
 for (const [name, latestRun, expectedSummary] of [
   ["success", { ok: true }, "Catalogue up to date"],
   [
+    // The suffix came with #67: a run that errored names the resolver as one of
+    // the reasons, and the expected string below was left behind by it.
     "source and resolver failures",
     { ok: false, resolverHealth: { errored: 1 } },
-    "Source and resolver failures",
+    "Source and resolver failures · resolver unavailable",
   ],
 ] as const) {
   test(`a completed ${name} snapshot clears stale active progress`, async () => {
@@ -387,7 +558,9 @@ for (const previousRun of [undefined, "previous-run"]) {
     const app = await dashboard(async (url) => {
       if (url === "/api/progress") return response({ progress });
       loads += 1;
-      return response({ ...catalogue, progress, stats: { total: loads } });
+      // The stat tiles are counted from the rows the page shows, so the reload
+      // has to carry the rows: the second response brings the first release.
+      return response({ ...catalogue, progress, scenes: loads > 1 ? [release] : [] });
     });
     assert.equal(loads, 1, "the initial snapshot does not trigger another load");
     await app.pollProgress();
@@ -397,7 +570,7 @@ for (const previousRun of [undefined, "previous-run"]) {
     await app.pollProgress();
     await settle();
     assert.equal(loads, 2);
-    assert.equal(app.element("#stat-scenes").textContent, "2");
+    assert.equal(app.element("#stat-scenes").textContent, "1");
     assert.equal(app.element("#progress-live").textContent, "");
     await app.pollProgress();
     assert.equal(loads, 2, "the completed run only reloads once");
