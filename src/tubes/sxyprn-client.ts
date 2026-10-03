@@ -49,11 +49,15 @@
  * took 40.0s. The ladder fans out `fetchConcurrency` scenes (default 4) and a
  * scene's detail pass runs `detailConcurrency` posts at once, so with a 15s
  * deadline every call past the first was guaranteed to expire while merely
- * waiting its turn - which is exactly the production shape: `errored: 110` of
- * `attempted: 229`, 48%, with no refusal, no network error and no parser break
- * anywhere in the log. Serializing costs nothing, because the package was never
- * going to answer more than six requests a minute; it only stops the ladder
- * throwing away every call that had not reached its slot yet.
+ * waiting its turn. Four in flight against a 10s floor loses about two of every
+ * four, and that is the production shape: `errored: 110` of `attempted: 229`,
+ * 48%, with no refusal, no network error and no parser break anywhere in the
+ * log. Both counters cover every rung rather than this one alone (see
+ * `RungRejections`), so 48% is a match to predict, not an attribution this
+ * comment can make on its own - only a deployed run settles that. Serializing
+ * costs nothing, because the package was never going to answer more than six
+ * requests a minute; it only stops the ladder throwing away every call that had
+ * not reached its slot yet.
  *
  * Everything the matcher gates on is forwarded verbatim - including `uploadDate`
  * and `views`, which are NOT decoration. `details()` is the only pass that
