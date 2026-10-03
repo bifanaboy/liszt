@@ -65,9 +65,12 @@ boot sync rebuilds them. An empty catalogue alone does not prove a bug.
 **`checksPass` depends on the `ci` workflow reporting a check on the commit
 that reached `main`.** GitHub sends no `push` event for a merge made with its
 own automation token, so `ci` also runs on `pull_request_target: closed` for
-`main` and checks out `merge_commit_sha`. Keep that trigger: without it an
-automatic merge reports zero checks and never deploys. Do not "simplify" it away
-as a duplicate, and do not replace a failing run with a green one.
+`main`, checks out `merge_commit_sha`, and then reports that run's own
+conclusion onto the merge commit through the Checks API. Both halves are
+required: a `pull_request_target` run is attached to the **pull request's head
+commit**, so without the re-report the merged commit still carries no check and
+still never deploys. Keep the trigger and the re-report: do not "simplify" either
+away as a duplicate, and do not replace a failing run with a green one.
 
 **`render.yaml` is a hypothetical paid persistent-disk option, not the live
 setup.** It declares `0.5c-512mb`, `oregon`, `npm ci --omit=dev`,

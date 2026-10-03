@@ -67,9 +67,14 @@ result on **every** commit that reaches `main`. GitHub emits no `push` event for
 a merge made with its own automation token, which is how
 [`enable-auto-merge.yml`](.github/workflows/enable-auto-merge.yml) merges these
 PRs, so `ci` also listens for `pull_request_target: closed` on `main` and
-re-runs the identical checks on `merge_commit_sha`. Nothing is skipped or
-synthesised: an automatic merge that fails a check reports red, and Render does
-not deploy it. See [#5](https://github.com/bifanaboy/liszt/issues/5).
+re-runs the identical checks on `merge_commit_sha`. That run is attached to the
+pull request's head commit rather than to the merged one, so a second job
+reports its conclusion onto the merge commit through the Checks API — without
+that, the merged commit carries no check and Render waits for ever. No step is
+skipped and no verdict is invented: the check written on the merge commit is
+that run's own conclusion, so an automatic merge that fails a check reports red,
+and Render does not deploy it. See
+[#5](https://github.com/bifanaboy/liszt/issues/5).
 
 ---
 

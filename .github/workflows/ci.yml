@@ -39,11 +39,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # A `pull_request_target` run executes the default branch's workflow,
-          # so `github.sha` is the base branch's tip and not necessarily the
-          # commit that was merged. Check out the merge commit itself: the
-          # result has to describe the code Render is about to deploy, and the
-          # check is reported against this commit.
+          # A `pull_request_target` run is ATTACHED TO THE PULL REQUEST'S HEAD
+          # COMMIT, not to the commit that reached `main`. That is measured, not
+          # assumed: every `pull_request_target` run in this repository reports
+          # the PR's head as its `head_sha` - PR 72's `enable` run sits on
+          # 4e373eb, while the commit that actually landed was the squash
+          # af6139b, which carried no check at all.
+          #
+          # So name the merge commit here, which fixes WHICH code is tested, and
+          # read the `report` job below for what puts the result ON that commit.
+          # Checking out `merge_commit_sha` on its own changes neither.
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
 
       - uses: actions/setup-node@v4
@@ -94,3 +99,59 @@ jobs:
             echo '::error::the test glob matched no files - the suite did not run'
             exit 1
           }
+
+  # The `check` job above is attached to the pull request's head commit, and no
+  # `push` event arrives for a merge made with GitHub's own automation token.
+  # Left there, the commit that reached `main` still carries no check at all and
+  # Render still does not deploy it - which is the whole of issue #5, and is
+  # exactly the state PR 72's squash commit af6139b is in today.
+  #
+  # So this job writes that run's conclusion onto the merge commit through the
+  # Checks API. It is the same run's own result, not a second opinion or a
+  # re-run: `needs.check.result` IS that job's conclusion, and the mapping below
+  # is one to one. No step is skipped and no verdict is invented.
+  #
+  # Every failure mode here leaves the commit WITHOUT a green check, which is the
+  # direction that must never deploy: if the run is cancelled before this job
+  # starts, or the API call below fails, nothing is written and Render waits.
+  report:
+    needs: check
+    # `always()`, so a RED run reports red on the merge commit. Without it a
+    # failure would skip this job and leave the commit with zero checks, which
+    # reads as "nothing to deploy" instead of "this failed". A pull request
+    # closed without merging leaves `check` skipped and has no merge commit to
+    # report on, so that case is excluded rather than reported as a failure.
+    if: ${{ always() && github.event_name == 'pull_request_target' && github.event.pull_request.merged && needs.check.result != 'skipped' }}
+    # Job-level permissions REPLACE the workflow's, so this narrows to writing
+    # one check run and nothing else. No repository contents are read or written
+    # from the pull request's context.
+    permissions:
+      checks: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the result on the merge commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          RESULT: ${{ needs.check.result }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          case "$RESULT" in
+            success) conclusion=success ;;
+            cancelled) conclusion=cancelled ;;
+            skipped)
+              # No run means no result, and inventing one here would be exactly
+              # the failure this job exists to prevent. The `if` above already
+              # excludes it; refusing here as well keeps the two from drifting.
+              echo "check was skipped - there is no result to report on $MERGE_SHA"
+              exit 0
+              ;;
+            *) conclusion=failure ;;
+          esac
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+            -f name=check \
+            -f head_sha="$MERGE_SHA" \
+            -f status=completed \
+            -f conclusion="$conclusion" \
+            -f "output[title]=ci on the merge commit" \
+            -f "output[summary]=Run ${GITHUB_RUN_ID} of ci for pull request #${PR_NUMBER}, the same run whose head is the pull request commit, reporting ${conclusion} on the merge commit it tested. Log: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
