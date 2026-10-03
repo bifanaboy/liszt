@@ -453,6 +453,12 @@ export interface TraxxxStudioOptions {
   /** Optional tag slugs supplied by a validated watchlist URL. */
   tags?: readonly string[];
   creatorStudio?: boolean;
+  /**
+   * Drop a record the studio itself marks as unwanted, e.g. Woodman Casting X's
+   * `XXXX` scenes (#82). It runs after the entity re-check and before parsing,
+   * so an excluded record costs one already-paid request and nothing else.
+   */
+  exclude?: (record: TraxxxSceneRecord) => boolean;
 }
 
 function withinWindow(releaseDate: string, windowStart: string, now: Date): boolean {
@@ -467,7 +473,7 @@ function withinWindow(releaseDate: string, windowStart: string, now: Date): bool
  * sync stays bounded by the window even though the API exposes no date filter.
  */
 export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter {
-  const { id, name, kind, slug, tags = [], creatorStudio = false } = options;
+  const { id, name, kind, slug, tags = [], creatorStudio = false, exclude } = options;
   const filter = entityFilter(kind, slug);
   const authorityUrl = `${SCENES_URL}?e=${encodeURIComponent(filter)}`;
   return {
@@ -482,6 +488,7 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
       const scenes: RawScene[] = [];
       let recordsSeen = 0;
       let filtered = 0;
+      let excluded = 0;
       const labels = pageResult.roster.map((entry) => ({
         labelId: entry.slug,
         label: entry.name,
@@ -500,6 +507,11 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
             ctx.log(`traxxx: ${filter} page ${page} returned a foreign record`, {
               id: record?.id,
             });
+            continue;
+          }
+          if (exclude?.(record)) {
+            filtered += 1;
+            excluded += 1;
             continue;
           }
           const parsed = parseTraxxxScene(record, {
@@ -526,6 +538,7 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
         records: recordsSeen,
         emitted: scenes.length,
         filtered,
+        excluded,
       });
       return {
         scenes,

@@ -97,7 +97,7 @@ Five categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                             | Matcher  |
 | -------------------------------------------- | ------------------------------------- | -------- |
-| Lancelot Styles Evolution, Mambo Perv, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
+| Lancelot Styles Evolution, Mambo Perv, Woodman Casting X, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
@@ -113,6 +113,14 @@ rejected at startup. The built-in entry is the Vixen network filtered to the
 `anal` tag. `LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries
 and replaces that built-in list rather than appending to it, which makes a
 single lane easy to isolate during calibration.
+
+**Woodman Casting X** is a traxxx channel lane like the two above, with one
+exclusion: the studio writes `XXXX` as a whole token in the scene title of the
+scenes it marks, and those are dropped before the record is parsed. The marker
+comes from traxxx's title, which is the studio's own title — not from the studio
+page, whose own chrome repeats "Woodman casting X" on every scene. The match is
+delimited, so real titles such as `Shania VegaX casting`, `Lexxxus Adams
+casting` and `- BTS -` scenes stay eligible. See `src/sources/woodman-casting-x.ts`.
 
 Two things are load-bearing and must not be "simplified" away:
 
