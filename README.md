@@ -227,8 +227,11 @@ so a late candidate becomes reachable rather than being cut off permanently.
   in-window records**.
 - A source returning no scenes _without asserting_ `verifiedEmpty` fails the run.
   This is what stops a parser bug from replacing a catalogue with silence.
-- Deletion happens only on window expiry. A scene missing from a successful
-  response is kept until it leaves the window.
+- Deletion happens on window expiry, or when a successful source run names a
+  native id in `excludedSceneIds` - the FC2 lane uses that for a record found
+  censored, removed, or matching a documented exclusion. Either way the deletion
+  is scoped to that one source. A scene only absent from a successful response is
+  kept until it leaves the window.
 - Upserts are keyed on the stable id `<source-id>:<source-scene-id>`, so a repeat
   sync converges instead of duplicating.
 - A scene with a live link is not re-matched; re-verify owns it. A scene with no
