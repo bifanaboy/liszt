@@ -110,14 +110,16 @@ problem or improvement, not a file name or implementation technique.
 
 Every issue must have exactly one label from each group:
 
-- Estimated agent token use: `cheap`, `fair`, or `expensive`. These are relative
-  planning estimates, not a promise of a bill or a fixed token count. Explain
-  uncertainty when it matters and revise the estimate when scope changes.
+- Urgency: `urgent` or `not urgent`. Judge how quickly the user-facing problem
+  needs attention.
 - Work type: `bug` or `feature`.
-- Effect on app functionality: `minor` or `major`. Judge the user-facing effect,
-  not the amount of code. A small fix can have a major effect.
+- User impact: `major` or `minor`. Judge the effect on users, not the amount of
+  code.
 
 Keep other useful labels. Do not use competing labels from the same group.
+Add `intel required` when more research is needed before the issue can describe
+a clear fix. It is an additional label, not a replacement for the three labels
+above. Remove it once the research is complete and the fix is clear.
 
 Use these sections, with as much detail as the work needs:
 
@@ -168,6 +170,8 @@ that deployment was not checked. Inspect the actual UI when a change is visual.
 
 Reconcile bugs with GitHub issues before filing:
 
+- File issues about Liszt's features and behavior. Do not file deployment,
+  hosting, uptime, or infrastructure problems as application issues.
 - Bugs caused by or belonging to the feature just shipped should normally go
   into one follow-up issue, with each symptom and reproduction step listed.
 - Unrelated bugs get their own individual issues, unless an existing issue
