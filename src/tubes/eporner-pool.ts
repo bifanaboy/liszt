@@ -807,14 +807,27 @@ export async function gatherPoolSurvivors(
 
   const survivors: PoolVideo[] = [];
   let considered = 0;
+  // The duration half of the gate, as SQL arithmetic, so a dated row the gate
+  // would reject anyway never reaches the scan. A row with no duration is kept:
+  // the gate examines those rather than assuming a length it does not have.
+  // Without this the scan budget is spent on rows that cost nothing to reject
+  // and never rotate - they are the same rows every run - and once an account
+  // holds more dated rows in the window than `maxConsidered`, its UNDATED
+  // working set is never examined again. That working set is where the rows
+  // still missing an upload date live, so the starvation was permanent: a valid
+  // candidate could never be hydrated, however many runs went by.
+  const band =
+    typeof scene.durationSec === "number" && Number.isFinite(scene.durationSec)
+      ? { durationSec: scene.durationSec, toleranceSec: durationToleranceSec }
+      : undefined;
   for (const uploader of uploaders) {
-    // Dated rows are narrowed to the window by SQL. The listing normally
-    // supplies no date, so the undated rows are the working set: they cannot
-    // be date-narrowed, so they are pre-filtered on duration alone. Same gate,
-    // more rows examined, no less safety - and the walk that produced them was
-    // already newest-first, so the newest rows come first and the cap keeps the
-    // scan bounded.
-    const dated = store.poolVideosInWindow(uploader, from, to);
+    // Dated rows are narrowed to the window - and to the duration band - by
+    // SQL. The listing normally supplies no date, so the undated rows are the
+    // working set: they cannot be date-narrowed, so they are pre-filtered on
+    // duration alone. Same gate, more rows examined, no less safety.
+    const dated = band
+      ? store.poolVideosInWindow(uploader, from, to, band)
+      : store.poolVideosInWindow(uploader, from, to);
     // The cap is pushed into SQL. Undated rows are the working set and the
     // account can hold thousands of them; materialising all of them and
     // discarding most in JavaScript made the per-scene cost scale with the

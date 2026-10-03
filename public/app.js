@@ -1,6 +1,7 @@
 import {
   renderSourceHealth,
   renderSourceHealthSummary,
+  sourceCardState,
   sourceScenes,
   studioChoices,
   visibleSourceStatuses,
@@ -168,7 +169,7 @@ function renderSources() {
     const owned = sourceScenes(item, scenes);
     const linked = owned.filter((scene) => linksFor(scene).length).length;
     const total = owned.length;
-    const state = item.lastError ? (String(item.lastError).includes("not configured") ? "setup" : "error") : "ok";
+    const state = sourceCardState(item.lastError);
     const url = safeUrl(authority.url);
     const title = item.labelId !== item.sourceId ? item.label : item.name;
     return `<article class="source-card source-card--${state}"><div class="source-card-top"><span class="status-pill"><i></i>${state === "ok" ? "HEALTHY" : state === "setup" ? "SETUP REQUIRED" : "NEEDS ATTENTION"}</span><span class="source-mark">${esc((authority.name || "S").slice(0, 1))}</span></div><p class="source-role">${esc(authority.role || "Catalogue source")}</p><h3>${esc(title || item.name)}</h3><p class="source-provider">via ${esc(authority.name || "configured source")}</p><div class="source-metrics"><span><strong>${total}</strong> releases</span><span><strong>${total ? Math.round(linked / total * 100) : 0}%</strong> linked</span></div><div class="source-health">${renderSourceHealth(item, scenes)}</div><div class="source-card-bottom"><span>Last good: ${item.lastSuccessAt ? esc(new Date(item.lastSuccessAt).toLocaleDateString()) : "—"}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">Open source ↗</a>` : ""}</div></article>`;

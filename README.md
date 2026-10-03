@@ -228,6 +228,14 @@ candidates that were examined still rotate on the next run — least-recently-
 attempted first, for both the hydration budget and the rows pulled from SQLite —
 so a late candidate becomes reachable rather than being cut off permanently.
 
+Rows whose upload date is known are narrowed by the running time in the database
+query, with the same tolerance the gate itself uses, so an account holding
+thousands of dated uploads cannot spend the whole scan budget on rows the gate
+would reject for free. Those are the rows that need no rotation, and behind them
+sit the undated rows — the ones still waiting for a date from the video API — so
+narrowing early is what keeps that working set reachable at all. A row with no
+recorded running time is still examined rather than assumed away.
+
 ### Sync behaviour
 
 - One source failing does not stop the others; it becomes a run outcome with

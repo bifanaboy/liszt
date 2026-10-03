@@ -253,6 +253,43 @@ test("a dated row is now findable by the window query", () => {
   }
 });
 
+test("the window query's duration band keeps a row with no duration", () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const window = ["2026-03-04T00:00:00.000Z", "2026-03-12T00:00:00.000Z"] as const;
+  try {
+    for (const [id, durationSec] of [
+      ["inside", 2139],
+      ["outside", 2140],
+      ["unknown", null],
+    ] as const) {
+      store.upsertPoolVideo({
+        id,
+        uploader: "Vovick17",
+        title: "t",
+        added: "2026-03-05T11:22:33.000Z",
+        durationSec,
+        hydratedAt: null,
+        views: null,
+      });
+    }
+    assert.equal(
+      store.poolVideosInWindow("Vovick17", ...window).length,
+      3,
+      "unbanded is unchanged",
+    );
+    assert.deepEqual(
+      store
+        .poolVideosInWindow("Vovick17", ...window, { durationSec: 2138, toleranceSec: 1 })
+        .map((row) => row.id),
+      ["inside", "unknown"],
+      "the gate's own arithmetic, in SQL; a row with no duration is still examined",
+    );
+  } finally {
+    store.close();
+  }
+});
+
 test("a full re-walk is due on the first run and then only after the cadence", () => {
   assert.equal(fullRewalkDue(null, NOW, 7), true);
   assert.equal(fullRewalkDue("2026-03-09T00:00:00Z", NOW, 7), false);
@@ -1023,6 +1060,161 @@ test("hydration cap resumes fairly and reports an incomplete search", async () =
     assert.equal(second?.videoId, "candidate40");
     assert.equal(second?.hydrationCapped, true, "the remaining tail is still reported");
     assert.equal(second?.omittedCandidates, 1);
+  } finally {
+    store.close();
+  }
+});
+
+test("a valid late candidate is linked by a later run on the same saved state", async () => {
+  // The undated working set is the production shape - the profile listing
+  // carries a duration but no date - and more candidates than the cap is the
+  // ordinary case, not an edge. Two runs, with the database closed and reopened
+  // in between, so the second run reads only what the first one persisted.
+  const directory = mkdtempSync(join(tmpdir(), "liszt-pool-late-"));
+  const databasePath = join(directory, "pool.db");
+  let store = new SqliteStore(databasePath);
+  store.migrate();
+  const scene = makeMatchScene({
+    id: "test:late-undated-candidate",
+    title: "Marfe takes it deep",
+    performers: ["Marfe"],
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const requested: string[] = [];
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>(url: string): Promise<T> => {
+      const id = new URL(url).searchParams.get("id")!;
+      requested.push(id);
+      return [
+        {
+          id,
+          title: id === "latevalid" ? "Marfe compilation" : `Unrelated compilation ${id}`,
+          length_sec: 2138,
+          added: "2026-03-05 12:00:00",
+          views: "1,234",
+          uploader: "Vovick17",
+        },
+      ] as unknown as T;
+    },
+  };
+  try {
+    for (let index = 0; index < 45; index += 1) {
+      store.upsertPoolVideo({
+        id: index === 44 ? "latevalid" : `candidate${index}`,
+        uploader: "Vovick17",
+        title: index === 44 ? "Marfe compilation" : `Unrelated compilation ${index}`,
+        added: null,
+        durationSec: 2138,
+        hydratedAt: null,
+        views: null,
+      });
+    }
+    const lookup = () =>
+      createPoolLookup({
+        store,
+        fetcher,
+        uploaders: ["Vovick17"],
+        durationToleranceSec: 1,
+        dateWindowDays: 7,
+        maxHydrations: 40,
+        log: () => {},
+      });
+    const first = await lookup()(scene, NOW);
+    assert.equal(first?.rejected, "incomplete", "the first run cannot answer exhaustively");
+    assert.equal(first?.omittedCandidates, 5);
+    assert.equal(first?.videoId, "", "the valid candidate was past the cut");
+    assert.equal(requested.length, 40, "requests stay bounded by the cap");
+
+    store.close();
+    store = new SqliteStore(databasePath);
+    store.migrate();
+    requested.length = 0;
+    const second = await lookup()(scene, new Date(NOW.getTime() + 1_800_000));
+    assert.equal(second?.videoId, "latevalid", "the rotation reached it on the next run");
+    assert.deepEqual(
+      requested,
+      ["candidate40", "candidate41", "candidate42", "candidate43", "latevalid"],
+      "only the deferred tail was hydrated, and the rest of the run was not paid for again",
+    );
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("dated rows outside the duration band no longer starve the undated working set", async () => {
+  // More dated rows in the window than the scan examines per account. They all
+  // fail the duration half of the gate, which costs nothing to reject - but they
+  // do not rotate, so before the band was pushed into SQL they took the whole
+  // scan budget on every run and the undated rows behind them were never read
+  // at all. A valid candidate could not be hydrated in any run, ever.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const scene = makeMatchScene({
+    id: "test:band-starvation",
+    title: "Marfe takes it deep",
+    performers: ["Marfe"],
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const requested: string[] = [];
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>(url: string): Promise<T> => {
+      const id = new URL(url).searchParams.get("id")!;
+      requested.push(id);
+      return [
+        {
+          id,
+          title: "Marfe compilation",
+          length_sec: 2138,
+          added: "2026-03-05 12:00:00",
+          views: 5,
+        },
+      ] as unknown as T;
+    },
+  };
+  try {
+    for (let index = 0; index < 800; index += 1) {
+      store.upsertPoolVideo({
+        id: `dated${index}`,
+        uploader: "Vovick17",
+        title: `Unrelated dated ${index}`,
+        added: "2026-03-05T12:00:00.000Z",
+        durationSec: 600,
+        hydratedAt: NOW.toISOString(),
+        views: 10,
+      });
+    }
+    store.upsertPoolVideo({
+      id: "undatedvalid",
+      uploader: "Vovick17",
+      title: "Marfe compilation",
+      added: null,
+      durationSec: 2138,
+      hydratedAt: null,
+      views: null,
+    });
+
+    const match = await createPoolLookup({
+      store,
+      fetcher,
+      uploaders: ["Vovick17"],
+      durationToleranceSec: 1,
+      dateWindowDays: 7,
+      log: () => {},
+    })(scene, NOW);
+    assert.equal(match?.videoId, "undatedvalid", "the working set was reachable, not crowded out");
+    assert.deepEqual(
+      requested,
+      ["undatedvalid"],
+      "one request, and not one per rejected dated row",
+    );
+    assert.equal(match?.candidatesConsidered, 1, "the rejected rows never entered the scan");
   } finally {
     store.close();
   }
