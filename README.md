@@ -177,6 +177,15 @@ unlinked for a later cycle. Known-dead URLs are never re-added.
 outcomes. A resolver outage therefore does not mark healthy catalogue polling
 as failed, and the dashboard reports resolver unavailability independently.
 
+The trusted pool searches a bounded number of candidates per scene, so a scene
+with more survivors than that budget is **truncated, not exhausted**. Those
+searches are counted as `incomplete`, never as a clean no-match: the candidates
+past the cut were never examined, so the counter states what is actually known.
+The dashboard reports them as **search truncated** beside any rung error. The
+candidates that were examined still rotate on the next run — least-recently-
+attempted first, for both the hydration budget and the rows pulled from SQLite —
+so a late candidate becomes reachable rather than being cut off permanently.
+
 ### Sync behaviour
 
 - One source failing does not stop the others; it becomes a run outcome with

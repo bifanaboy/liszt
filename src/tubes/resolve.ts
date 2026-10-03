@@ -109,6 +109,15 @@ export interface RungRejections {
   noMatch: number;
   /** Rungs that errored, so the ladder fell through without a clean negative. */
   errored: number;
+  /**
+   * Pool searches that stopped at the hydration cap, so their negative is not an
+   * exhaustive one: candidates past the cut were never examined.
+   *
+   * These are counted apart from `noMatch` because a truncated search is not
+   * proof the scene has no video, and the run ledger is the only place that
+   * difference survives the cycle.
+   */
+  incomplete: number;
   /** Candidates rejected for falling outside the upload window. */
   date: number;
   /** Candidates rejected for having no readable upload date at all. */
@@ -118,7 +127,15 @@ export interface RungRejections {
 }
 
 export function emptyRejections(): RungRejections {
-  return { attempted: 0, noMatch: 0, errored: 0, date: 0, unknownDate: 0, duration: 0 };
+  return {
+    attempted: 0,
+    noMatch: 0,
+    errored: 0,
+    incomplete: 0,
+    date: 0,
+    unknownDate: 0,
+    duration: 0,
+  };
 }
 
 /** The scene fields the matchers read, including the creator-studio flag. */
@@ -181,8 +198,20 @@ async function tryPool(
       candidate,
       tier: identityTierFor(scene, candidate.title),
     }));
+  // A capped search is counted wherever the rung lands, so `incomplete` reads as
+  // the cap-hit frequency rather than only the runs that happened to come out
+  // empty. It must NOT also count as `noMatch`: the candidates past the cut were
+  // never examined, and reporting them as a clean negative is the claim this
+  // counter exists to stop making.
+  if (match?.hydrationCapped) rejections.incomplete += 1;
   // The pool rung reports a zeroed match rather than null when it ran and found
   // nothing, so a rejected count is always available and never inferred.
+  if (match?.rejected === "incomplete") {
+    // Return the survivors that DID clear the gate for the terminal fallback,
+    // which is still a flagged guess rather than silence, but leave the rung's
+    // own negative uncounted: the ladder has not exhausted its candidates.
+    return { winner: null, leftovers };
+  }
   if (match?.rejected === "date" || match?.rejected === "duration") {
     rejections.duration += match.rejected === "duration" ? 1 : 0;
     rejections.date += match.rejectedByDate;

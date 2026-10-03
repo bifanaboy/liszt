@@ -586,17 +586,25 @@ export class SqliteStore {
    * instead would discard the entire working set, since the window can never be
    * evaluated without it. See `tubes/eporner-pool.ts`.
    *
-   * ORDERED AND CAPPED. The walk inserts newest-first, so `rowid` order IS
-   * newest-first - but that was an accident of SQLite's scan order with nothing
-   * asserting it, and `maxConsidered` in the rung silently assumed it. With no
-   * `ORDER BY` the rows arrived in whatever order the query plan produced, so
-   * the cap cut an arbitrary subset of the account rather than its oldest videos.
-   * `ORDER BY rowid` makes the claim explicit, and the cap bounds the scan in
-   * SQL rather than after materialising every undated row.
+   * ORDERED AND CAPPED, LEAST-RECENTLY-SCANNED FIRST. The walk inserts
+   * newest-first, so `rowid` order IS newest-first - but that was an accident of
+   * SQLite's scan order with nothing asserting it, and `maxConsidered` in the
+   * rung silently assumed it. With no `ORDER BY` the rows arrived in whatever
+   * order the query plan produced, so the cap cut an arbitrary subset of the
+   * account rather than its oldest videos. `ORDER BY rowid` makes the claim
+   * explicit, and the cap bounds the scan in SQL rather than after materialising
+   * every undated row.
+   *
+   * `undated_scanned_at` advances on pre-filter rejection or hydration attempts.
+   * Rejected rows must rotate too, without claiming a hydration attempt. Rows
+   * deferred by the hydration cap keep their place until actually attempted.
+   * SQLite sorts NULL first on ASC, so untouched rows lead; rowid breaks ties
+   * newest-first. This order must apply BEFORE the SQL limit to reach its tail.
    */
   poolVideosUndated(uploader: string, limit?: number): PoolVideo[] {
     const sql =
-      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL ORDER BY rowid ASC" +
+      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL " +
+      "ORDER BY undated_scanned_at ASC, rowid ASC" +
       (limit === undefined ? "" : " LIMIT ?");
     const rows = (
       limit === undefined
@@ -672,8 +680,27 @@ export class SqliteStore {
   /** Persist a bounded-search attempt, including a transiently failed request. */
   markPoolHydrationAttempt(id: string, uploader: string, attemptedAt: string): void {
     this.db
-      .prepare("UPDATE pool_videos SET hydration_attempted_at = ? WHERE id = ? AND uploader = ?")
-      .run(attemptedAt, id, uploader);
+      .prepare(
+        "UPDATE pool_videos SET hydration_attempted_at = ?, undated_scanned_at = ? WHERE id = ? AND uploader = ?",
+      )
+      .run(attemptedAt, attemptedAt, id, uploader);
+  }
+
+  /** Advance a rejected undated row without recording a hydration attempt. */
+  markPoolUndatedScan(id: string, uploader: string, scannedAt: string): void {
+    this.db
+      .prepare(
+        "UPDATE pool_videos SET undated_scanned_at = ? WHERE id = ? AND uploader = ? AND added IS NULL",
+      )
+      .run(scannedAt, id, uploader);
+  }
+
+  /** Latest scan or hydration attempt, including rows that now have a date. */
+  latestPoolProgressAt(): string | null {
+    const row = this.db
+      .prepare("SELECT MAX(undated_scanned_at) AS progress_at FROM pool_videos")
+      .get() as { progress_at: string | null };
+    return row.progress_at;
   }
 
   /** The incremental watermark: the newest upload date seen for an uploader. */

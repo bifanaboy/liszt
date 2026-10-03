@@ -15,7 +15,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LOW_CONFIDENCE_RULE, resolveScene, resolveLinks } from "../src/tubes/resolve.ts";
 import { makeScene } from "./helpers.ts";
+import { SqliteStore } from "../src/core/store/sqlite.ts";
+import { createPoolLookup } from "../src/tubes/eporner-pool.ts";
 import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
+import type { Fetcher } from "../src/sources/types.ts";
 
 const now = new Date("2026-03-10T00:00:00Z");
 
@@ -217,6 +220,7 @@ test("a pool rung that rejected on the date is counted, not silently dropped", a
     attempted: 0,
     noMatch: 0,
     errored: 0,
+    incomplete: 0,
     date: 0,
     unknownDate: 0,
     duration: 0,
@@ -236,7 +240,173 @@ test("a pool rung that rejected on the date is counted, not silently dropped", a
   assert.equal(rejections.date, 4);
   assert.equal(rejections.unknownDate, 2, "an undatable candidate is counted, never passed");
   assert.equal(rejections.noMatch, 1);
+  assert.equal(rejections.incomplete, 0);
   assert.equal(rejections.attempted, 1, "only the pool rung was configured");
+});
+
+test("a capped pool search is counted as truncated, never as an exhaustive no-match", async () => {
+  // The bounded search stopped at its cap, so candidates past the cut were never
+  // examined. Reporting that as `noMatch` states the opposite of what is known,
+  // and the ledger is the only place the difference survives the cycle - so the
+  // capped search gets its own bucket and leaves `noMatch` at zero.
+  const rejections = {
+    attempted: 0,
+    noMatch: 0,
+    errored: 0,
+    incomplete: 0,
+    date: 0,
+    unknownDate: 0,
+    duration: 0,
+  };
+  const result = await resolveScene(
+    scene,
+    {
+      matcher: "sxyprn+eporner",
+      creatorStudio: false,
+      now,
+      poolLookup: async () =>
+        poolMiss({
+          rejected: "incomplete",
+          hydrationCapped: true,
+          omittedCandidates: 181,
+          durationPassed: 221,
+          hydrated: 40,
+        }),
+      sxyprnLookup: null,
+    },
+    rejections,
+  );
+  assert.equal(rejections.incomplete, 1);
+  assert.equal(rejections.noMatch, 0, "truncation is not proof the scene has no video");
+  assert.equal(rejections.errored, 0, "the rung answered, it just could not answer fully");
+  assert.equal(rejections.attempted, 1);
+  assert.equal(result.matched, false);
+});
+
+test("a capped pool search that wins a link is still counted as truncated", async () => {
+  // Otherwise the counter only ever sees the searches that came out empty, and
+  // cap-hit frequency is measured on a biased sample.
+  const rejections = {
+    attempted: 0,
+    noMatch: 0,
+    errored: 0,
+    incomplete: 0,
+    date: 0,
+    unknownDate: 0,
+    duration: 0,
+  };
+  const result = await resolveScene(
+    scene,
+    {
+      matcher: "sxyprn+eporner",
+      creatorStudio: false,
+      now,
+      poolLookup: async () => poolMatch({ hydrationCapped: true, omittedCandidates: 181 }),
+      sxyprnLookup: null,
+    },
+    rejections,
+  );
+  assert.equal(result.matched, true, "a winner found inside the budget is still a link");
+  assert.equal(result.rung, "eporner-pool");
+  assert.equal(rejections.incomplete, 1);
+  assert.equal(rejections.noMatch, 0);
+});
+
+test("a capped pool search still feeds the terminal fallback its examined survivors", async () => {
+  // The truncated search has no exhaustive negative to report, but the
+  // candidates it DID clear the gate on are real evidence, and the fallback can
+  // still offer them as the low-confidence guess they are.
+  const result = await resolveScene(scene, {
+    matcher: "sxyprn+eporner",
+    creatorStudio: false,
+    now,
+    poolLookup: async () =>
+      poolMiss({
+        rejected: "incomplete",
+        hydrationCapped: true,
+        fallbackCandidates: [
+          {
+            url: "https://www.eporner.com/video-survivor/",
+            title: "Marfe compilation",
+            views: null,
+          },
+        ],
+      }),
+    sxyprnLookup: null,
+  });
+  assert.equal(result.matched, true);
+  assert.equal(result.rung, "fallback");
+  assert.equal(result.scene.videoUrls[0]!.source, "eporner-pool");
+  assert.equal(result.scene.videoUrls[0]!.url, "https://www.eporner.com/video-survivor/");
+  assert.equal(result.scene.videoMatching?.confidence, "low", "the fallback is always a guess");
+});
+
+test("the real pool rung's cap reaches the ledger as truncation, not a clean negative", async () => {
+  // End to end, because the two halves failed separately and a stubbed rung
+  // would have hidden the seam: the pool reported `rejected: "incomplete"`
+  // correctly, and the ladder did not recognise that value, so every capped
+  // search landed in `noMatch` and the run ledger stated the opposite of what
+  // was known. 41 survivors against a 40-slot budget forces the cap for real.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>() => ({}) as T,
+  };
+  try {
+    for (let index = 0; index < 41; index += 1) {
+      store.upsertPoolVideo({
+        id: `candidate${index}`,
+        uploader: "Vovick17",
+        title: `Unrelated compilation ${index}`,
+        added: "2026-03-05T12:00:00.000Z",
+        durationSec: 2138,
+        hydratedAt: now.toISOString(),
+        views: 100,
+      });
+    }
+    const result = await resolveLinks({
+      scenes: [
+        makeScene({
+          id: "test:capped",
+          title: "Marfe takes it deep",
+          performers: ["Marfe"],
+          releaseDate: "2026-03-04",
+          durationSec: 2138,
+        }),
+      ],
+      now,
+      mapWithConcurrency: async (items, task) =>
+        Promise.all(items.map((item, index) => task(item, index))),
+      matcherFor: () => ({ matcher: "sxyprn+eporner", creatorStudio: false }),
+      poolLookup: createPoolLookup({
+        store,
+        fetcher,
+        uploaders: ["Vovick17"],
+        durationToleranceSec: 1,
+        dateWindowDays: 7,
+        maxHydrations: 40,
+        log: () => {},
+      }),
+      sxyprnLookup: null,
+    });
+    assert.equal(result.rejections.attempted, 1);
+    assert.equal(result.rejections.incomplete, 1, "the cap hit is counted");
+    assert.equal(
+      result.rejections.noMatch,
+      0,
+      "a truncated search is not proof the scene has no video",
+    );
+    assert.equal(result.rejections.errored, 0, "the rung answered, just not exhaustively");
+    // The survivors it DID examine still reach the terminal fallback, flagged as
+    // the guess they are. That link does not make the rung's negative exhaustive,
+    // which is why `noMatch` stays at zero alongside it.
+    assert.equal(result.matched, 1);
+    assert.equal(result.scenes[0]?.videoMatching?.confidence, "low");
+  } finally {
+    store.close();
+  }
 });
 
 test("a known-dead URL is never re-added", async () => {

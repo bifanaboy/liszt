@@ -178,7 +178,7 @@ for (const previous of ["version 3", "resolver version 4", "pool version 4"] as 
             .prepare("SELECT version FROM schema_migrations ORDER BY version")
             .all()
             .map((row) => row.version),
-          [1, 2, 3, 4, 5],
+          [1, 2, 3, 4, 5, 6],
         );
         assert.equal(
           upgraded
@@ -194,3 +194,58 @@ for (const previous of ["version 3", "resolver version 4", "pool version 4"] as 
     }
   });
 }
+
+test("scan progress upgrades hydration history and persists separately across reopening", () => {
+  const dir = mkdtempSync(join(tmpdir(), "liszt-scan-migration-"));
+  const path = join(dir, "catalogue.db");
+  const attemptedAt = "2026-10-01T00:00:00Z";
+  try {
+    const db = new DatabaseSync(path);
+    try {
+      for (const [index, file] of [
+        "0001_init.sql",
+        "0002_drop_sessions.sql",
+        "0003_pool_video_views.sql",
+        "0004_run_resolver_health.sql",
+        "0005_pool_hydration_attempt.sql",
+      ].entries()) {
+        db.exec(readFileSync(new URL(file, migrations), "utf8"));
+        db.prepare("INSERT INTO schema_migrations VALUES (?, ?)").run(index + 1, "original");
+      }
+      db.prepare(
+        "INSERT INTO pool_videos (id, uploader, hydration_attempted_at) VALUES (?, ?, ?)",
+      ).run("attempted", "account", attemptedAt);
+      db.exec("INSERT INTO pool_videos (id, uploader) VALUES ('untouched', 'account');");
+    } finally {
+      db.close();
+    }
+    const store = new SqliteStore(path);
+    try {
+      store.migrate();
+      assert.deepEqual(
+        store.poolVideosUndated("account", 1).map((row) => row.id),
+        ["untouched"],
+        "upgrade preserves existing hydration rotation",
+      );
+      store.markPoolUndatedScan("untouched", "account", "2026-10-02T00:00:00Z");
+      store.markPoolUndatedScan("attempted", "account", "2026-10-03T00:00:00Z");
+    } finally {
+      store.close();
+    }
+    const reopened = new SqliteStore(path);
+    try {
+      reopened.migrate();
+      const rows = reopened.poolVideosUndated("account");
+      assert.deepEqual(
+        rows.map((row) => row.id),
+        ["untouched", "attempted"],
+      );
+      assert.equal(rows[0]?.hydrationAttemptedAt, null);
+      assert.equal(rows[1]?.hydrationAttemptedAt, attemptedAt);
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

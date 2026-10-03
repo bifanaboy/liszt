@@ -203,6 +203,29 @@ function renderCatalogue() {
   render();
 }
 
+/**
+ * One line describing the last run.
+ *
+ * Truncation is its own state here, not a flavour of success. A bounded pool
+ * search that stopped at its hydration cap reported "no link found" without
+ * having looked at every candidate, so counting it as an ordinary negative
+ * makes a coverage problem look like a fact about the scene. An errored rung is
+ * listed too, and stays first: a rung that could not answer is worse news than
+ * one that answered about part of the set.
+ */
+function refreshStatus(refreshing, run) {
+  if (refreshing) return "Refresh in progress…";
+  if (!run) return "Waiting for first refresh";
+  const resolver = run.resolverHealth || {};
+  const problems = [];
+  if (Number(resolver.errored || 0)) problems.push("resolver unavailable");
+  if (Number(resolver.incomplete || 0)) problems.push("search truncated");
+  const suffix = problems.length ? ` · ${problems.join(" · ")}` : "";
+  return run.ok
+    ? `Catalogue up to date${suffix}`
+    : `${Number(resolver.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"}${suffix}`;
+}
+
 /** Apply a catalogue response to the scene list, source summary, and progress display. */
 function apply(data) {
   scenes = Array.isArray(data.scenes) ? data.scenes : [];
@@ -214,13 +237,7 @@ function apply(data) {
   catalogueReloadPending = false;
   catalogueReloadFailed = false;
   lastChecked.textContent = data.latestRun && data.latestRun.endedAt ? new Date(data.latestRun.endedAt).toLocaleString("en", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
-  refreshState.textContent = refreshing
-    ? "Refresh in progress…"
-    : data.latestRun
-      ? (data.latestRun.ok
-        ? (Number(data.latestRun.resolverHealth?.errored || 0) ? "Catalogue up to date · resolver unavailable" : "Catalogue up to date")
-        : (Number(data.latestRun.resolverHealth?.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"))
-      : "Waiting for first refresh";
+  refreshState.textContent = refreshStatus(refreshing, data.latestRun);
   refreshButton.disabled = refreshing;
   renderCatalogue();
   renderSources();
@@ -536,16 +553,34 @@ function selectCatalogue(id) {
   activeCatalogue = next;
   renderCatalogue();
 }
+/**
+ * Light the nav link the address bar points at.
+ *
+ * The hash is the single source of truth for which link is lit, so this runs on
+ * every hashchange and not only on a click: a bookmarked `#asian` opened cold,
+ * and back/forward over these anchors, would otherwise leave the previous link
+ * lit above the page the reader is actually on. An empty hash means the default
+ * link in the HTML stands.
+ */
+function syncNav(value) {
+  const id = String(value ?? "").replace(/^#/, "");
+  if (!id) return;
+  document.querySelectorAll("[data-nav]").forEach((item) => item.classList.toggle("active", item.dataset.nav === id));
+}
 document.querySelectorAll("[data-nav]").forEach((link) => link.addEventListener("click", () => {
-  document.querySelectorAll("[data-nav]").forEach((item) => item.classList.toggle("active", item === link));
+  syncNav(link.dataset.nav);
   selectCatalogue(link.dataset.nav);
 }));
 // The hash is read as well as the click, so a bookmarked `#asian`, and the
 // browser's own back/forward over these anchors, land on the same page.
-document.addEventListener("hashchange", () => selectCatalogue(globalThis.location?.hash));
+document.addEventListener("hashchange", () => {
+  syncNav(globalThis.location?.hash);
+  selectCatalogue(globalThis.location?.hash);
+});
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); search.focus(); }
 });
+syncNav(globalThis.location?.hash);
 selectCatalogue(globalThis.location?.hash);
 try {
   await load();
