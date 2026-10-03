@@ -212,15 +212,23 @@ function renderCatalogue() {
  * makes a coverage problem look like a fact about the scene. An errored rung is
  * listed too, and stays first: a rung that could not answer is worse news than
  * one that answered about part of the set.
+ *
+ * The slow source's request count comes last and is not a verdict. The ladder
+ * tries the fast pool first, so a run that spent requests there can be a perfectly
+ * good run. It is here because that source makes us wait ten seconds per request,
+ * so this is the number that says how long a refresh took - and for a long time
+ * nobody could read it off anywhere.
  */
 function refreshStatus(refreshing, run) {
   if (refreshing) return "Refresh in progress…";
   if (!run) return "Waiting for first refresh";
   const resolver = run.resolverHealth || {};
-  const problems = [];
-  if (Number(resolver.errored || 0)) problems.push("resolver unavailable");
-  if (Number(resolver.incomplete || 0)) problems.push("search truncated");
-  const suffix = problems.length ? ` · ${problems.join(" · ")}` : "";
+  const parts = [];
+  if (Number(resolver.errored || 0)) parts.push("resolver unavailable");
+  if (Number(resolver.incomplete || 0)) parts.push("search truncated");
+  const lookups = Number(resolver.sxyprnSearches || 0) + Number(resolver.sxyprnDetails || 0);
+  if (lookups) parts.push(`${lookups} slow-source lookups`);
+  const suffix = parts.length ? ` · ${parts.join(" · ")}` : "";
   return run.ok
     ? `Catalogue up to date${suffix}`
     : `${Number(resolver.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"}${suffix}`;

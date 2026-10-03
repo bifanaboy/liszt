@@ -425,6 +425,58 @@ test("run ledger keeps resolver errors separate from catalogue source health", a
   store.close();
 });
 
+test("the run ledger states what the slow rung spent, without touching the ladder's counters", async () => {
+  // The open question about a refresh cycle is how long it takes, and the only
+  // thing that makes it long is requests to the source that makes us wait ten
+  // seconds each. The ladder's own counters cannot answer it: they cover both
+  // rungs, so `attempted` is a number about the whole ladder and says nothing
+  // about what the slow one spent.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let drained = 0;
+  const sync = buildResolvingSync(
+    store,
+    [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
+    {
+      poolLookup: async () => null,
+      sxyprnLookup: async () => [],
+      sxyprnRequests: () => {
+        drained += 1;
+        return { search: 4, details: 11 };
+      },
+    },
+  );
+
+  await sync("test");
+  const [run] = store.recentRuns(1);
+  assert.equal(drained, 1, "one drain per cycle, with the resolve stage over");
+  assert.equal(run?.resolverHealth?.sxyprnSearches, 4, "four scenes reached the slow rung");
+  assert.equal(run?.resolverHealth?.sxyprnDetails, 11, "eleven candidate posts were verified");
+  assert.equal(
+    run?.resolverHealth?.attempted,
+    2,
+    "the ladder's own counters still describe the ladder, one rung attempt per scene",
+  );
+  store.close();
+});
+
+test("a cycle with no slow rung installed records zero requests, not a missing key", async () => {
+  // The optional package may be absent, and the dashboard still reads that row,
+  // adding up the two counts. Absent keys would have it reading `undefined`,
+  // which is indistinguishable from a rung that was never reached.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const sync = buildResolvingSync(store, [
+    adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+  ]);
+
+  await sync("test");
+  const [run] = store.recentRuns(1);
+  assert.equal(run?.resolverHealth?.sxyprnSearches, 0);
+  assert.equal(run?.resolverHealth?.sxyprnDetails, 0);
+  store.close();
+});
+
 /** A sync with the resolve stage switched on, for the ladder's end-to-end tests. */
 function buildResolvingSync(
   store: SqliteStore,
