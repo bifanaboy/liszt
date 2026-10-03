@@ -5,9 +5,11 @@ Read `AGENTS.md` first. Imagine you are an end user and review
 
 Explore the main screens and user flows. Look for visible errors, confusing or
 broken interactions, missing or incorrect information, layout problems, and
-relevant browser-console or network failures. Do not change the site, submit
-anything with real-world effects, or access private data. If Chrome DevTools
-MCP is unavailable, say so and do not claim to have reviewed the site.
+relevant browser-console or network failures. Do not change the site or access
+private data. Do not submit forms or perform other actions with real-world
+effects through the audited site. The issue-tracker actions required below are
+permitted. If Chrome DevTools MCP is unavailable, say so and do not claim to have
+reviewed the site.
 
 Reproduce each suspected problem and record its page, steps, expected result,
 actual result, and useful evidence. File only confirmed problems with Liszt's
