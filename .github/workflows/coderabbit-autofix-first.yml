@@ -1,0 +1,32 @@
+# Fix routing for CodeRabbit blocks: CodeRabbit's own autofix goes first.
+# Measured on this repo: its autofix cleared a block on the first try in 4 of 5
+# PRs, while a second agent trying to satisfy the reviewer cleared 0 of 4.
+# When CodeRabbit requests changes, ask it to apply its own fixes once.
+# The hourly Kilo fixer only steps in when this did not clear the block
+# (autofix skipped, no autofix commit, or a second block).
+name: coderabbit-autofix-first
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  ask:
+    if: github.event.review.user.login == 'coderabbitai[bot]' && github.event.review.state == 'changes_requested'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask CodeRabbit to apply its own fixes, once per pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          asked=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '[.[] | select(.body == "@coderabbitai autofix")] | length' | paste -sd+ - | bc)
+          if [ "$asked" -ge 1 ]; then
+            echo "autofix already requested on #$PR, leaving later rounds to the Kilo fixer"
+            exit 0
+          fi
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "@coderabbitai autofix"
