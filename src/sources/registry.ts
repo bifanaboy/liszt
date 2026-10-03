@@ -9,7 +9,10 @@
  *                   auth, and traxxx replaced TPDB entirely.
  *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
  *                   (traxxx measures no scenes for it; listing is configured).
- *  3. fc2cmadb.com - a named stub. Its interface is unconfirmed.
+ *  3. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
+ *                   Inertia HTML, its detail pages are paced at 8-9 seconds, and
+ *                   its candidates' decisions live in `fc2_candidates` so a sync
+ *                   never repays a detail request it already made.
  *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
  *  5. ManyVids - public creator store listings, incremental plus weekly full pulls.
  */
@@ -18,7 +21,7 @@ import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
-import { createFc2CmadbStudio, FC2CMADB_ID } from "./fc2cmadb.ts";
+import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
@@ -51,9 +54,17 @@ export const ASIAN_SOURCE_IDS: readonly string[] = Object.freeze([FC2CMADB_ID, M
 export interface RegistryOptions {
   madouquApiBase: string;
   traxxxWatchlist: readonly string[];
+  /**
+   * The store, used only by the FC2 lane to remember its candidate decisions.
+   * Optional so a caller that has no database - a test, a CLI probe - still gets
+   * a working registry; the FC2 lane then runs correctly but re-derives every
+   * accepted record on every sync.
+   */
+  store?: SqliteStore;
+  /** FC2 pacing and bounds, forwarded from configuration. */
+  fc2?: Fc2StudioOptions;
   manyvidsStoreIds?: readonly string[];
   manyvidsMinIntervalMs?: number;
-  store?: SqliteStore;
   /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
   maximoListingUrl?: string | undefined;
   /** Hosts the Maximo listing and its video pages may live on. */
@@ -64,10 +75,11 @@ export interface RegistryOptions {
 export function createSources({
   madouquApiBase,
   traxxxWatchlist,
+  store,
+  fc2 = {},
   maximoListingUrl,
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
-  store,
   maximoAllowedHosts = [
     "sexlikereal.com",
     "www.sexlikereal.com",
@@ -83,7 +95,7 @@ export function createSources({
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
     ),
     createBangOriginalsStudio(),
-    createFc2CmadbStudio(),
+    createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
   const watchlist = createTraxxxWatchlistStudios(traxxxWatchlist, [
