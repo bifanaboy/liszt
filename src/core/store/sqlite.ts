@@ -103,6 +103,7 @@ interface SceneRow {
   storefront: string | null;
 }
 
+/** Rebuild and validate a stored scene from its database row and live and dead links. */
 function rowToScene(row: SceneRow, live: VideoLink[], dead: DeadVideoLink[]): Scene {
   const candidate: Record<string, unknown> = {
     id: row.id,
@@ -278,6 +279,7 @@ export class SqliteStore {
       .run(sourceId, snapshot);
   }
 
+  /** Validate and save a scene, atomically replacing its stored fields and links. */
   upsertScene(scene: Scene): void {
     // Validate at the boundary before writing, so a malformed record names the
     // store and never lands a half-valid row.

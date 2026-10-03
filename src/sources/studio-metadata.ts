@@ -40,6 +40,7 @@ export function getStudioMetadataProfile(value: string): StudioMetadataProfile |
   return null;
 }
 
+/** List supported metadata fields with values other than null, undefined, or empty strings/arrays. */
 function populatedFields(raw: Partial<RawScene>): (keyof RawScene)[] {
   return (
     ["title", "releaseDate", "performers", "durationSec", "thumbnailUrl", "tags"] as const

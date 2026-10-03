@@ -35,6 +35,7 @@ type VixenRecord = {
   images?: { poster?: unknown } | null;
 };
 
+/** Extract unique, trimmed, nonempty names from an array of model or category records. */
 function namedItems(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [
@@ -48,6 +49,7 @@ function namedItems(value: unknown): string[] {
   ];
 }
 
+/** Select the widest poster with a nonempty source and finite width, or return undefined. */
 function thumbnail(value: unknown): string | undefined {
   if (!Array.isArray(value)) return undefined;
   const images = value.flatMap((item) => {
@@ -93,6 +95,7 @@ export function parseVixenResponse(body: unknown, expectedSlug: string): Partial
   return result;
 }
 
+/** Extract the slug from a /videos/<slug> path, allowing a trailing slash; otherwise return null. */
 function videoSlug(url: URL): string | null {
   const match = url.pathname.match(/^\/videos\/([a-z0-9-]+)\/?$/i);
   return match?.[1] ?? null;
