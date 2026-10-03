@@ -435,6 +435,56 @@ test("the detail pass reports which failure it hit, not only that it failed", as
   );
 });
 
+test("a non-finite failing share is refused rather than silently disarming the window", () => {
+  // A `NaN` share makes every `failures() >= minFailures` comparison false, so
+  // the break falls back to consecutive failures alone and the interleaved
+  // pattern the window was added for goes unbounded. Rejecting it loudly at
+  // construction is the only answer that cannot be mistaken for a setting.
+  assert.throws(() => createSxyprnClient(packageStub(), { failureRatio: Number.NaN }), RangeError);
+  assert.throws(
+    () => createSxyprnClient(packageStub(), { failureRatio: Number.POSITIVE_INFINITY }),
+    RangeError,
+  );
+  // Finite shares are untouched: clamping would raise one above 1 into "open on
+  // any failure".
+  assert.doesNotThrow(() => createSxyprnClient(packageStub(), { failureRatio: 1 }));
+});
+
+test("a detail failure that is not an Error still names a reason", async () => {
+  // The detail wrapper rethrows whatever it caught, so a truthy non-`Error` used
+  // to reach the joined diagnostic as `undefined`, and a falsey one left a blank
+  // field between two semicolons. Neither tells a reader anything about the run.
+  const failures = new Map<string, unknown>([
+    [POST, "502 from the edge"],
+    [OTHER, { status: 403 }],
+  ]);
+  const lookup = createSxyprnLookup({
+    client: stubClient({
+      cards: [POST, OTHER].map((url) => ({
+        url,
+        title: "Marfe takes it deep",
+        durationSeconds: 1418,
+      })),
+      details: async (url) => {
+        throw failures.get(url);
+      },
+    }),
+    dateWindowDays: 7,
+    maxMatches: 5,
+  });
+  const error = await lookup(SCENE).then(
+    () => null,
+    (thrown: Error) => thrown,
+  );
+  const message = error?.message ?? "";
+  const reasons = message.slice("sxyprn post verification unavailable: ".length).split("; ");
+  assert.ok(!/undefined/.test(message), `no reason is the string "undefined": ${message}`);
+  assert.ok(
+    reasons.every((reason) => reason.trim().length > 0),
+    `every reason is readable: ${JSON.stringify(reasons)}`,
+  );
+});
+
 test("the detail pass names at most three distinct reasons", async () => {
   // Enough to diagnose, not enough to read. A whole failed run's worth of
   // per-post strings is not a diagnosis, and the URLs must not leak into it.

@@ -115,6 +115,18 @@ export function searchSlug(value: string): string {
     .replace(/\s+/g, "-");
 }
 
+/**
+ * A rejected detail fetch reduced to one readable reason. A detail wrapper can
+ * rethrow anything, and a truthy non-`Error` would otherwise land in the joined
+ * diagnostic as `undefined` - or as an empty field when the reasons are joined.
+ * Never returns an empty string, so a reason is never a blank gap in the list.
+ */
+function detailFailureReason(error: unknown): string {
+  if (error instanceof Error) return error.message.trim() || "unknown detail error";
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "unknown detail error";
+}
+
 export interface SxyprnLookupOptions {
   client: SxyprnClient;
   maxMatches?: number;
@@ -276,7 +288,7 @@ export function createSxyprnLookup({
       // A post we could not fetch is never exposed as playback, and is not
       // counted against the source: the ladder moves down instead.
       if (!outcome || outcome.detail === null) {
-        if (outcome?.error) detailErrors.push((outcome.error as Error).message);
+        if (outcome) detailErrors.push(detailFailureReason(outcome.error));
         continue;
       }
       const detail = outcome.detail;

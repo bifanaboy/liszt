@@ -108,6 +108,13 @@ export function createSxyprnClient(
     cooldownMs = 10 * 60_000,
   } = options;
   const windowSize = Math.max(1, Math.floor(failureWindow));
+  // A non-finite share makes every comparison against `minFailures` false, which
+  // silently leaves only the consecutive-failure rule alive - the interleaved
+  // pattern this window exists to catch. Clamping is the worse answer: it would
+  // turn a share above 1 into "open on any failure", so reject instead.
+  if (!Number.isFinite(failureRatio)) {
+    throw new RangeError("failureRatio must be a finite number");
+  }
   const minFailures = Math.max(1, Math.ceil(windowSize * failureRatio));
   let consecutiveFailures = 0;
   let broken = false;
