@@ -35,6 +35,19 @@ export const VideoLink = z.object({
   verifiedAt: IsoTimestamp,
   /** How many consecutive definitive re-verify failures this link has taken. */
   verifyFailures: z.number().int().nonnegative().default(0),
+  /**
+   * Position within a verified multipart release, 1-based. OPTIONAL, and never
+   * present outside FC2.
+   *
+   * FC2 releases are routinely uploaded to eporner as several files by one
+   * account, and the lane is allowed to link all of them. It may only call them
+   * parts when every grouped upload carries the SAME uploader and a DIFFERENT
+   * duration - two uploads from different accounts are two releases that happen
+   * to share a code, and two uploads of identical length are the same file
+   * twice. Absent means "not part of a verified group", which is the state of
+   * every ordinary link and of an FC2 link with a single exact-code result.
+   */
+  part: z.number().int().positive().optional(),
 });
 export type VideoLink = z.infer<typeof VideoLink>;
 

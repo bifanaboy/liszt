@@ -45,6 +45,7 @@ import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
 import type { PoolMatch } from "../tubes/eporner-pool.ts";
 import type { MatchScene } from "../tubes/types.ts";
 import { getStudioMetadataProfile, scrapeReleaseMetadata } from "../sources/studio-metadata.ts";
+import type { Fc2LookupResult } from "../tubes/fc2-eporner.ts";
 
 /** `YYYY-MM-DD` from a `Date`, in UTC. */
 export function dateOnly(date: Date): string {
@@ -256,6 +257,7 @@ export function mergeStudioMetadata(
 export interface SyncLookups {
   poolLookup: ((scene: MatchScene, now: Date) => Promise<PoolMatch | null>) | null;
   sxyprnLookup: ((scene: MatchScene) => Promise<SxyprnMatch[]>) | null;
+  fc2Lookup?: ((code: string) => Promise<Fc2LookupResult>) | null;
   /** Optional cap on scenes resolved per cycle. */
   limit?: number;
   /**
@@ -578,6 +580,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           laneBySource.get(scene.sourceId) ?? { matcher: null, creatorStudio: false },
         poolLookup: options.lookups.poolLookup,
         sxyprnLookup: options.lookups.sxyprnLookup,
+        fc2Lookup: options.lookups.fc2Lookup,
         log: options.log,
         ...(options.lookups.limit !== undefined ? { limit: options.lookups.limit } : {}),
         ...(progress
