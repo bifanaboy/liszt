@@ -107,6 +107,12 @@ export function createSxyprnClient(
     failureRatio = 0.5,
     cooldownMs = 10 * 60_000,
   } = options;
+  // A non-finite window poisons both derived values: `Math.max(1, NaN)` stays
+  // NaN, so `record()` never trims `outcomes` and never reaches the threshold.
+  // Reject before normalizing.
+  if (!Number.isFinite(failureWindow)) {
+    throw new RangeError("failureWindow must be a finite number");
+  }
   const windowSize = Math.max(1, Math.floor(failureWindow));
   // A non-finite share makes every comparison against `minFailures` false, which
   // silently leaves only the consecutive-failure rule alive - the interleaved

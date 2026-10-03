@@ -450,6 +450,21 @@ test("a non-finite failing share is refused rather than silently disarming the w
   assert.doesNotThrow(() => createSxyprnClient(packageStub(), { failureRatio: 1 }));
 });
 
+test("a non-finite failure window is refused rather than never trimming", () => {
+  // The window is normalized before anything compares against it, and both
+  // derived values inherit the problem: `Math.max(1, NaN)` is NaN, so `record()`
+  // never trims `outcomes` and never reaches `minFailures`. `Infinity` keeps the
+  // array growing for the same reason. Reject at construction instead.
+  assert.throws(() => createSxyprnClient(packageStub(), { failureWindow: Number.NaN }), RangeError);
+  assert.throws(
+    () => createSxyprnClient(packageStub(), { failureWindow: Number.POSITIVE_INFINITY }),
+    RangeError,
+  );
+  // Finite windows still normalize as before: a fraction floors, a value below 1
+  // floors up to 1.
+  assert.doesNotThrow(() => createSxyprnClient(packageStub(), { failureWindow: 0.5 }));
+});
+
 test("a detail failure that is not an Error still names a reason", async () => {
   // The detail wrapper rethrows whatever it caught, so a truthy non-`Error` used
   // to reach the joined diagnostic as `undefined`, and a falsey one left a blank
