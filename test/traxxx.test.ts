@@ -194,6 +194,7 @@ test("a tagged network emits roster labels and stops when a full page crosses th
     records: 2,
     emitted: 1,
     filtered: 1,
+    excluded: 0,
   });
 });
 
