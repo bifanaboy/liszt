@@ -4,8 +4,9 @@
  *
  * The five categories, in full:
  *
- *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, plus the checked
- *                   watchlist. No auth, and traxxx replaced TPDB entirely.
+ *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, Woodman Casting X
+ *                   (minus its XXXX scenes), plus the checked watchlist. No
+ *                   auth, and traxxx replaced TPDB entirely.
  *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
  *                   (traxxx measures no scenes for it; listing is configured).
  *  3. fc2cmadb.com - a named stub. Its interface is unconfirmed.
@@ -20,6 +21,7 @@ import { createBangOriginalsStudio } from "./bang-originals.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
+import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 
 export const lancelotStylesEvolution = createTraxxxStudio({
@@ -88,6 +90,6 @@ export function createSources({
     ...sources.map((source) => source.id),
     ...RETIRED_SOURCE_IDS,
   ]);
-  sources.splice(2, 0, ...watchlist);
+  sources.splice(2, 0, ...watchlist, createWoodmanCastingXSource());
   return sources;
 }

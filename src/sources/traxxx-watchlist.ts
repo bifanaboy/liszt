@@ -1,5 +1,6 @@
 import type { SourceAdapter } from "./types.ts";
 import { createTraxxxStudio, type TraxxxEntityKind } from "./traxxx.ts";
+import { WOODMAN_CASTING_X_SLUG } from "./woodman-casting-x.ts";
 
 export interface TraxxxLaneSpec {
   id: string;
@@ -83,6 +84,9 @@ export function createTraxxxWatchlistStudios(
   const seen = new Set<string>();
   const reserved = new Set(reservedIds);
   for (const spec of specs) {
+    if (spec.kind === "channel" && spec.slug === WOODMAN_CASTING_X_SLUG) {
+      throw new Error(`Reserved Traxxx watchlist channel "${spec.slug}" for ${spec.url}`);
+    }
     if (reserved.has(spec.id)) {
       throw new Error(`Reserved Traxxx watchlist ID "${spec.id}" for ${spec.url}`);
     }
