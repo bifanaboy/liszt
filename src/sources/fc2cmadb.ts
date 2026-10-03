@@ -133,10 +133,15 @@ export interface InertiaPage {
  * Pull the Inertia payload out of a page body.
  *
  * The payload is a JSON document inside a `<script type="application/json">`, so
- * it carries no HTML-escaping of its own; unescaping anyway is harmless and
- * covers a body that has been through an editor. A missing or unparseable
- * payload throws `Fc2ShapeError` rather than returning an empty page, because an
- * empty page is indistinguishable from a tag with no articles.
+ * it carries no HTML-escaping of its own, and it is read exactly as it arrived.
+ * Unescaping `&quot;` and friends is a FALLBACK, not a preparation step: a
+ * release whose title literally contains `&quot;` is valid JSON that unescaping
+ * would rewrite into a stray quote, and a title is the field the classifier
+ * reads. Only a body that will not parse at all is tried again unescaped.
+ *
+ * A payload that is missing or unparseable throws `Fc2ShapeError` rather than
+ * returning an empty page, because an empty page is indistinguishable from a tag
+ * with no articles.
  */
 export function extractInertiaPage(html: string): InertiaPage {
   const body = String(html);
@@ -144,7 +149,8 @@ export function extractInertiaPage(html: string): InertiaPage {
     /<script[^>]*\bdata-page=["'][^"']*["'][^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/i,
   );
   if (!match) throw new Fc2ShapeError("no Inertia page payload");
-  const raw = (match[1] as string)
+  const asSent = match[1] as string;
+  const unescaped = asSent
     .replace(/&quot;/g, '"')
     .replace(/&#039;|&apos;/g, "'")
     .replace(/&lt;/g, "<")
@@ -152,9 +158,13 @@ export function extractInertiaPage(html: string): InertiaPage {
     .replace(/&amp;/g, "&");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(asSent);
   } catch (error) {
-    throw new Fc2ShapeError(`page payload is not valid JSON (${(error as Error).message})`);
+    try {
+      parsed = JSON.parse(unescaped);
+    } catch {
+      throw new Fc2ShapeError(`page payload is not valid JSON (${(error as Error).message})`);
+    }
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Fc2ShapeError("page payload is not an object");
@@ -853,6 +863,13 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       const fresh = new Map<string, RawScene>();
       let checked = 0;
       let classifiedPending = 0;
+      // A failed detail read is NOT a classification, so the record stays pending
+      // and stays due. It must not, though, be allowed to end the queue: the due
+      // order is oldest-first, so one record the site will never serve would be
+      // re-read first on every sync and, if it ended the run there, nothing
+      // behind it would ever be checked. The first failure is therefore kept and
+      // rethrown once the queue has been worked through.
+      let detailFailure: unknown = null;
       for (const candidate of due) {
         let detail: Fc2Detail;
         try {
@@ -868,14 +885,15 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
             checked += 1;
             continue;
           }
-          // A failed detail read is NOT a classification. Retrying the record next
-          // sync costs one paced request; guessing a verdict costs the lane its
-          // honesty. It therefore stays pending, and stays due.
+          // Retrying the record next sync costs one paced request; guessing a
+          // verdict costs the lane its honesty. It therefore stays pending, and
+          // stays due.
           ctx.log("fc2: detail check failed, leaving the candidate pending", {
             videoId: candidate.videoId,
             error: (error as Error).message,
           });
-          throw error;
+          detailFailure ??= error;
+          continue;
         }
         checked += 1;
         const verdict = classifyFc2Candidate({
@@ -903,6 +921,11 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
           retired += store.retireFc2StalePending(candidate.videoId, now);
         }
       }
+
+      // The queue has been worked through, so the run can now report the failure
+      // honestly: last-good scenes are retained, and every decision made before
+      // the failure is already remembered for the next sync.
+      if (detailFailure !== null) throw detailFailure;
 
       // An ACCEPTED record is re-emitted every sync from its cached scene, and
       // that is the whole reason the cache exists: the record is in the catalogue

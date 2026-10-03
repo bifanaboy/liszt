@@ -91,6 +91,23 @@ test("the page payload is read out of the script tag, not the markup", () => {
   assert.equal(page.props.tag_name, "アナル");
 });
 
+test("a title that literally contains &quot; is not unescaped into a stray quote", () => {
+  // The payload is raw script text, so `&quot;` in a title is five literal
+  // characters and the title is the field the classifier reads. Unescaping first
+  // would rewrite it; unescaping only after a failed parse cannot.
+  const html = fixture("fc2-detail-uncensored.html").replace(
+    '"title": "【托卵実録】',
+    '"title": "A &quot;quoted&quot; word &amp; more 【托卵実録】',
+  );
+  const detail = parseFc2Detail(extractInertiaPage(html));
+  assert.match(detail.title, /A &quot;quoted&quot; word &amp; more/);
+  assert.equal(
+    parseFc2Detail(extractInertiaPage(fixture("fc2-detail-uncensored.html"))).title,
+    detail.title.replace(/A &quot;quoted&quot; word &amp; more /, ""),
+    "the rest of the title is untouched",
+  );
+});
+
 test("a page with no payload is a shape failure, not an empty listing", () => {
   // THE distinction that matters: an empty tag and a page that is not a page look
   // identical to any reader that returns `[]` on failure, and the empty reading
@@ -810,6 +827,58 @@ test("a failed detail read leaves the record pending rather than guessing", asyn
   );
   assert.equal(store.fc2Candidate("4986883")?.status, "pending");
   store.close();
+});
+
+test("one unreadable record cannot starve the rest of the queue", async () => {
+  // The due order is oldest-first, so a record the site will never serve sits at
+  // the head of every queue. If its failure ended the run, nothing behind it
+  // would ever be read - the lane would spend each sync on the same request and
+  // never classify a single release.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const pages = [
+      {
+        cursor: null,
+        records: [
+          { videoId: "4986794", releaseDate: "2026-10-02" },
+          { videoId: "4986883", releaseDate: "2026-10-02" },
+        ],
+        nextCursor: null,
+      },
+    ];
+    const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+    await assert.rejects(
+      () =>
+        studio.fetch(
+          WINDOW_START,
+          context(
+            laneFetcher(pages, (id) => {
+              if (id === "4986794") throw new Error("connection reset");
+              return fixture("fc2-detail-uncensored.html");
+            }),
+          ),
+        ),
+      /connection reset/,
+    );
+    assert.equal(
+      store.fc2Candidate("4986794")?.status,
+      "pending",
+      "the unreadable record stays undecided, never guessed",
+    );
+    assert.equal(
+      store.fc2Candidate("4986883")?.status,
+      "accepted",
+      "the record behind it was still read and remembered",
+    );
+    assert.equal(
+      store.fc2Candidate("4986794")?.recheckAt,
+      null,
+      "the unreadable one stays due rather than being given a retry date",
+    );
+  } finally {
+    store.close();
+  }
 });
 
 test("a rebuilt store re-derives the same scene with bounded detail work", async () => {
