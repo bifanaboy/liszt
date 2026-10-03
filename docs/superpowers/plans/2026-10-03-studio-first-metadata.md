@@ -62,13 +62,13 @@
 - Host profiles map the nine Vixen family domains to the Vixen GraphQL detail lookup and reuse the existing safe JSON-LD/metadata parser for its currently allowed hosts.
 - Vixen responses must contain the exact URL slug requested before their fields are accepted.
 
-- [ ] Add `Vixen detail lookup accepts the exact matching video response and rejects a different slug`.
-- [ ] Run `node --test test/studio-metadata.test.ts` and confirm failure on missing scraper functions.
-- [ ] Implement strict HTTPS and host/profile checks; reject off-profile redirects.
-- [ ] Extract supported fields from the Vixen detail response, including `runLength`, and mark each returned field as studio-sourced.
-- [ ] Reuse the existing studio-page extractor for its established hosts.
-- [ ] Run `node --test test/studio-metadata.test.ts`, `npm run typecheck`, and `git diff --check`.
-- [ ] Commit as `feat: read release details from studio pages`.
+- [x] Add `Vixen detail lookup accepts the exact matching video response and rejects a different slug`.
+- [x] Run `node --test test/studio-metadata.test.ts` and confirm failure on missing scraper functions.
+- [x] Implement strict HTTPS and exact host/profile checks; the Vixen GraphQL lookup does not follow redirects, and the existing page scraper revalidates every redirect.
+- [x] Extract supported fields from the exact Vixen detail response, including `runLength`, and mark each returned field as studio-sourced.
+- [x] Reuse the existing studio-page extractor for its established hosts.
+- [x] Run `node --test test/studio-metadata.test.ts`, `npm run typecheck`, and `git diff --check`.
+- [x] Commit as `feat: read release details from studio pages`.
 
 ### Task 3: Hydrate, merge, and bound sync work
 
