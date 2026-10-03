@@ -129,6 +129,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
         windowListeners.set(name, handler);
       },
       location: place,
+      URL,
       Option: Element,
       fetch,
       renderSourceHealthSummary: () => "",
@@ -658,4 +659,85 @@ test("a failed refresh still reports truncation alongside its source failures", 
     app.element("#refresh-state").textContent,
     "Last refresh had source failures · search truncated",
   );
+});
+
+test("the last run says how much of its match count was a guess", async () => {
+  // "Catalogue up to date" says nothing about whether the links it found were
+  // identified. A run where 56 of 69 winners were the terminal fallback's flagged
+  // guesses reads as a clean refresh, and the only way to see the difference was
+  // to reconstruct it from other counters.
+  for (const [resolverHealth, expected] of [
+    [{ winnerFallback: 56 }, "Catalogue up to date · 56 low-confidence guesses"],
+    [{ winnerPool: 13, winnerSxyprn: 0, winnerFallback: 0 }, "Catalogue up to date"],
+    // A named match is not a verdict either: how much of it was a guess is.
+    [
+      { winnerPool: 9, winnerSxyprn: 4, winnerFallback: 1 },
+      "Catalogue up to date · 1 low-confidence guess",
+    ],
+  ] as const) {
+    const app = await dashboard(async () => response(catalogue));
+    app.apply({ ...catalogue, latestRun: { ok: true, resolverHealth } });
+    assert.equal(app.element("#refresh-state").textContent, expected);
+  }
+});
+
+test("the last run says what the slow source cost, and what went wrong with it", async () => {
+  // A clean run is not always a cheap one: the ladder tries the fast pool first,
+  // and every scene it could not resolve there costs a ten-second wait at the
+  // slow source. Without that number on screen, a refresh that took twenty
+  // minutes reads exactly like one that took twenty seconds.
+  for (const [resolverHealth, expected] of [
+    [{ sxyprnSearches: 4, sxyprnDetails: 11 }, "Catalogue up to date · 15 slow-source lookups"],
+    [{ sxyprnSearches: 0, sxyprnDetails: 0 }, "Catalogue up to date"],
+    // Nothing was spent, so there is nothing to say, however bad the run was.
+    [
+      { errored: 2, incomplete: 1 },
+      "Catalogue up to date · resolver unavailable · search truncated",
+    ],
+  ] as const) {
+    const app = await dashboard(async () => response(catalogue));
+    app.apply({ ...catalogue, latestRun: { ok: true, resolverHealth } });
+    assert.equal(app.element("#refresh-state").textContent, expected);
+  }
+});
+
+test("FC2 links display verified part numbers while alternative uploads keep neutral labels", async () => {
+  const app = await dashboard(async () => response(catalogue), "#asian");
+  app.apply({
+    ...catalogue,
+    asianSourceIds: ["fc2cmadb"],
+    scenes: [
+      {
+        ...asianRelease,
+        sourceId: "fc2cmadb",
+        labelId: "fc2cmadb",
+        videoUrls: [
+          { source: "eporner", url: "https://www.eporner.com/video-abc123/", part: 2 },
+          { source: "eporner", url: "https://www.eporner.com/video-def456/", part: 1 },
+        ],
+      },
+    ],
+  });
+  let html = app.element("#list").innerHTML;
+  assert.match(html, /video-abc123\/[^>]*>[^<]*Part 2/);
+  assert.match(html, /video-def456\/[^>]*>[^<]*Part 1/);
+  app.apply({
+    ...catalogue,
+    asianSourceIds: ["fc2cmadb"],
+    scenes: [
+      {
+        ...asianRelease,
+        sourceId: "fc2cmadb",
+        labelId: "fc2cmadb",
+        videoUrls: [
+          { source: "eporner", url: "https://www.eporner.com/video-abc123/" },
+          { source: "eporner", url: "https://www.eporner.com/video-def456/" },
+        ],
+      },
+    ],
+  });
+  html = app.element("#list").innerHTML;
+  assert.doesNotMatch(html, /Part [12]/);
+  assert.match(html, /eporner 1/);
+  assert.match(html, /eporner 2/);
 });

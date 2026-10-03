@@ -13,6 +13,11 @@ export interface RawScene {
   durationSec?: number | null;
   thumbnailUrl?: string;
   releaseUrl?: string;
+  storeId?: string;
+  launchDate?: string;
+  previewUrl?: string;
+  price?: { regular: string; onSale: boolean; free: boolean };
+
   /** The label's own release code, e.g. madouqu `xb6340`. */
   studioCode?: string;
   tags?: string[];
@@ -76,6 +81,8 @@ export interface SourceLabel {
 
 export interface SourceResult {
   scenes: RawScene[];
+  /** Native scene IDs explicitly excluded by successful source evidence, never merely absent. */
+  excludedSceneIds?: string[];
   /**
    * Explicitly true when the source really has no matching records. A result
    * with no scenes and `verifiedEmpty: false` is treated as suspicious and

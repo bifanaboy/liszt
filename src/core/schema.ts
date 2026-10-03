@@ -112,6 +112,16 @@ export const SceneBase = z.object({
   durationSec: z.number().int().positive().nullable().default(null),
   thumbnailUrl: z.string().default(""),
   releaseUrl: z.string().url().optional(),
+  storeId: z.string().regex(/^\d+$/).optional(),
+  launchDate: IsoTimestamp.optional(),
+  previewUrl: z.string().url().optional(),
+  price: z
+    .object({
+      regular: z.string().regex(/^\d+(?:\.\d+)?$/),
+      onSale: z.boolean(),
+      free: z.boolean(),
+    })
+    .optional(),
   /** The label's own release code, e.g. madouqu `xb6340`. */
   studioCode: z.string().min(1).optional(),
   tags: z.array(z.string().min(1)).default([]),

@@ -113,7 +113,9 @@ function render() {
     const outbound = links.map((item) => {
       const index = (sourceIndexes.get(item.source) || 0) + 1;
       sourceIndexes.set(item.source, index);
-      const label = sourceTotals.get(item.source) > 1 ? `${item.source} ${index}` : item.source;
+      const label = scene.sourceId === "fc2cmadb" && Number.isInteger(item.part) && item.part > 0
+        ? `${item.source} · Part ${item.part}`
+        : sourceTotals.get(item.source) > 1 ? `${item.source} ${index}` : item.source;
       return `<a class="source-link source-link--${esc(item.source)}" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener noreferrer" title="Open on ${esc(item.source)}">${esc(label)} <span>↗</span></a>`;
     }).join("");
     const releaseUrl = safeUrl(scene.releaseUrl);
@@ -212,15 +214,30 @@ function renderCatalogue() {
  * makes a coverage problem look like a fact about the scene. An errored rung is
  * listed too, and stays first: a rung that could not answer is worse news than
  * one that answered about part of the set.
+ *
+ * The slow source's request count comes next and is not a verdict. The ladder
+ * tries the fast pool first, so a run that spent requests there can be a perfectly
+ * good run. It is here because that source makes us wait ten seconds per request,
+ * so this is the number that says how long a refresh took - and for a long time
+ * nobody could read it off anywhere.
+ *
+ * The guess count is last. "Catalogue up to date" says nothing about whether the
+ * links it found were identified, and a run where most of them were guesses reads
+ * as a clean refresh without it. The scenes themselves are already labelled
+ * LOW CONFIDENCE; this is the same fact as one number per run.
  */
 function refreshStatus(refreshing, run) {
   if (refreshing) return "Refresh in progress…";
   if (!run) return "Waiting for first refresh";
   const resolver = run.resolverHealth || {};
-  const problems = [];
-  if (Number(resolver.errored || 0)) problems.push("resolver unavailable");
-  if (Number(resolver.incomplete || 0)) problems.push("search truncated");
-  const suffix = problems.length ? ` · ${problems.join(" · ")}` : "";
+  const parts = [];
+  if (Number(resolver.errored || 0)) parts.push("resolver unavailable");
+  if (Number(resolver.incomplete || 0)) parts.push("search truncated");
+  const lookups = Number(resolver.sxyprnSearches || 0) + Number(resolver.sxyprnDetails || 0);
+  if (lookups) parts.push(`${lookups} slow-source lookups`);
+  const guesses = Number(resolver.winnerFallback || 0);
+  if (guesses) parts.push(`${guesses} low-confidence ${guesses === 1 ? "guess" : "guesses"}`);
+  const suffix = parts.length ? ` · ${parts.join(" · ")}` : "";
   return run.ok
     ? `Catalogue up to date${suffix}`
     : `${Number(resolver.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"}${suffix}`;

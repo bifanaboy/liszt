@@ -19,7 +19,7 @@ import { fixedClock } from "../src/sources/types.ts";
 import type { Scene } from "../src/core/schema.ts";
 import { createProgressTracker, type SyncProgress } from "../src/pipeline/progress.ts";
 import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
-import type { RawScene, SourceAdapter, SourceResult } from "../src/sources/types.ts";
+import type { RawScene, SourceAdapter, SourceResult, Fetcher } from "../src/sources/types.ts";
 
 const NOW = "2026-03-10T00:00:00Z";
 const FROM = dateOnly(new Date(new Date("2026-03-10T00:00:00Z").getTime() - 90 * 86_400_000));
@@ -453,16 +453,158 @@ test("run ledger keeps resolver errors separate from catalogue source health", a
   store.close();
 });
 
+test("the run ledger states what the slow rung spent, without touching the ladder's counters", async () => {
+  // The open question about a refresh cycle is how long it takes, and the only
+  // thing that makes it long is requests to the source that makes us wait ten
+  // seconds each. The ladder's own counters cannot answer it: they cover both
+  // rungs, so `attempted` is a number about the whole ladder and says nothing
+  // about what the slow one spent.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let drained = 0;
+  const sync = buildResolvingSync(
+    store,
+    [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
+    {
+      poolLookup: async () => null,
+      sxyprnLookup: async () => [],
+      sxyprnRequests: () => {
+        drained += 1;
+        return { search: 4, details: 11 };
+      },
+    },
+  );
+
+  await sync("test");
+  const [run] = store.recentRuns(1);
+  assert.equal(drained, 1, "one drain per cycle, with the resolve stage over");
+  assert.equal(run?.resolverHealth?.sxyprnSearches, 4, "four scenes reached the slow rung");
+  assert.equal(run?.resolverHealth?.sxyprnDetails, 11, "eleven candidate posts were verified");
+  assert.equal(
+    run?.resolverHealth?.attempted,
+    2,
+    "the ladder's own counters still describe the ladder, one rung attempt per scene",
+  );
+  store.close();
+});
+
+test("a cycle with no slow rung installed records zero requests, not a missing key", async () => {
+  // The optional package may be absent, and the dashboard still reads that row,
+  // adding up the two counts. Absent keys would have it reading `undefined`,
+  // which is indistinguishable from a rung that was never reached.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const sync = buildResolvingSync(store, [
+    adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+  ]);
+
+  await sync("test");
+  const [run] = store.recentRuns(1);
+  assert.equal(run?.resolverHealth?.sxyprnSearches, 0);
+  assert.equal(run?.resolverHealth?.sxyprnDetails, 0);
+  store.close();
+});
+
+test("the run ledger splits the winners it counted, so a guess is never read as a match", async () => {
+  // `matched` is one number over two different things: a rung that NAMED the scene,
+  // and the terminal fallback's flagged guess when no tube could. Both are stored
+  // as links and both read as "matched", so a run can report 69 matched when 13
+  // were identified - and the only way to see that was to reconstruct it from
+  // other counters. These three numbers are the direct reading.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const named = (over: Partial<PoolMatch>): PoolMatch => ({
+    url: "https://www.eporner.com/video-abc/",
+    embedUrl: "https://www.eporner.com/embed/abc/",
+    videoId: "abc",
+    uploader: "Vovick17",
+    title: "Marfe compilation",
+    identityTier: 1,
+    lagDays: 2,
+    candidatesConsidered: 40,
+    durationPassed: 1,
+    hydrated: 1,
+    rejectedByDate: 0,
+    unknownDate: 0,
+    hydrationCapped: false,
+    omittedCandidates: 0,
+    fallbackCandidates: [],
+    rejected: null,
+    ...over,
+  });
+  let posts = 0;
+  const sync = buildResolvingSync(
+    store,
+    [
+      adapter("pooled", async () => ({
+        scenes: [raw("1"), raw("2"), raw("3")],
+        verifiedEmpty: false,
+      })),
+    ],
+    {
+      // Scene 1 is named by the pool. Scenes 2 and 3 are not, so the ladder moves
+      // on: scene 2 is named by the slow rung, scene 3 keeps only an unnamed
+      // survivor and takes the terminal fallback.
+      poolLookup: async (scene) =>
+        scene.id === "pooled:1"
+          ? named({})
+          : named({ url: "", embedUrl: "", videoId: "", title: "", rejected: "date" }),
+      sxyprnLookup: async () => {
+        posts += 1;
+        const url = `https://sxyprn.com/post/${posts.toString(16).padStart(13, "0")}.html`;
+        return posts === 1
+          ? [
+              {
+                url,
+                identityTier: 2 as const,
+                lagDays: 1,
+                title: "Marfe compilation",
+                duration: 600,
+                added: "2026-03-02T00:00:00.000Z",
+                views: 900,
+              },
+            ]
+          : [
+              {
+                url,
+                identityTier: 0 as const,
+                lagDays: 1,
+                title: "unrelated clip",
+                duration: 600,
+                added: "2026-03-02T00:00:00.000Z",
+                views: 900,
+              },
+            ];
+      },
+    },
+  );
+
+  const summary = await sync("test");
+  const [run] = store.recentRuns(1);
+  const health = run?.resolverHealth ?? {};
+  assert.equal(summary.matched, 3, "all three are links, and all three count as matched");
+  assert.equal(health.winnerPool, 1);
+  assert.equal(health.winnerSxyprn, 1);
+  assert.equal(health.winnerFallback, 1, "the guess is visible as its own number");
+  assert.equal(
+    (health.winnerPool ?? 0) + (health.winnerSxyprn ?? 0),
+    2,
+    "the two named counters separate the rungs, which no other counter on the row does",
+  );
+  store.close();
+});
+
 /** A sync with the resolve stage switched on, for the ladder's end-to-end tests. */
 function buildResolvingSync(
   store: SqliteStore,
   sources: SourceAdapter[],
   lookups: Partial<SyncLookups> = {},
+  verificationFetcher: Fetcher = offlineFetcher(),
 ) {
   return createSync({
     store,
     sources,
-    fetcher: new HttpFetcher(),
+    fetcher: verificationFetcher,
     clock: fixedClock(NOW),
     log: new NullLogger(),
     windowDays: 90,
@@ -546,7 +688,7 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
   );
   const summary = await sync("test");
   assert.equal(summary.matched, 1);
-  assert.deepEqual(summary.tiers, [1], "the tier histogram sees the real tier");
+  assert.deepEqual(summary.winners, [{ rung: "eporner-pool", tier: 1 }]);
   const scene = store.getScene("pooled:1");
   assert.ok(scene, "the scene is still stored, just unlinked");
   assert.equal(scene.videoUrls[0]?.url, "https://www.eporner.com/video-abc/");
@@ -889,3 +1031,89 @@ for (const failure of ["ledger", "log"] as const) {
     assert.equal(progress.snapshot().populate.done, 0);
   });
 }
+
+test("FC2 wins have their own run counter and never inflate identity tiers", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const sync = buildResolvingSync(
+      store,
+      [
+        adapter("fc2cmadb", async () => ({
+          scenes: [{ ...raw("4979341"), releaseUrl: "https://fc2cmadb.com/articles/4979341" }],
+          verifiedEmpty: false,
+        })),
+      ],
+      {
+        poolLookup: async () => {
+          throw new Error("FC2 entered the ordinary ladder");
+        },
+        sxyprnLookup: null,
+        fc2Lookup: async () => ({
+          links: [{ url: "https://www.eporner.com/video-fc2win/", uploader: "Uploader" }],
+          code: "4979341",
+          pagesRead: 1,
+          candidatePagesRead: 1,
+          relatedFollowed: 0,
+        }),
+      },
+      {
+        fetch: async () => Response.json({ id: "fc2win" }),
+        text: async () => "",
+        json: async <T>() => ({ id: "fc2win" }) as T,
+      },
+    );
+    const summary = await sync("test");
+    assert.equal(summary.matched, 1);
+    const health = store.recentRuns(1)[0]?.resolverHealth ?? {};
+    assert.equal(health.winnerFc2, 1);
+    assert.equal(health.winnerPool, 0);
+    assert.equal(summary.winners[0]?.rung, "fc2-eporner");
+  } finally {
+    store.close();
+  }
+});
+
+test("a successful FC2 exclusion removes only that source's saved scene", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("fc2cmadb", async () => ({ scenes: [raw("1"), raw("2")], verifiedEmpty: false })),
+      adapter("other", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+    ])("test");
+    await buildSync(store, [
+      adapter("fc2cmadb", async () => ({
+        scenes: [raw("2")],
+        verifiedEmpty: false,
+        excludedSceneIds: ["1"],
+      })),
+    ])("test");
+    assert.equal(store.getScene("fc2cmadb:1"), null);
+    assert.ok(store.getScene("fc2cmadb:2"));
+    assert.ok(store.getScene("other:1"));
+  } finally {
+    store.close();
+  }
+});
+
+test("an incomplete FC2 run keeps last-good rows even when it reports an exclusion", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("fc2cmadb", async () => ({ scenes: [raw("1")], verifiedEmpty: false })),
+    ])("test");
+    const summary = await buildSync(store, [
+      adapter("fc2cmadb", async () => ({
+        scenes: [],
+        verifiedEmpty: false,
+        excludedSceneIds: ["1"],
+      })),
+    ])("test");
+    assert.equal(summary.ok, false);
+    assert.ok(store.getScene("fc2cmadb:1"));
+  } finally {
+    store.close();
+  }
+});

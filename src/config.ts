@@ -65,7 +65,11 @@ export const Config = z.object({
   bootSync: z.boolean().default(true),
   fetchConcurrency: z.coerce.number().int().min(1).max(16).default(DEFAULT_FETCH_CONCURRENCY),
   fetchTimeoutMs: z.coerce.number().int().positive().default(DEFAULT_TIMEOUT_MS),
-  /** Per-call deadline for the optional sxyprn source. */
+  /**
+   * Per-call deadline for the optional sxyprn source, measured from the moment
+   * the call holds the source's request slot. The package paces itself at one
+   * request every 10s, and that wait is deliberately outside this number.
+   */
   sxyprnTimeoutMs: z.coerce.number().int().positive().default(15_000),
   /** Minimum spacing between traxxx.me requests, and its per-run cache TTL. */
   traxxxMinIntervalMs: z.coerce.number().int().nonnegative().default(250),
@@ -95,6 +99,8 @@ export const Config = z.object({
    * never accepted; it just stops costing requests.
    */
   fc2RecheckDays: z.coerce.number().int().nonnegative().default(7),
+  manyvidsStoreIds: z.array(z.string().regex(/^\d+$/)).default(["1003095958"]),
+  manyvidsMinIntervalMs: z.coerce.number().int().min(0).default(400),
 
   // Tube ladder.
   trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
@@ -204,6 +210,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     fc2DetailMinIntervalMs: env.LISZT_FC2_DETAIL_MIN_INTERVAL_MS,
     fc2MaxDetailChecksPerSync: env.LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC,
     fc2RecheckDays: env.LISZT_FC2_RECHECK_DAYS,
+    manyvidsStoreIds:
+      env.LISZT_MANYVIDS_STORE_IDS === undefined
+        ? undefined
+        : [
+            ...new Set(
+              env.LISZT_MANYVIDS_STORE_IDS.split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            ),
+          ],
+    manyvidsMinIntervalMs: env.LISZT_MANYVIDS_MIN_INTERVAL_MS,
     trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,

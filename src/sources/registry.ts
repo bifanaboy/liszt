@@ -2,7 +2,7 @@
  * The source registry. Adding a source is one entry here plus its adapter;
  * everything downstream (sync, matching, serving) reads this list.
  *
- * The four categories, in full:
+ * The five categories, in full:
  *
  *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, plus the checked
  *                   watchlist. No auth, and traxxx replaced TPDB entirely.
@@ -13,7 +13,10 @@
  *                   its candidates' decisions live in `fc2_candidates` so a sync
  *                   never repays a detail request it already made.
  *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
+ *  5. ManyVids - public creator store listings, incremental plus weekly full pulls.
  */
+import { createManyVidsSource } from "./manyvids.ts";
+import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
@@ -21,7 +24,6 @@ import { createFc2CmadbStudio, FC2CMADB_ID } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import type { Fc2StudioOptions } from "./fc2cmadb.ts";
-import type { SqliteStore } from "../core/store/sqlite.ts";
 import type { SourceAdapter } from "./types.ts";
 
 export const lancelotStylesEvolution = createTraxxxStudio({
@@ -57,9 +59,11 @@ export interface RegistryOptions {
    * a working registry; the FC2 lane then runs correctly but re-derives every
    * accepted record on every sync.
    */
-  store?: SqliteStore | null;
+  store?: SqliteStore;
   /** FC2 pacing and bounds, forwarded from configuration. */
   fc2?: Fc2StudioOptions;
+  manyvidsStoreIds?: readonly string[];
+  manyvidsMinIntervalMs?: number;
   /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
   maximoListingUrl?: string | undefined;
   /** Hosts the Maximo listing and its video pages may live on. */
@@ -70,9 +74,11 @@ export interface RegistryOptions {
 export function createSources({
   madouquApiBase,
   traxxxWatchlist,
-  store = null,
+  store,
   fc2 = {},
   maximoListingUrl,
+  manyvidsStoreIds = ["1003095958"],
+  manyvidsMinIntervalMs = 400,
   maximoAllowedHosts = [
     "sexlikereal.com",
     "www.sexlikereal.com",
@@ -84,6 +90,9 @@ export function createSources({
     lancelotStylesEvolution,
     mamboPerv,
     createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
+    ...[...new Set(manyvidsStoreIds)].map((storeId) =>
+      createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
+    ),
     createBangOriginalsStudio(),
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),

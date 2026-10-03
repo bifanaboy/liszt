@@ -388,7 +388,7 @@ test("an anti-bot challenge is refused, and never read as an empty search", asyn
   assert.match(result.error ?? "", /unusable body/);
 });
 
-test("an unreadable candidate page yields a link with no uploader, not a guess", async () => {
+test("an unreadable candidate page yields no verified link", async () => {
   const lookup = createFc2EpornerResolver(
     resolverFetcher(
       {
@@ -408,9 +408,8 @@ test("an unreadable candidate page yields a link with no uploader, not a guess",
     { sleep: noSleep, minIntervalMs: 0, relatedBound: 0 },
   );
   const result = await lookup("4979341");
-  assert.equal(result.links.length, 1, "the exact-code hit is still linked");
-  assert.equal(result.links[0]?.uploader, null, "with no uploader, and therefore no parts");
-  assert.equal(result.links[0]?.part, undefined);
+  assert.deepEqual(result.links, []);
+  assert.match(result.error ?? "", /HTTP 404/);
 });
 
 test("the related walk is bounded and only admits on the code", async () => {
@@ -590,4 +589,135 @@ test("an FC2 scene never enters the ladder, and another lane never enters FC2", 
   assert.equal(byId.get("fc2cmadb:4979341")?.videoUrls.length, 1);
   assert.equal(byId.get("lancelot-styles-evolution:1")?.videoUrls.length, 0);
   assert.deepEqual(result.rejections.attempted, 1, "only the non-FC2 scene counted a rung attempt");
+});
+
+test("a failed candidate page cannot create a verified link", async () => {
+  const routes: Record<string, string> = { ...ROUTES };
+  delete routes["https://www.eporner.com/video-d4e5f6/"];
+  const lookup = createFc2EpornerResolver(resolverFetcher(routes), {
+    sleep: noSleep,
+    minIntervalMs: 0,
+    relatedBound: 0,
+  });
+  const result = await lookup("4979341");
+  assert.equal(result.links.length, 2);
+  assert.ok(result.links.every((link) => !link.url.includes("d4e5f6")));
+  assert.match(result.error ?? "", /HTTP 404/);
+});
+
+test("a page without exact-code hits does not hide a later matching page", async () => {
+  const base = resolverFetcher(ROUTES);
+  const fetcher: Fetcher = {
+    ...base,
+    async fetch(url) {
+      if (url.includes("/api/")) {
+        const page = Number(new URL(url).searchParams.get("page"));
+        return Response.json({
+          videos:
+            page === 1
+              ? [{ id: "look1", title: "14979341", url: "https://www.eporner.com/video-look1/" }]
+              : page === 2
+                ? [{ id: "a1b2c3", title: "4979341", url: "https://www.eporner.com/video-a1b2c3/" }]
+                : [],
+        });
+      }
+      return base.fetch(url);
+    },
+  };
+  const lookup = createFc2EpornerResolver(fetcher, {
+    sleep: noSleep,
+    minIntervalMs: 0,
+    relatedBound: 0,
+  });
+  const result = await lookup("4979341");
+  assert.equal(result.links.length, 1);
+  assert.equal(result.pagesRead, 3);
+});
+
+test("concurrent FC2 lookups share paced request starts", async () => {
+  const starts: number[] = [];
+  const fetcher: Fetcher = {
+    ...resolverFetcher({}),
+    async fetch() {
+      starts.push(Date.now());
+      return Response.json({ videos: [] });
+    },
+  };
+  const lookup = createFc2EpornerResolver(fetcher, {
+    minIntervalMs: 80,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  });
+  await Promise.all([lookup("4979341"), lookup("4981628"), lookup("4986883")]);
+  assert.equal(starts.length, 3);
+  for (let i = 1; i < starts.length; i++)
+    assert.ok(starts[i]! - starts[i - 1]! >= 70, `gap ${starts[i]! - starts[i - 1]!}ms`);
+});
+
+test("search durations cannot create parts when watch-page durations are unreadable", async () => {
+  const search = JSON.stringify({
+    videos: [
+      {
+        id: "a1b2c3",
+        title: "4979341",
+        url: "https://www.eporner.com/video-a1b2c3/",
+        length_sec: 1180,
+      },
+      {
+        id: "d4e5f6",
+        title: "4979341",
+        url: "https://www.eporner.com/video-d4e5f6/",
+        length_sec: 1290,
+      },
+    ],
+  });
+  const page =
+    '<h1>4979341</h1><li class="vit-uploader"><a href="/profile/OneUploader/">Uploader</a></li>';
+  const lookup = createFc2EpornerResolver(
+    resolverFetcher({
+      "https://www.eporner.com/api/v2/video/search/": search,
+      "https://www.eporner.com/video-a1b2c3/": page,
+      "https://www.eporner.com/video-d4e5f6/": page,
+    }),
+    { sleep: noSleep, minIntervalMs: 0, relatedBound: 0 },
+  );
+  const result = await lookup("4979341");
+  assert.equal(result.links.length, 2);
+  assert.ok(result.links.every((link) => link.part === undefined));
+});
+
+test("the live watch page's duration cannot be replaced by a related upload's length", () => {
+  const page = fixture("eporner-fc2-live-ME3XGKnqe88.html");
+  assert.equal(epornerDurationFromPage(page), 2234);
+  assert.equal(epornerUploaderFromPage(page), "isuca7567922");
+});
+
+test("a related video's uploader is not the main upload's account", () => {
+  assert.equal(
+    epornerUploaderFromPage(
+      '<div class="related"><a href="/profile/OtherUploader/">Other</a></div>',
+    ),
+    null,
+  );
+});
+
+test("an HTML challenge on a candidate page cannot turn a search hit into a verified link", async () => {
+  const base = resolverFetcher(ROUTES);
+  const fetcher: Fetcher = {
+    ...base,
+    async fetch(url) {
+      return url.includes("/api/")
+        ? base.fetch(url)
+        : new Response("<html><h1>Verify you are human</h1><script>challenge()</script></html>", {
+            headers: { "content-type": "text/html" },
+          });
+    },
+  };
+  const lookup = createFc2EpornerResolver(fetcher, {
+    minIntervalMs: 0,
+    sleep: noSleep,
+    relatedBound: 0,
+  });
+  const result = await lookup("4979341");
+  assert.deepEqual(result.links, []);
+  assert.match(result.error ?? "", /exact-code video/);
 });

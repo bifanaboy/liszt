@@ -72,6 +72,7 @@ source adapters          pipeline              tube ladder            serving
 traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
 Bang!       ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
 Maximo      │            per-source       │    guess fallback   ─┘         │
+ManyVids    │
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -92,13 +93,14 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
 
 ### Sources
 
-Four categories, in `src/sources/registry.ts`.
+Five categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                             | Matcher  |
 | -------------------------------------------- | ------------------------------------- | -------- |
 | Lancelot Styles Evolution, Mambo Perv, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
+| ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
 | fc2cmadb                                     | FC2 tag listing + paced detail pages          | yes      |
 
@@ -173,9 +175,41 @@ A rung error lets the other rung run but contributes no fallback candidates;
 it is not recorded as a clean no-match. With no usable survivor the scene stays
 unlinked for a later cycle. Known-dead URLs are never re-added.
 
+A tube that keeps failing is held off by a circuit breaker rather than retried
+per release, so a broken source costs a bounded number of requests per cycle
+instead of one deadline per release. The break is reported separately from the
+failure that opened it, and each rung's failures are counted on their own, so a
+held-off tube is distinguishable in the logs from a live timeout.
+
 `/api/runs` stores resolver rejection counters separately from catalogue-source
 outcomes. A resolver outage therefore does not mark healthy catalogue polling
 as failed, and the dashboard reports resolver unavailability independently.
+
+The sxyprn rung is **paced by its own package**, which honours the site's
+`Crawl-delay: 10` and will not answer more than six requests a minute. So the
+rung asks for one request at a time and starts its per-call deadline only once
+that request reaches the front of the queue. That distinction is the whole fix
+for the run of `sxyprn search timed out after 15000ms` in production: the ladder
+fans several scenes out at once, and a deadline that counted the package's own
+10-second spacing expired on healthy calls that had not been asked yet. Waiting
+for the source is not a failure, so it is not reported as one, and it is not
+charged to the deadline that exists to bound a request that never answers.
+
+Requests to that source are counted per cycle and stored on the run row as
+`sxyprnSearches` and `sxyprnDetails`, split by pass. Each request costs the
+source's ten-second spacing, so that count is what says how long a refresh took;
+the ladder's own `attempted` and `errored` counters cover both tubes and cannot
+answer it. The dashboard shows the total as **slow-source lookups**, beside the
+rung's failures. Counting happens where the request is issued, so a call held
+off by the circuit breaker and a search answered from the in-memory cache both
+cost nothing and count as nothing.
+
+The rung's winners are also counted on the run row, split by where they came
+from: `winnerPool` and `winnerSxyprn` are the links each tube actually named, and
+`winnerFallback` is the number of flagged guesses. `matched` is one figure over
+both — a named match and a guess are both stored as links — so this split is what
+makes the headline number readable, and the dashboard shows the guess count on the
+same line as the truncation and request readings.
 
 The trusted pool searches a bounded number of candidates per scene, so a scene
 with more survivors than that budget is **truncated, not exhausted**. Those
@@ -332,6 +366,54 @@ rule has stopped doing useful work and should be deleted rather than tuned.
 
 ---
 
+## ManyVids and catalogue coverage
+
+ManyVids imports the **full public video list**, starting with Maximo Garcia's
+store (`1003095958`). `LISZT_MANYVIDS_STORE_IDS` accepts comma-separated store ids;
+add `1008105753` for Filou Fitt, or set it explicitly empty to disable the source.
+Each store has its own source health and failure isolation. Store owners are not
+assumed to appear in every video; performer names remain unknown unless supplied.
+
+The first poll and a poll every seven days walk every page. Between full pulls,
+paging stops after a page containing only known video ids. Requests start at least
+400 milliseconds apart per store. Successful snapshots and known ids survive
+restarts in SQLite; a failed page leaves the snapshot and full-pull date untouched.
+As with other sources, catalogue rows remain until they leave the rolling window.
+
+The scene response keeps the store id, original UTC launch timestamp, UTC release
+day, runtime in seconds, price (`regular`, `onSale`, `free`), thumbnail and preview
+URLs, and known tags. Preview clips are metadata, never verified playback links.
+The endpoint currently omits tags: we leave those unknown rather than fetching
+hundreds of tag-filtered lists each run. Tags never limit ingestion. Hidden and
+club-only videos are outside this public source; endpoint changes fail the poll
+and preserve last-good records.
+
+For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
+ManyVids and Traxxx records in the local rolling window. TPDB and StashDB are
+reported as unavailable because this app has no adapters for them. To compare all
+four databases, pass normalized JSON exports:
+
+```sh
+npm run catalogue-coverage -- --tpdb tpdb.json --stashdb stashdb.json --traxxx traxxx.json --manyvids manyvids.json
+```
+
+Each export is an array of `{ id, title, releaseDate, durationSec }` records (or an
+object with a `scenes` array). Dates must be `YYYY-MM-DD`; durations are seconds.
+A supplied empty array means checked and empty; an omitted provider means unknown.
+Export dates/windows should cover the same period for meaningful comparison.
+
+The report contains likely release groups, the union count, and each provider's
+share of that union. Associations require title token similarity of at least 80%,
+release dates within two UTC days, and positive runtimes within three seconds.
+This runtime margin covers the 50:50–50:53 example in #46 and applies only to the
+catalogue audit; playback matching keeps its existing ±1-second tolerance.
+Ambiguous candidates remain separate; every record in a group must agree with
+every other. These are conservative estimates for review, not a completeness
+claim. Original titles, dates and runtimes remain in the report; it chooses no
+provider precedence and does not merge or rewrite stored scenes.
+
+---
+
 ## Configuration
 
 Full list with defaults in `.env.example`. There is no credential and no
@@ -349,6 +431,8 @@ required variable: everything has a working default.
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
 | `LISZT_TRAXXX_WATCHLIST`                        | Vixen `anal` listing | Comma-separated listing URLs; setting it replaces the built-in list.  |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
+| `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
+| `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
 | `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |

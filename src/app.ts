@@ -66,6 +66,8 @@ async function main(): Promise<void> {
       maxDetailChecksPerSync: config.fc2MaxDetailChecksPerSync,
       recheckDays: config.fc2RecheckDays,
     },
+    manyvidsStoreIds: config.manyvidsStoreIds,
+    manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
     ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
@@ -112,7 +114,12 @@ async function main(): Promise<void> {
     windowDays: config.windowDays,
     fetchConcurrency: config.fetchConcurrency,
     traxxx: { minIntervalMs: config.traxxxMinIntervalMs, cacheTtlMs: config.traxxxCacheTtlMs },
-    lookups: { poolLookup, sxyprnLookup, fc2Lookup },
+    lookups: {
+      poolLookup,
+      sxyprnLookup,
+      fc2Lookup,
+      ...(sxyprnClient ? { sxyprnRequests: () => sxyprnClient.takeRequests() } : {}),
+    },
     progress,
   });
 

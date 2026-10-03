@@ -90,8 +90,22 @@ export interface ResolveResult {
   scene: Scene;
   changed: boolean;
   matched: boolean;
-  rung: Rung | "fallback" | "none" | null;
+  rung: Rung | "fallback" | "fc2-eporner" | "none" | null;
   /** The winner's identity tier, or null when nothing matched. */
+  tier: IdentityTier | null;
+}
+
+/**
+ * One winner, as the run ledger records it.
+ *
+ * The tier alone cannot say whether the ladder considered a scene or merely
+ * guessed at it. The terminal fallback reports whatever tier its survivor
+ * happened to earn, so a tier-0 winner and a fallback are the same observation
+ * from the tier's side, and `rung` is what separates a rung that NAMED the scene
+ * from the guess the ladder makes when no tube can.
+ */
+export interface Winner {
+  rung: Rung | "fallback" | "fc2-eporner";
   tier: IdentityTier | null;
 }
 
@@ -190,7 +204,7 @@ async function tryPool(
     match = await deps.poolLookup(scene, deps.now);
   } catch (error) {
     rejections.errored += 1;
-    logRungFailure(deps.log, "eporner-pool", error);
+    logRungFailure(deps, "eporner-pool", error);
     return emptyAttempt();
   }
   const leftovers = (match?.fallbackCandidates ?? [])
@@ -260,30 +274,32 @@ function identityTierFor(scene: MatchScene, title: string): IdentityTier {
 }
 
 /**
- * A rung that threw, named. Counted before this change, invisible after it.
+ * A rung that threw, named. Counted per rung, not across the ladder.
  *
- * The rejection counters roll every rung together into one `errored` number, so
- * a rung that fails on every scene it touches and a rung that fails on one are
- * indistinguishable in the run log. That is how the sxyprn rung came to be
- * described as "returns nothing in production" when all that had been observed
- * was an aggregate: nothing anywhere said WHAT it threw, and a blocked
- * datacenter IP, an uninstalled optional package and a genuine outage all look
- * identical from the outside. Throttled to the first failure and then every
- * tenth, so a rung that is down for a whole cycle cannot flood the log.
+ * One shared counter meant a rung that fails on every scene it touched and a
+ * rung that fails on one were indistinguishable in the run log: `seenSoFar` ran
+ * past 100 with no way to say which tube it belonged to. That is how the sxyprn
+ * rung came to be described as "returns nothing in production" on the strength
+ * of an aggregate - a blocked datacenter IP, an uninstalled optional package
+ * and a genuine outage all looked identical from the outside. Throttled per
+ * rung to its first failure and then every tenth, so a rung that is down for a
+ * whole cycle cannot flood the log while the other rung's failures stay
+ * countable on their own.
  */
-let rungFailuresLogged = 0;
+const rungFailuresLogged = new Map<string, number>();
 
-/** Log selected lookup failures using a shared counter to limit repeated warnings. */
-function logRungFailure(log: ResolveDeps["log"], rung: string, error: unknown): void {
-  if (rungFailuresLogged !== 0 && rungFailuresLogged % 10 !== 0) {
-    rungFailuresLogged += 1;
-    return;
-  }
-  rungFailuresLogged += 1;
-  log?.warn("ladder rung failed", {
+/** Log a rung's first failure and then every tenth, so a dead rung cannot flood the log. */
+function logRungFailure(deps: Pick<ResolveDeps, "log">, rung: string, error: unknown): void {
+  const seen = (rungFailuresLogged.get(rung) ?? 0) + 1;
+  rungFailuresLogged.set(rung, seen);
+  // The rung's first failure, then every tenth after it - so `seenSoFar` reads
+  // 1, 11, 21 rather than 1, 10, 20, and one rung's outage cannot swallow the
+  // other's log lines.
+  if (seen !== 1 && seen % 10 !== 1) return;
+  deps.log?.warn("ladder rung failed", {
     rung,
     error: (error as Error)?.message ?? String(error),
-    seenSoFar: rungFailuresLogged,
+    seenSoFar: seen,
   });
 }
 
@@ -304,7 +320,7 @@ async function trySxyprn(
     matches = await deps.sxyprnLookup(scene);
   } catch (error) {
     rejections.errored += 1;
-    logRungFailure(deps.log, "sxyprn", error);
+    logRungFailure(deps, "sxyprn", error);
     return emptyAttempt();
   }
   const usable = matches.filter(
@@ -466,7 +482,7 @@ export async function resolveFc2Scene(
     // The lane reports failures in its result, so a throw here is the unexpected
     // shape. It is still an outage rather than a clean no-match.
     rejections.errored += 1;
-    logRungFailure(deps.log, "fc2-eporner", error);
+    logRungFailure(deps, "fc2-eporner", error);
     // A lane that cannot read its evidence produces NO link rather than a
     // guessed one. The scene is still stamped as checked so the next cycle
     // reconsiders it rather than treating it as resolved.
@@ -474,7 +490,7 @@ export async function resolveFc2Scene(
   }
   if (looked.error) {
     rejections.errored += 1;
-    logRungFailure(deps.log, "fc2-eporner", looked.error);
+    logRungFailure(deps, "fc2-eporner", looked.error);
   }
   const live = looked.links.filter((link) => validEpornerUrl(link.url) && !dead.has(link.url));
   if (!live.length) {
@@ -500,7 +516,7 @@ export async function resolveFc2Scene(
     },
     changed: true,
     matched: true,
-    rung: null,
+    rung: "fc2-eporner",
     tier: null,
   };
 }
@@ -573,8 +589,8 @@ export async function resolveLinks({
   matched: number;
   considered: number;
   rejections: RungRejections;
-  /** The identity tier of every winner this run, for the tier histogram. */
-  tiers: IdentityTier[];
+  /** Which rung produced each winner, with its tier, for the run's own tally. */
+  winners: Winner[];
 }> {
   const eligible = scenes.filter((scene) => {
     if (matcherFor(scene).matcher === null) return false;
@@ -633,10 +649,15 @@ export async function resolveLinks({
   });
   const results = [...ladder, ...fc2Results];
   const byId = new Map(results.map((result) => [result.scene.id, result.scene]));
-  const tiers: IdentityTier[] = [];
+  const winners: Winner[] = [];
   const changed: Scene[] = [];
   for (const result of results) {
-    if (result.matched && result.tier !== null) tiers.push(result.tier);
+    // A matched scene always carries a rung: `"none"` is the metadata-only lane,
+    // which cannot have matched. Keeping the rung beside the tier is what lets the
+    // run row state a named match and a guess apart.
+    if (result.matched && result.rung && result.rung !== "none") {
+      winners.push({ rung: result.rung, tier: result.tier });
+    }
     if (result.changed) changed.push(result.scene);
   }
   return {
@@ -645,6 +666,6 @@ export async function resolveLinks({
     matched,
     considered: queue.length,
     rejections,
-    tiers,
+    winners,
   };
 }

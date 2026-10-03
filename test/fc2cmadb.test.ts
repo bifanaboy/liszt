@@ -467,6 +467,10 @@ for (const { name, videoIds, budget, pending } of [
     );
     const studio = createFc2CmadbStudio({ sleep: noSleep, maxDetailChecksPerSync: budget });
     let reportedPending: unknown;
+    if (name.includes("failed")) {
+      await assert.rejects(() => studio.fetch(WINDOW_START, context(fetcher)), /no fixture/);
+      return;
+    }
     const result = await studio.fetch(WINDOW_START, {
       ...context(fetcher),
       log: (message, fields) => {
@@ -694,16 +698,19 @@ test("an unmarked record is rechecked, then retired undecided", async () => {
   assert.equal(deferred.verifiedEmpty, false);
   assert.equal(store.fc2Candidate("4986794")?.retiredAt, null);
 
-  const failed = await studio.fetch(
-    WINDOW_START,
-    context(
-      laneFetcher(pages, () => {
-        throw new Error("connection reset");
-      }),
-      later,
-    ),
+  await assert.rejects(
+    () =>
+      studio.fetch(
+        WINDOW_START,
+        context(
+          laneFetcher(pages, () => {
+            throw new Error("connection reset");
+          }),
+          later,
+        ),
+      ),
+    /connection reset/,
   );
-  assert.equal(failed.verifiedEmpty, false);
   assert.equal(store.fc2Candidate("4986794")?.recheckAt, recheckAt);
   assert.equal(store.fc2DueCandidates(later, 1).length, 1, "failed retries stay due");
   let reads = 0;
@@ -743,25 +750,49 @@ test("a failed detail read leaves the record pending rather than guessing", asyn
     },
   ];
   const studio = createFc2CmadbStudio({ store, sleep: noSleep });
-  const result = await studio.fetch(
-    WINDOW_START,
-    context(
-      laneFetcher(pages, () => {
-        throw new Error("connection reset");
-      }),
-    ),
+  await assert.rejects(
+    () =>
+      studio.fetch(
+        WINDOW_START,
+        context(
+          laneFetcher(pages, () => {
+            throw new Error("connection reset");
+          }),
+        ),
+      ),
+    /connection reset/,
   );
-  assert.deepEqual(result.scenes, []);
-  assert.equal(result.verifiedEmpty, false, "an unread candidate is never a verified-empty source");
   assert.equal(store.fc2Candidate("4986883")?.status, "pending");
   store.close();
 });
 
-test("a rebuilt store re-derives from the listing and reaches the same answer", () => {
-  // The Render free plan has no persistent disk, so losing this table is normal.
-  // An absent row may only cost a second detail read; it must not change the
-  // classification.
-  assert.ok(true);
+test("a rebuilt store re-derives the same scene with bounded detail work", async () => {
+  const stores = [new SqliteStore(":memory:"), new SqliteStore(":memory:")];
+  const pages = [
+    {
+      cursor: null,
+      records: [{ videoId: "4986883", releaseDate: "2026-10-02" }],
+      nextCursor: null,
+    },
+  ];
+  try {
+    const results = [];
+    for (const store of stores) {
+      store.migrate();
+      const studio = createFc2CmadbStudio({ store, sleep: noSleep, maxDetailChecksPerSync: 1 });
+      const first = laneFetcher(pages, () => fixture("fc2-detail-uncensored.html"));
+      results.push(await studio.fetch(WINDOW_START, context(first)));
+      assert.equal(first.calls.filter((url) => url.includes("/articles/")).length, 1);
+      const cached = laneFetcher(pages, () => {
+        throw new Error("cached scene fetched again");
+      });
+      assert.deepEqual(await studio.fetch(WINDOW_START, context(cached)), results.at(-1));
+      assert.equal(cached.calls.filter((url) => url.includes("/articles/")).length, 0);
+    }
+    assert.deepEqual(results[0], results[1]);
+  } finally {
+    for (const store of stores) store.close();
+  }
 });
 
 test("candidates that leave the rolling window are dropped from the state table", async () => {
@@ -911,4 +942,103 @@ test("a record with an image count instead of a duration is excluded, not retrie
   });
   assert.equal(verdict.status, "excluded");
   assert.match(verdict.verdict, /no playable duration/);
+});
+
+test("malformed listing records cannot make a walk appear empty", () => {
+  const page = extractInertiaPage(fixture("fc2-anal-listing-page-1.html"));
+  (page.props.articles as { data: unknown[] }).data = [{ video_id: null, title: "record" }];
+  assert.throws(() => parseFc2Listing(page), Fc2ShapeError);
+});
+
+test("missing full detail tags cannot silently bypass exclusions", () => {
+  const page = extractInertiaPage(fixture("fc2-detail-uncensored.html"));
+  delete (page.props.article as Record<string, unknown>).tags;
+  assert.throws(() => parseFc2Detail(page), Fc2ShapeError);
+});
+
+test("foreign-tag listing rows never enter candidate state or detail work", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const page = extractInertiaPage(fixture("fc2-anal-listing-foreign-tag.html"));
+  (page.props.articles as Record<string, unknown>).next_cursor = null;
+  const fetcher = stubFetcher({
+    [FC2_LISTING_URL]: `<script data-page="app" type="application/json">${JSON.stringify(page)}</script>`,
+  });
+  try {
+    const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+    const result = await studio.fetch(WINDOW_START, context(fetcher));
+    assert.deepEqual(result.scenes, []);
+    assert.equal(store.countFc2Pending(), 0);
+    assert.equal(fetcher.calls.filter((url) => url.includes("/articles/")).length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+for (const changed of ["removed", "censored"] as const) {
+  test(`a listing marked ${changed} stops emitting a previously accepted cached scene`, async () => {
+    const store = new SqliteStore(":memory:");
+    store.migrate();
+    const pages = [
+      {
+        cursor: null,
+        records: [{ videoId: "4986883", releaseDate: "2026-10-02" }],
+        nextCursor: null,
+      },
+    ];
+    const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+    try {
+      const first = await studio.fetch(
+        WINDOW_START,
+        context(laneFetcher(pages, () => fixture("fc2-detail-uncensored.html"))),
+      );
+      assert.equal(first.scenes.length, 1);
+      const base = laneFetcher(pages, () => fixture("fc2-detail-uncensored.html"));
+      const changedFetcher: Fetcher = {
+        ...base,
+        async fetch(url) {
+          const response = await base.fetch(url);
+          if (url.includes("/tags/")) {
+            const page = extractInertiaPage(await response.text());
+            const record = (page.props.articles as { data: Record<string, unknown>[] }).data[0]!;
+            if (changed === "removed") record.not_found = 1;
+            else record.censored = "有";
+            return new Response(
+              `<script data-page="app" type="application/json">${JSON.stringify(page)}</script>`,
+            );
+          }
+          return response;
+        },
+      };
+      const second = await studio.fetch(WINDOW_START, context(changedFetcher));
+      assert.deepEqual(second.scenes, []);
+      assert.equal(store.fc2Candidate("4986883")?.status, "excluded");
+    } finally {
+      store.close();
+    }
+  });
+}
+
+test("the boundary page's historical records consume no detail budget or state", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const fetcher = laneFetcher(
+      [
+        {
+          cursor: null,
+          records: [{ videoId: "1234567", releaseDate: "2020-01-01" }],
+          nextCursor: null,
+        },
+      ],
+      () => undefined,
+    );
+    const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+    const result = await studio.fetch(WINDOW_START, context(fetcher));
+    assert.equal(result.verifiedEmpty, true);
+    assert.equal(store.fc2Candidate("1234567"), null);
+    assert.equal(fetcher.calls.filter((url) => url.includes("/articles/")).length, 0);
+  } finally {
+    store.close();
+  }
 });

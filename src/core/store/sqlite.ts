@@ -99,6 +99,7 @@ interface SceneRow {
   metadata_poor: number;
   video_checked_at: string | null;
   video_matching: string | null;
+  storefront: string | null;
 }
 
 function rowToScene(row: SceneRow, live: VideoLink[], dead: DeadVideoLink[]): Scene {
@@ -108,6 +109,7 @@ function rowToScene(row: SceneRow, live: VideoLink[], dead: DeadVideoLink[]): Sc
     source: row.source,
     labelId: row.label_id,
     label: row.label,
+    ...(row.storefront ? JSON.parse(row.storefront) : {}),
     title: row.title,
     performers: JSON.parse(row.performers) as string[],
     releaseDate: row.release_date,
@@ -139,7 +141,7 @@ function linkRowToScene(row: SceneRow, linkRows: Record<string, unknown>[]): Sce
           verifiedAt: link.verified_at,
           verifyFailures: Number(link.verify_failures ?? 0),
           // Absent for every lane but FC2, and absent on rows written before
-          // migration 0007. `optional` keeps both spellings out of the schema.
+          // migration 0008. `optional` keeps both spellings out of the schema.
           ...(link.part === null || link.part === undefined ? {} : { part: Number(link.part) }),
         },
         `store.link(${row.id})`,
@@ -261,6 +263,22 @@ export class SqliteStore {
     }
   }
 
+  getSourceSnapshot(sourceId: string): string | null {
+    const row = this.db
+      .prepare("SELECT snapshot FROM source_snapshots WHERE source_id = ?")
+      .get(sourceId);
+    return row ? String(row.snapshot) : null;
+  }
+
+  setSourceSnapshot(sourceId: string, snapshot: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO source_snapshots (source_id, snapshot) VALUES (?, ?)
+      ON CONFLICT (source_id) DO UPDATE SET snapshot = excluded.snapshot`,
+      )
+      .run(sourceId, snapshot);
+  }
+
   upsertScene(scene: Scene): void {
     // Validate at the boundary before writing, so a malformed record names the
     // store and never lands a half-valid row.
@@ -270,8 +288,8 @@ export class SqliteStore {
         .prepare(
           `INSERT INTO scenes (id, source_id, source, label_id, label, title, performers,
              release_date, duration_sec, thumbnail_url, release_url, studio_code, tags,
-             provenance, field_provenance, metadata_poor, video_checked_at, video_matching)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             provenance, field_provenance, metadata_poor, video_checked_at, video_matching, storefront)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET
              source_id = excluded.source_id, source = excluded.source,
              label_id = excluded.label_id, label = excluded.label, title = excluded.title,
@@ -282,7 +300,7 @@ export class SqliteStore {
              field_provenance = excluded.field_provenance,
              metadata_poor = excluded.metadata_poor,
              video_checked_at = excluded.video_checked_at,
-             video_matching = excluded.video_matching`,
+             video_matching = excluded.video_matching, storefront = excluded.storefront`,
         )
         .run(
           parsed.id,
@@ -303,6 +321,12 @@ export class SqliteStore {
           parsed.metadataPoor ? 1 : 0,
           parsed.videoCheckedAt,
           parsed.videoMatching ? JSON.stringify(parsed.videoMatching) : null,
+          JSON.stringify({
+            storeId: parsed.storeId,
+            launchDate: parsed.launchDate,
+            previewUrl: parsed.previewUrl,
+            price: parsed.price,
+          }),
         );
 
       // Links are owned by the resolver, not the metadata fields: they are
@@ -410,6 +434,15 @@ export class SqliteStore {
   private hydrate(rows: SceneRow[]): Scene[] {
     const links = this.linksFor(rows.map((row) => row.id));
     return rows.map((row) => linkRowToScene(row, links.get(row.id) ?? []));
+  }
+
+  /** Delete explicitly excluded native IDs within one source, including their links. */
+  deleteSourceScenes(sourceId: string, nativeIds: readonly string[]): number {
+    const remove = this.db.prepare("DELETE FROM scenes WHERE source_id = ? AND id = ?");
+    let count = 0;
+    for (const id of new Set(nativeIds))
+      count += Number(remove.run(sourceId, `${sourceId}:${id}`).changes);
+    return count;
   }
 
   deleteReleasedBefore(before: string): string[] {

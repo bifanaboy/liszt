@@ -42,19 +42,14 @@
  * read decides uploader, duration and related links together. Re-reading it for
  * one field would double the lane's cost for nothing.
  *
- * A CALIBRATION CAVEAT, stated because it matters to anyone reading a later
- * failure: eporner's edge answers this class of client with HTTP 200 carrying a
- * JavaScript challenge rather than JSON or HTML, so the page-markup readers below
- * (the `/profile/<account>/` uploader link, the `title="Duration"` meta) are
- * written to the URL grammar `eporner-pool.ts` already relies on, and the
- * fixtures are built to that grammar. They have not been calibrated against a
- * live eporner response from this workspace, because no such response was
- * obtainable here. The design is shaped for that: a page the readers cannot parse
- * yields NO uploader and NO duration, and a candidate missing either can never
- * join a multipart group - it is still linked, just never called a part.
+ * LIVE CALIBRATION. The search API and a public watch page were checked on
+ * 2026-10-03. Captured search data and relevant verbatim page elements live in
+ * the fixtures. The main duration is Open Graph metadata; `title="Duration"`
+ * spans belong to related cards and must not drive part numbering. The main
+ * uploader comes from `vit-uploader`, not an arbitrary profile link. Missing
+ * main-page duration or uploader evidence suppresses multipart labels.
  */
 import { epornerVideoId, validEpornerUrl, type EpornerVideo } from "./eporner.ts";
-import { parseClockDuration } from "./eporner-pool.ts";
 import type { Fetcher } from "../sources/types.ts";
 
 const EPORNER_SEARCH = "https://www.eporner.com/api/v2/video/search/";
@@ -101,6 +96,7 @@ export function titleContainsExactCode(title: string, code: string): boolean {
   return new RegExp(`(?<!\\d)${code}(?!\\d)`).test(String(title ?? ""));
 }
 
+/** Query the search API with the bare code and explicit page bounds. */
 export function fc2EpornerSearchUrl(code: string, page: number, perPage: number): string {
   const url = new URL(EPORNER_SEARCH);
   // ONLY the numeric id goes in `query`; everything else here is structural
@@ -114,6 +110,7 @@ export function fc2EpornerSearchUrl(code: string, page: number, perPage: number)
   return url.href;
 }
 
+/** Build a canonical watch URL for a discovered Eporner video ID. */
 export const fc2EpornerWatchUrl = (id: string): string => `${EPORNER_WATCH}/video-${id}/`;
 
 export interface Fc2EpornerCandidate {
@@ -126,6 +123,7 @@ export interface Fc2EpornerCandidate {
   uploader: string | null;
 }
 
+/** Accept positive numeric duration evidence, rounded to whole seconds. */
 function positiveSeconds(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
@@ -191,18 +189,26 @@ function stripComments(html: string): string {
   return String(html ?? "").replace(/<!--[\s\S]*?-->/g, " ");
 }
 
+/** The main video's uploader block, excluding related-card and navigation links. */
 export function epornerUploaderFromPage(html: string): string | null {
-  const account = stripComments(html).match(
+  const block =
+    stripComments(html).match(
+      /<li\b[^>]*class=["'][^"']*\bvit-uploader\b[^"']*["'][^>]*>([\s\S]*?)<\/li>/i,
+    )?.[1] ?? "";
+  const account = block.match(
     /<a\b[^>]*href=["'][^"']*\/profile\/([A-Za-z0-9._~-]+)\/[^"']*["'][^>]*>/i,
   )?.[1];
-  return account ? decodeURIComponent(account) : null;
+  return account ?? null;
 }
 
-/** The page's own duration, from the same meta the pool rung already reads. */
+/** Main-video Open Graph duration; card durations belong to related uploads. */
 export function epornerDurationFromPage(html: string): number | null {
-  return parseClockDuration(
-    stripComments(html).match(/title=["']Duration["'][^>]*>([^<\s][^<]*?)\s*</i)?.[1] ?? null,
-  );
+  for (const meta of stripComments(html).matchAll(/<meta\b[^>]*>/gi)) {
+    if (!/\bproperty=["']og:duration["']/i.test(meta[0])) continue;
+    const seconds = meta[0].match(/\bcontent=["'](\d+)["']/i)?.[1];
+    return seconds ? positiveSeconds(seconds) : null;
+  }
+  return null;
 }
 
 /**
@@ -316,9 +322,22 @@ export function createFc2EpornerResolver(
   }: Fc2ResolverOptions = {},
 ) {
   const gate = { at: 0 };
+  let readTail: Promise<void> = Promise.resolve();
 
   /** One paced read. Null means "unreadable", never "absent". */
-  async function read(url: string): Promise<{ body: string; error?: string } | { error: string }> {
+  function read(url: string): Promise<{ body: string; error?: string } | { error: string }> {
+    const result = readTail.then(() => pacedRead(url));
+    readTail = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
+  }
+
+  /** Serialize reads across scenes so concurrent waiters cannot start together. */
+  async function pacedRead(
+    url: string,
+  ): Promise<{ body: string; error?: string } | { error: string }> {
     const wait = minIntervalMs - (Date.now() - gate.at);
     if (wait > 0) await sleep(wait);
     gate.at = Date.now();
@@ -349,11 +368,14 @@ export function createFc2EpornerResolver(
   ): Promise<string | null> {
     const page = await read(candidate.url);
     if (!("body" in page)) return page.error;
+    const title = titleFromPage(page.body);
+    if (!title || !titleContainsExactCode(title, code))
+      return `${candidate.url} -> no readable exact-code video`;
     candidate.uploader = epornerUploaderFromPage(page.body);
-    // The page's own duration is preferred over the search row's: the search row
+    // Only the page's own duration can establish parts: the search row
     // describes the upload, the page describes the file, and multipart is a claim
     // about files.
-    candidate.durationSec = epornerDurationFromPage(page.body) ?? candidate.durationSec;
+    candidate.durationSec = epornerDurationFromPage(page.body);
     if (related.length < budget) {
       related.push(
         ...relatedFc2VideoIds(page.body, code, {
@@ -365,6 +387,7 @@ export function createFc2EpornerResolver(
     return null;
   }
 
+  /** Collect exact-code uploads and verified multipart evidence within the request bounds. */
   return async function lookup(code: unknown): Promise<Fc2LookupResult> {
     const trimmed = fc2ReleaseCode(code);
     if (!trimmed)
@@ -373,6 +396,7 @@ export function createFc2EpornerResolver(
     const pages = Math.max(1, Math.floor(searchPages));
     const admitted = new Map<string, Fc2EpornerCandidate>();
     let pagesRead = 0;
+    const searchRowsSeen = new Set<string>();
     let firstError: string | null = null;
     for (let page = 1; page <= pages; page += 1) {
       const result = await read(fc2EpornerSearchUrl(trimmed, page, searchPageSize));
@@ -388,19 +412,16 @@ export function createFc2EpornerResolver(
         break;
       }
       pagesRead += 1;
+      const rawRows = extractVideoRows(parsed);
+      if (!rawRows.length) break;
+      const newRows = rawRows.filter((row) => !searchRowsSeen.has(String(row.id)));
+      for (const row of rawRows) searchRowsSeen.add(String(row.id));
+      if (!newRows.length) break;
       const rows = parseFc2EpornerSearch(parsed, trimmed);
-      if (!rows.length) break;
-      let added = 0;
       for (const row of rows) {
         if (admitted.has(row.id)) continue;
         admitted.set(row.id, row);
-        added += 1;
       }
-      // A page that repeats the previous page's rows will repeat them for ever.
-      // Stopping on no progress keeps a repeating search from spending its whole
-      // page budget, and is the same "no new information, stop" rule the catalogue
-      // walk uses on a repeated cursor.
-      if (!added) break;
     }
     if (!pagesRead) {
       return {
@@ -419,6 +440,7 @@ export function createFc2EpornerResolver(
       const error = await hydrateCandidate(candidate, trimmed, related, Math.max(0, relatedBound));
       candidatePagesRead += 1;
       firstError = firstError ?? error;
+      if (error) admitted.delete(candidate.id);
     }
 
     // The bounded related walk. Every id it reaches is fetched, and a fetched

@@ -66,6 +66,7 @@ export const FC2_ANAL_TAG_NAME = "アナル";
 export const FC2_ANAL_TAG_ID = 47;
 
 export const FC2_LISTING_URL = `${FC2CMADB_BASE}/tags/${encodeURIComponent(FC2_ANAL_TAG_NAME)}`;
+/** Build the public detail URL for a numeric release ID. */
 export const fc2RecordUrl = (videoId: string): string => `${FC2CMADB_BASE}/articles/${videoId}`;
 
 /** The site clamps the page size to 30 and ignores `per_page`. */
@@ -188,10 +189,12 @@ export interface Fc2Listing {
   nextCursor: string | null;
 }
 
+/** Preserve the site's UTC date prefix without inventing a missing date. */
 function dateOnlyOf(value: unknown): string {
   return typeof value === "string" ? (value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? "") : "";
 }
 
+/** Recognize only explicit upstream removal flags. */
 function truthyFlag(value: unknown): boolean {
   // The site sends `null` for "nothing to report" and occasionally `1`, `"1"`
   // or `true`. Anything else - including the string "0" - is treated as the
@@ -200,6 +203,7 @@ function truthyFlag(value: unknown): boolean {
   return value === 1 || value === true || value === "1";
 }
 
+/** Read a required listing identity and retain its tag pivot for admission. */
 function parseListingRecord(value: unknown): Fc2ListingRecord | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -259,7 +263,8 @@ export function parseFc2Listing(page: InertiaPage): Fc2Listing {
   const records: Fc2ListingRecord[] = [];
   for (const entry of paginator.data) {
     const record = parseListingRecord(entry);
-    if (record) records.push(record);
+    if (!record) throw new Fc2ShapeError("the listing contains a malformed article");
+    records.push(record);
   }
   return { records, nextCursor: cursor === null ? null : (cursor as string) };
 }
@@ -301,6 +306,13 @@ export function parseFc2Detail(page: InertiaPage): Fc2Detail {
   if (!/^\d+$/.test(videoId)) throw new Fc2ShapeError("the article has no usable release id");
   const title = typeof record.title === "string" ? record.title.trim() : "";
   if (!title) throw new Fc2ShapeError(`article ${videoId} has no title`);
+  if (
+    !Array.isArray(record.tags) ||
+    record.tags.some(
+      (tag) => !tag || typeof tag !== "object" || typeof tag.name !== "string" || !tag.name.trim(),
+    )
+  )
+    throw new Fc2ShapeError(`article ${videoId} has no usable full tag list`);
   const duration = typeof record.duration === "string" ? record.duration : null;
   const writer = record.writer;
   return {
@@ -398,12 +410,14 @@ function matchesLatinTerm(haystack: string, term: string): boolean {
   ).test(haystack);
 }
 
+/** Return the first documented substring exclusion present in title or tags. */
 function firstMatch(haystack: string, terms: readonly string[]): string | null {
   const lower = haystack.toLowerCase();
   for (const term of terms) if (lower.includes(term.toLowerCase())) return term;
   return null;
 }
 
+/** Match Latin exclusion words without catching unrelated longer words. */
 function firstWordMatch(haystack: string, terms: readonly string[]): string | null {
   for (const term of terms) if (matchesLatinTerm(haystack, term)) return term;
   return null;
@@ -574,7 +588,12 @@ export function createFc2Client(
     },
     async getArticle(videoId) {
       if (!/^\d+$/.test(videoId)) throw new Fc2ShapeError(`"${videoId}" is not a release id`);
-      return parseFc2Detail(extractInertiaPage(await html(fc2RecordUrl(videoId), waitDetail)));
+      const detail = parseFc2Detail(
+        extractInertiaPage(await html(fc2RecordUrl(videoId), waitDetail)),
+      );
+      if (detail.videoId !== videoId)
+        throw new Fc2ShapeError(`expected article ${videoId}, saw ${detail.videoId}`);
+      return detail;
     },
   };
 }
@@ -656,6 +675,7 @@ export async function walkFc2Listing(
   throw new Fc2SourceError(`fc2 listing walk hit its ${maxPages}-page ceiling (incomplete walk)`);
 }
 
+/** Admit dated records inside the inclusive operating window through now. */
 function withinWindow(releaseDate: string, windowStart: string, now: Date): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(releaseDate)) return false;
   const at = Date.parse(`${releaseDate}T00:00:00Z`);
@@ -707,6 +727,11 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         log: ctx.log,
       });
 
+      walk.records = walk.records.filter(
+        (record) =>
+          record.tagId === FC2_ANAL_TAG_ID && withinWindow(record.releaseDate, windowStart, now),
+      );
+
       // Everything the walk saw is REMEMBERED, including records this sync will
       // not check. That is what stops the next sync from paying for the same
       // detail page again merely because it has not been read yet.
@@ -718,6 +743,24 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
             releaseDate: record.releaseDate,
           })),
           now.toISOString(),
+        );
+      }
+      const listingExcluded = new Set(
+        walk.records
+          .filter((record) => record.notFound || record.censored === "有")
+          .map((record) => record.videoId),
+      );
+      for (const record of walk.records) {
+        if (!listingExcluded.has(record.videoId)) continue;
+        store?.decideFc2Candidate(
+          record.videoId,
+          "excluded",
+          record.notFound ? "record removed from the site" : "censored",
+          {
+            checkedAt: now.toISOString(),
+            recheckAt: null,
+            scene: null,
+          },
         );
       }
       const states = store
@@ -734,7 +777,11 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       // the queue from the (empty) state map instead would check nothing at all
       // and report a lane that is configured, running, and finding no releases.
       const inWindowIds = walk.records
-        .filter((record) => withinWindow(record.releaseDate, windowStart, now))
+        .filter(
+          (record) =>
+            !listingExcluded.has(record.videoId) &&
+            withinWindow(record.releaseDate, windowStart, now),
+        )
         .map((record) => record.videoId);
       const due = store
         ? store.fc2DueCandidates(now, budget)
@@ -761,9 +808,11 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       // walk, so an acceptance has to be remembered here as well - otherwise the
       // emit loop below would only find the cached copies of PREVIOUS runs and
       // this sync would emit nothing for a record it had just accepted.
+      const excludedSceneIds = new Set(listingExcluded);
+      for (const candidate of states.values())
+        if (candidate.status === "excluded") excludedSceneIds.add(candidate.videoId);
       const fresh = new Map<string, RawScene>();
       let checked = 0;
-      let failures = 0;
       let classifiedPending = 0;
       for (const candidate of due) {
         let detail: Fc2Detail;
@@ -773,12 +822,11 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
           // A failed detail read is NOT a classification. Retrying the record next
           // sync costs one paced request; guessing a verdict costs the lane its
           // honesty. It therefore stays pending, and stays due.
-          failures += 1;
           ctx.log("fc2: detail check failed, leaving the candidate pending", {
             videoId: candidate.videoId,
             error: (error as Error).message,
           });
-          continue;
+          throw error;
         }
         checked += 1;
         const verdict = classifyFc2Candidate({
@@ -791,6 +839,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         });
         const scene = verdict.status === "accepted" ? toFc2RawScene(detail, verdict) : null;
         if (scene) fresh.set(candidate.videoId, scene);
+        if (verdict.status === "excluded") excludedSceneIds.add(candidate.videoId);
         if (verdict.status === "pending") classifiedPending += 1;
         store?.decideFc2Candidate(candidate.videoId, verdict.status, verdict.verdict, {
           checkedAt: now.toISOString(),
@@ -811,9 +860,13 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       // for as long as it is in the window, so a source that stopped re-deriving
       // it would leave it un-refreshed while still counting as healthy.
       const scenes: RawScene[] = [];
-      let undecided = failures;
+      let undecided = 0;
       for (const record of walk.records) {
-        if (!withinWindow(record.releaseDate, windowStart, now)) continue;
+        if (
+          listingExcluded.has(record.videoId) ||
+          !withinWindow(record.releaseDate, windowStart, now)
+        )
+          continue;
         const accepted = fresh.get(record.videoId);
         if (accepted) {
           scenes.push(accepted);
@@ -842,13 +895,16 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         pages: walk.pages,
         candidates: walk.records.length,
         checked,
-        failures,
         retired,
         pending,
         scenes: scenes.length,
         verifiedEmpty,
       });
-      return { scenes, verifiedEmpty };
+      return {
+        scenes,
+        verifiedEmpty,
+        ...(excludedSceneIds.size ? { excludedSceneIds: [...excludedSceneIds] } : {}),
+      };
     },
   };
 }

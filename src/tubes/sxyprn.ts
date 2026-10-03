@@ -82,11 +82,32 @@ export interface SxyprnDetail extends SxyprnCard {
   views?: number | string;
 }
 
+/**
+ * Requests the rung actually spent at the source, split by pass.
+ *
+ * The split is the point. Every request costs the package's politeness floor, so
+ * the two together are the run's cost in time; and separately they answer the two
+ * questions a budget decision needs - `search` is how many scenes reached this
+ * rung at all, `details` how many candidate posts had to be verified.
+ */
+export interface SxyprnRequestCount {
+  search: number;
+  details: number;
+}
+
 export interface SxyprnClient {
   videos: {
     search(query: string): Promise<{ videos?: SxyprnCard[] }>;
     details(input: { url: string }): Promise<SxyprnDetail>;
   };
+  /**
+   * Requests issued since the last call, and zero the counter.
+   *
+   * A drain, not a total: the client is process-wide and outlives any one cycle,
+   * so a cumulative figure would let a single refresh be charged for every
+   * refresh before it. One drain per cycle, once the resolve stage is over.
+   */
+  takeRequests(): SxyprnRequestCount;
 }
 
 /** 13 hex chars, e.g. `/post/6ab1a9bec8445.html`. */
@@ -113,6 +134,18 @@ export function searchSlug(value: string): string {
     .replace(/[`~!@#$%^&*()_|+\-=?;:'",.<>{}[\]\\/]/g, " ")
     .trim()
     .replace(/\s+/g, "-");
+}
+
+/**
+ * A rejected detail fetch reduced to one readable reason. A detail wrapper can
+ * rethrow anything, and a truthy non-`Error` would otherwise land in the joined
+ * diagnostic as `undefined` - or as an empty field when the reasons are joined.
+ * Never returns an empty string, so a reason is never a blank gap in the list.
+ */
+function detailFailureReason(error: unknown): string {
+  if (error instanceof Error) return error.message.trim() || "unknown detail error";
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "unknown detail error";
 }
 
 export interface SxyprnLookupOptions {
@@ -268,13 +301,17 @@ export function createSxyprnLookup({
     // including unnamed survivors reserved for fallback. Conflating the two
     // would report a healthy source as dead whenever the filter rejected all.
     let verifiedPosts = 0;
+    const detailErrors: string[] = [];
     const verified: SxyprnMatch[] = [];
     for (let index = 0; index < slice.length; index += 1) {
       const item = slice[index] as TubeCandidate & { isExternal: boolean };
       const outcome = fetched[index];
       // A post we could not fetch is never exposed as playback, and is not
       // counted against the source: the ladder moves down instead.
-      if (!outcome || outcome.detail === null) continue;
+      if (!outcome || outcome.detail === null) {
+        if (outcome) detailErrors.push(detailFailureReason(outcome.error));
+        continue;
+      }
       const detail = outcome.detail;
       verifiedPosts += 1;
       // Verify the POST's own title, duration and date, not the search card's:
@@ -308,7 +345,16 @@ export function createSxyprnLookup({
         });
       }
     }
-    if (!verifiedPosts) throw new Error("sxyprn post verification unavailable");
+    // Keep WHY, the same way the search path does. A bare "unavailable" merged
+    // an upstream refusal, a network failure, a parser break and the deadline
+    // into one string, which is why this rung could not be diagnosed from the
+    // outside - and the deadline is the one worth separating, because it is the
+    // only kind the circuit breaker can put a bound on. Capped at three
+    // distinct reasons: the post URLs are never logged, and a runaway list is
+    // not a diagnosis anyone can read.
+    const reasons = [...new Set(detailErrors)].slice(0, 3).join("; ");
+    if (!verifiedPosts)
+      throw new Error(`sxyprn post verification unavailable${reasons ? `: ${reasons}` : ""}`);
     return verified;
   };
 }
