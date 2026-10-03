@@ -550,6 +550,7 @@ export interface Fc2Client {
   getArticle(videoId: string): Promise<Fc2Detail>;
 }
 
+/** Create a wait callback that spaces sequential requests using a shared timestamp. */
 function pacing(
   lastRequest: { at: number },
   intervalMs: number,
@@ -585,6 +586,7 @@ export function createFc2Client(
   const waitListing = pacing(listingGate, listingMinIntervalMs, sleep);
   const waitDetail = pacing(detailGate, detailMinIntervalMs, sleep);
 
+  /** Fetch paced HTML, distinguishing rate limits, removed details, and other HTTP failures. */
   async function html(url: string, wait: () => Promise<void>, detail = false): Promise<string> {
     await wait();
     const response = await ctx.fetcher.fetch(url, {

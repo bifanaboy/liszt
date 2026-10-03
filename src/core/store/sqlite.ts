@@ -930,6 +930,7 @@ export class SqliteStore {
       );
   }
 
+  /** Return a candidate's saved decision and cached scene, or null if unseen. */
   fc2Candidate(videoId: string): Fc2Candidate | null {
     const row = this.db.prepare("SELECT * FROM fc2_candidates WHERE video_id = ?").get(videoId) as
       Record<string, unknown> | undefined;
@@ -1014,6 +1015,7 @@ export class SqliteStore {
     return row.n;
   }
 
+  /** Count all stored candidates by status, including retired pending records. */
   fc2CandidateCounts(): Record<Fc2Status, number> {
     const rows = this.db
       .prepare("SELECT status, COUNT(*) AS n FROM fc2_candidates GROUP BY status")
@@ -1041,6 +1043,7 @@ function rowToPoolVideo(row: Record<string, unknown>): PoolVideo {
   };
 }
 
+/** Decode a candidate row and its cached scene JSON, preserving nullable timestamps. */
 function rowToFc2Candidate(row: Record<string, unknown>): Fc2Candidate {
   const scene = row.scene_json;
   return {
