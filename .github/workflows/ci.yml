@@ -39,6 +39,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # A `pull_request_target` run is ELEVATED: the code below is the merged
+          # commit, and `npm ci` plus the test suite execute whatever it contains.
+          # `actions/checkout` writes its token into local git config by default,
+          # which would let that code read it, so the credential is dropped here.
+          # Nothing in this job authenticates to git afterwards - the Checks API
+          # call in `report` below uses `GH_TOKEN`, not the checkout credential.
+          persist-credentials: false
           # A `pull_request_target` run is ATTACHED TO THE PULL REQUEST'S HEAD
           # COMMIT, not to the commit that reached `main`. That is measured, not
           # assumed: every `pull_request_target` run in this repository reports
