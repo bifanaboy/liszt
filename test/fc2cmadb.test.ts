@@ -434,6 +434,52 @@ test("only explicitly uncensored records become scenes", async () => {
   assert.equal(result.verifiedEmpty, false);
 });
 
+for (const { name, videoIds, budget, pending } of [
+  { name: "pending decisions", videoIds: ["4986794"], budget: 1, pending: 1 },
+  { name: "zero detail budget", videoIds: ["4986794"], budget: 0, pending: 1 },
+  { name: "exhausted detail budget", videoIds: ["4986752", "4986794"], budget: 1, pending: 1 },
+  { name: "all records excluded", videoIds: ["4986752"], budget: 1, pending: 0 },
+  {
+    name: "pending, failed and unchecked records",
+    videoIds: ["4986752", "4986794", "4986883", "4986048"],
+    budget: 3,
+    pending: 3,
+  },
+]) {
+  test(`storeless accounting: ${name}`, async () => {
+    const fetcher = laneFetcher(
+      [
+        {
+          cursor: null,
+          records: [
+            ...videoIds.map((videoId) => ({ videoId, releaseDate: "2026-10-02" })),
+            { videoId: "4000000", releaseDate: "2026-07-04" },
+            { videoId: "6000000", releaseDate: "2026-10-04" },
+          ],
+          nextCursor: null,
+        },
+      ],
+      (id) =>
+        ({
+          "4986752": fixture("fc2-detail-censored.html"),
+          "4986794": fixture("fc2-detail-unmarked.html"),
+        })[id],
+    );
+    const studio = createFc2CmadbStudio({ sleep: noSleep, maxDetailChecksPerSync: budget });
+    let reportedPending: unknown;
+    const result = await studio.fetch(WINDOW_START, {
+      ...context(fetcher),
+      log: (message, fields) => {
+        if (message === "fc2: walk finished") reportedPending = fields?.pending;
+      },
+    });
+    assert.deepEqual(result.scenes, []);
+    assert.equal(result.verifiedEmpty, pending === 0);
+    assert.equal(reportedPending, pending, "each unresolved in-window record is counted once");
+    assert.equal(fetcher.calls.filter((url) => url.includes("/articles/")).length, budget);
+  });
+}
+
 test("detail work is bounded per sync and resumes on the next one", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();

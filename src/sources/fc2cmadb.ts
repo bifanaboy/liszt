@@ -764,6 +764,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       const fresh = new Map<string, RawScene>();
       let checked = 0;
       let failures = 0;
+      let classifiedPending = 0;
       for (const candidate of due) {
         let detail: Fc2Detail;
         try {
@@ -790,6 +791,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         });
         const scene = verdict.status === "accepted" ? toFc2RawScene(detail, verdict) : null;
         if (scene) fresh.set(candidate.videoId, scene);
+        if (verdict.status === "pending") classifiedPending += 1;
         store?.decideFc2Candidate(candidate.videoId, verdict.status, verdict.verdict, {
           checkedAt: now.toISOString(),
           // Only an UNDECIDED record is scheduled for another look. Accepted and
@@ -828,6 +830,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
         // scene yet.
       }
 
+      if (!store) undecided += classifiedPending + inWindowIds.length - due.length;
       const pending = store ? store.countFc2Pending() : undecided;
       const deferred = store ? pending : undecided;
       // `verifiedEmpty` needs all THREE of: a finished walk, no qualifying
