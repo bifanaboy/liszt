@@ -16,7 +16,17 @@
 import type { Fetcher } from "./types.ts";
 
 export const STUDIO_SITE_RECIPES: Readonly<
-  Record<string, { duration: RegExp; performers?: RegExp }>
+  Record<
+    string,
+    {
+      duration?: RegExp;
+      performers?: RegExp;
+      title?: RegExp;
+      releaseDate?: RegExp;
+      thumbnail?: RegExp;
+      tags?: RegExp;
+    }
+  >
 > = Object.freeze({
   "sexlikereal.com": { duration: /["']duration["']\s*:\s*["']([^"']+)["']/i },
   "www.sexlikereal.com": { duration: /["']duration["']\s*:\s*["']([^"']+)["']/i },
@@ -27,6 +37,40 @@ export const STUDIO_SITE_RECIPES: Readonly<
   "www.analvids.com": {
     duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
     performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
+  },
+  "pissvids.com": {
+    duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
+    performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
+  },
+  "www.pissvids.com": {
+    duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
+    performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
+  },
+  "bustyworld.com": {
+    title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
+    releaseDate: /<i\b[^>]*bi-calendar3[^>]*>[\s\S]*?<\/i>\s*([^<]+)/i,
+    performers: /<h1\b[^>]*class=["'][^"']*watch__title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
+    thumbnail: /<video\b[^>]*data-poster=["']([^"']+)/i,
+  },
+  "www.bustyworld.com": {
+    title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
+    releaseDate: /<i\b[^>]*bi-calendar3[^>]*>[\s\S]*?<\/i>\s*([^<]+)/i,
+    performers: /<h1\b[^>]*class=["'][^"']*watch__title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
+    thumbnail: /<video\b[^>]*data-poster=["']([^"']+)/i,
+  },
+  "woodmancastingx.com": {
+    title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
+    releaseDate: /<p\b[^>]*>\s*<span[^>]*>Published<\/span>[^\d]*(\d{4}-\d{2}-\d{2})/i,
+    performers: /<span\b[^>]*class=["']name["'][^>]*>([\s\S]*?)<\/span>/gi,
+    thumbnail: /image:\s*["']([^"']+)["']/i,
+    tags: /<a\b[^>]*class=["']tag["'][^>]*>([\s\S]*?)<\/a>/gi,
+  },
+  "www.woodmancastingx.com": {
+    title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
+    releaseDate: /<p\b[^>]*>\s*<span[^>]*>Published<\/span>[^\d]*(\d{4}-\d{2}-\d{2})/i,
+    performers: /<span\b[^>]*class=["']name["'][^>]*>([\s\S]*?)<\/span>/gi,
+    thumbnail: /image:\s*["']([^"']+)["']/i,
+    tags: /<a\b[^>]*class=["']tag["'][^>]*>([\s\S]*?)<\/a>/gi,
   },
 });
 
@@ -59,7 +103,7 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
 
 /** Validate a URL against the host allowlist and the reservation checks. */
 export function isUrlAllowed(url: URL): boolean {
-  if (!/^https?:$/.test(url.protocol)) return false;
+  if (url.protocol !== "https:") return false;
   const hostname = url.hostname.toLowerCase();
   if (isPrivateOrReservedHost(hostname)) return false;
   return ALLOWED_HOSTS.has(hostname);
@@ -132,6 +176,7 @@ export interface ExtractedStudioMetadata {
   performers: string[];
   title: string;
   thumbnailUrl: string;
+  tags: string[];
 }
 
 function visit(value: unknown, output: ExtractedStudioMetadata): void {
@@ -187,6 +232,7 @@ export function extractStudioMetadata(
     performers: [],
     title: "",
     thumbnailUrl: "",
+    tags: [],
   };
   for (const match of String(html).matchAll(
     /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
@@ -225,13 +271,29 @@ export function extractStudioMetadata(
     /* An unsupported URL simply has no host recipe. */
   }
   const recipe = STUDIO_SITE_RECIPES[hostname];
-  if (recipe && output.durationSec === null) {
+  if (recipe?.duration && output.durationSec === null) {
     const match = String(html).match(recipe.duration);
     output.durationSec = parseIsoDuration(match?.[1] ?? match?.[2]);
   }
   if (recipe?.performers && !output.performers.length) {
     const match = String(html).match(recipe.performers);
-    output.performers = names(match?.[1] ?? match?.[2]);
+    const performerMatches = recipe.performers.global
+      ? [...String(html).matchAll(recipe.performers)].map((item) => item[1])
+      : [match?.[1] ?? match?.[2]];
+    output.performers = names(performerMatches);
+  }
+  const text = (value: string | undefined) => cleanText(value?.replace(/<[^>]*>/g, " "));
+  if (recipe?.title && !output.title) output.title = text(String(html).match(recipe.title)?.[1]);
+  if (recipe?.releaseDate && !output.releaseDate) {
+    output.releaseDate = text(String(html).match(recipe.releaseDate)?.[1]);
+  }
+  if (recipe?.thumbnail && !output.thumbnailUrl) {
+    output.thumbnailUrl = String(html).match(recipe.thumbnail)?.[1] ?? "";
+  }
+  if (recipe?.tags) {
+    output.tags = [...String(html).matchAll(recipe.tags)]
+      .map((item) => text(item[1]))
+      .filter(Boolean);
   }
   if (output.releaseDate) output.releaseDate = output.releaseDate.slice(0, 10);
   return Object.fromEntries(
@@ -247,6 +309,7 @@ export interface ScrapedMetadata {
   performers?: string[];
   title?: string;
   thumbnailUrl?: string;
+  tags?: string[];
   metadataPoor: boolean;
   studioSiteStatus?: number;
   fieldProvenance?: Record<string, string>;

@@ -17,6 +17,10 @@ const PAGE_PROFILE: StudioMetadataProfile = {
   kind: "studio-page",
   fields: ["title", "releaseDate", "performers", "durationSec", "thumbnailUrl"],
 };
+const WOODMAN_PROFILE: StudioMetadataProfile = {
+  kind: "studio-page",
+  fields: ["title", "releaseDate", "performers", "thumbnailUrl", "tags"],
+};
 
 /** Return a scraper only for exact, reviewed HTTPS host profiles. */
 export function getStudioMetadataProfile(value: string): StudioMetadataProfile | null {
@@ -31,16 +35,20 @@ export function getStudioMetadataProfile(value: string): StudioMetadataProfile |
   if (VIXEN_SITE_CODES[host] && /^\/videos\/[a-z0-9-]+\/?$/i.test(url.pathname)) {
     return VIXEN_PROFILE;
   }
+  if (/^(?:www\.)?woodmancastingx\.com$/.test(host)) return WOODMAN_PROFILE;
   if (host in STUDIO_SITE_RECIPES) return PAGE_PROFILE;
   return null;
 }
 
 function populatedFields(raw: Partial<RawScene>): (keyof RawScene)[] {
-  return (["title", "releaseDate", "performers", "durationSec", "thumbnailUrl", "tags"] as const)
-    .filter((field) => {
-      const value = raw[field];
-      return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== "";
-    });
+  return (
+    ["title", "releaseDate", "performers", "durationSec", "thumbnailUrl", "tags"] as const
+  ).filter((field) => {
+    const value = raw[field];
+    return Array.isArray(value)
+      ? value.length > 0
+      : value !== undefined && value !== null && value !== "";
+  });
 }
 
 /** Fill metadata from one known studio release page; unsupported URLs are never fetched. */

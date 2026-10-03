@@ -25,7 +25,10 @@ function vixenResponse(slug = SLUG): unknown {
   };
 }
 
-function fixedFetcher(body: unknown, onFetch?: (url: string, options: FetchOptions) => void): Fetcher {
+function fixedFetcher(
+  body: unknown,
+  onFetch?: (url: string, options: FetchOptions) => void,
+): Fetcher {
   return {
     async fetch(url, options = {}) {
       onFetch?.(url, options);
@@ -89,4 +92,52 @@ test("studio detail profiles cover the Vixen sites and reject unregistered hosts
   }
   assert.equal(getStudioMetadataProfile("https://www.tushy.com.evil.test/videos/x"), null);
   assert.equal(getStudioMetadataProfile("http://www.tushy.com/videos/x"), null);
+});
+
+test("studio page profiles cover the registered Stash scene hosts", () => {
+  for (const host of [
+    "sexlikereal.com",
+    "www.sexlikereal.com",
+    "analvids.com",
+    "www.analvids.com",
+    "pissvids.com",
+    "www.pissvids.com",
+    "bustyworld.com",
+    "www.bustyworld.com",
+    "woodmancastingx.com",
+    "www.woodmancastingx.com",
+  ]) {
+    assert.equal(getStudioMetadataProfile(`https://${host}/watch/123`)?.kind, "studio-page");
+  }
+  assert.equal(getStudioMetadataProfile("https://traxxx.me/scene/123"), null);
+  assert.equal(getStudioMetadataProfile("https://lancelotstyles.com/videos/123"), null);
+});
+
+test("Woodman page extraction follows the Stash scene fields and does not claim runtime", async () => {
+  const html = `
+    <h1>Behind the Scenes with Alex</h1>
+    <p><span>Published</span>: 2026-10-02</p>
+    <a class="girl_item"><span class="name">Alex</span></a>
+    <a class="girl_item"><span class="name">Jamie</span></a>
+    <a class="tag">Casting</a><a class="tag">Behind the Scenes</a>
+    <script>image: "https://cdn.example.test/poster.jpg"</script>
+  `;
+  const fetcher: Fetcher = {
+    async fetch() {
+      return new Response(html, { headers: { "content-type": "text/html" } });
+    },
+    async text() {
+      return html;
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const result = await scrapeReleaseMetadata("https://www.woodmancastingx.com/scene/123", fetcher);
+  assert.equal(result?.title, "Behind the Scenes with Alex");
+  assert.equal(result?.releaseDate, "2026-10-02");
+  assert.deepEqual(result?.performers, ["Alex", "Jamie"]);
+  assert.deepEqual(result?.tags, ["Casting", "Behind the Scenes"]);
+  assert.equal(result?.thumbnailUrl, "https://cdn.example.test/poster.jpg");
+  assert.equal(result?.durationSec, undefined);
 });

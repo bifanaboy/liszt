@@ -37,11 +37,15 @@ type VixenRecord = {
 
 function namedItems(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.flatMap((item) => {
-    if (!item || typeof item !== "object" || !("name" in item)) return [];
-    const name = String((item as { name: unknown }).name ?? "").trim();
-    return name ? [name] : [];
-  }))];
+  return [
+    ...new Set(
+      value.flatMap((item) => {
+        if (!item || typeof item !== "object" || !("name" in item)) return [];
+        const name = String((item as { name: unknown }).name ?? "").trim();
+        return name ? [name] : [];
+      }),
+    ),
+  ];
 }
 
 function thumbnail(value: unknown): string | undefined {
@@ -107,14 +111,7 @@ export async function scrapeVixenMetadata(
   }
   const site = VIXEN_SITE_CODES[url.hostname.toLowerCase()];
   const slug = videoSlug(url);
-  if (
-    url.protocol !== "https:" ||
-    !site ||
-    !slug ||
-    url.username ||
-    url.password ||
-    url.port
-  ) {
+  if (url.protocol !== "https:" || !site || !slug || url.username || url.password || url.port) {
     return null;
   }
 
