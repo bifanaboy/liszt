@@ -139,7 +139,7 @@ function linkRowToScene(row: SceneRow, linkRows: Record<string, unknown>[]): Sce
           verifiedAt: link.verified_at,
           verifyFailures: Number(link.verify_failures ?? 0),
           // Absent for every lane but FC2, and absent on rows written before
-          // migration 0006. `optional` keeps both spellings out of the schema.
+          // migration 0007. `optional` keeps both spellings out of the schema.
           ...(link.part === null || link.part === undefined ? {} : { part: Number(link.part) }),
         },
         `store.link(${row.id})`,
@@ -340,7 +340,7 @@ export class SqliteStore {
     const grouped = new Map<string, Record<string, unknown>[]>();
     if (!sceneIds.length) return grouped;
     const placeholders = sceneIds.map(() => "?").join(",");
-    // The multipart column is added by migration 0006 and does not exist on a
+    // The multipart column is added by migration 0007 and does not exist on a
     // database that has not migrated yet, so the read names it explicitly.
     const rows = this.db
       .prepare(
