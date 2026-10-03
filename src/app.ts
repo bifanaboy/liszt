@@ -27,6 +27,7 @@ import { createProgressTracker } from "./pipeline/progress.ts";
 import { createScheduler, createSingleFlight } from "./pipeline/scheduler.ts";
 import { createPoolLookup, indexPool } from "./tubes/eporner-pool.ts";
 import { createSxyprnLookup } from "./tubes/sxyprn.ts";
+import { createFc2EpornerResolver } from "./tubes/fc2-eporner.ts";
 import { loadSxyprnClient } from "./tubes/sxyprn-client.ts";
 import { buildReadModel } from "./serving/read-model.ts";
 import { createHttpServer } from "./serving/http.ts";
@@ -89,6 +90,7 @@ async function main(): Promise<void> {
         durationToleranceSec: config.matchDurationToleranceSec,
       })
     : null;
+  const fc2Lookup = createFc2EpornerResolver(fetcher);
 
   // One tracker for the whole cycle, begun here because the pool index runs
   // BEFORE `createSync` and is the longest cold-start phase. It is the single
@@ -108,6 +110,7 @@ async function main(): Promise<void> {
     lookups: {
       poolLookup,
       sxyprnLookup,
+      fc2Lookup,
       ...(sxyprnClient ? { sxyprnRequests: () => sxyprnClient.takeRequests() } : {}),
     },
     progress,

@@ -1,0 +1,56 @@
+{
+  "_fixture": "Synthetic eporner v2 search body for FC2 release code 4979341, built to the documented API shape. NOT captured live: eporner's edge answered this workspace with an HTTP 200 JavaScript challenge instead of JSON, so no live body was obtainable. See the calibration note in src/tubes/fc2-eporner.ts.",
+  "videos": [
+    {
+      "id": "a1b2c3",
+      "title": "FC2-PPV-4979341 [Part 1] 148cm idol first anal",
+      "url": "https://www.eporner.com/video-a1b2c3/fc2-ppv-4979341-part-1/",
+      "length_sec": 1180,
+      "views": 48210,
+      "added": "2026-09-25 12:00:00"
+    },
+    {
+      "id": "d4e5f6",
+      "title": "FC2-PPV-4979341 [Part 2]",
+      "url": "https://www.eporner.com/video-d4e5f6/fc2-ppv-4979341-part-2/",
+      "length_sec": 1290,
+      "views": 31904,
+      "added": "2026-09-25 12:05:00"
+    },
+    {
+      "id": "z9y8x7",
+      "title": "FC2-PPV-4979341 part 3",
+      "url": "https://www.eporner.com/video-z9y8x7/fc2-ppv-4979341-part-3/",
+      "length_sec": 1345,
+      "views": 22110,
+      "added": "2026-09-26 09:00:00"
+    },
+    {
+      "id": "look1",
+      "title": "a completely different release 14979341",
+      "url": "https://www.eporner.com/video-look1/a-completely-different-release-14979341/",
+      "length_sec": 1200,
+      "views": 900,
+      "added": "2026-09-20 09:00:00"
+    },
+    {
+      "id": "look2",
+      "title": "repost 49793410",
+      "url": "https://www.eporner.com/video-look2/repost-49793410/",
+      "length_sec": 1200,
+      "views": 900,
+      "added": "2026-09-20 09:00:00"
+    },
+    {
+      "id": "noop",
+      "title": "no release code here at all",
+      "url": "https://www.eporner.com/video-noop/no-release-code-here/",
+      "length_sec": 600,
+      "views": 12,
+      "added": "2026-09-20 09:00:00"
+    }
+  ],
+  "per_page": 20,
+  "page": 1,
+  "total": 6
+}
