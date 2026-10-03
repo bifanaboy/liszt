@@ -13,8 +13,18 @@ export function isLiveLink(link) {
   return Boolean(link) && typeof link.url === "string";
 }
 
+export function sourceScenes(source, scenes) {
+  const catalogue = Array.isArray(scenes) ? scenes : [];
+  if (source?.labelId && source.labelId !== source.sourceId) {
+    return catalogue.filter(
+      (scene) => scene.sourceId === source.sourceId && scene.labelId === source.labelId,
+    );
+  }
+  return catalogue.filter((scene) => scene.sourceId === source?.sourceId);
+}
+
 export function sourceHealth(source, scenes) {
-  const owned = (Array.isArray(scenes) ? scenes : []).filter((scene) => scene.sourceId === source?.sourceId);
+  const owned = sourceScenes(source, scenes);
   const liveCount = owned.filter((scene) => (scene.videoUrls || []).some(isLiveLink)).length;
   return {
     label: classifySourceStatus(source?.lastError),
@@ -23,6 +33,38 @@ export function sourceHealth(source, scenes) {
     matchPercent: owned.length ? Math.round((liveCount / owned.length) * 100) : null,
     lastSuccessAt: source?.lastSuccessAt || null,
   };
+}
+
+/** Hide a healthy aggregate lane when its studio rows can speak for it. */
+export function visibleSourceStatuses(sources) {
+  const rows = Array.isArray(sources) ? sources : [];
+  const childSources = new Set(
+    rows.filter((source) => source.labelId !== source.sourceId).map((source) => source.sourceId),
+  );
+  return rows.filter(
+    (source) =>
+      source.labelId !== source.sourceId || source.lastError || !childSources.has(source.sourceId),
+  );
+}
+
+/** Studio filtering follows catalogue labels, including sources without child health rows. */
+export function studioChoices(scenes) {
+  const choices = new Map();
+  for (const scene of Array.isArray(scenes) ? scenes : []) {
+    const labelId = String(scene?.labelId || "");
+    if (!labelId) continue;
+    const existing = choices.get(labelId);
+    if (existing) {
+      existing.sceneCount += 1;
+    } else {
+      choices.set(labelId, {
+        labelId,
+        label: String(scene?.label || labelId),
+        sceneCount: 1,
+      });
+    }
+  }
+  return [...choices.values()];
 }
 
 function formatRefresh(value) {

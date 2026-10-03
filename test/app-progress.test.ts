@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { sourceScenes, studioChoices, visibleSourceStatuses } from "../public/source-health.js";
 
 const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8").replace(
-  /^import .*;\n/,
+  /^import[\s\S]*?from "\.\/source-health\.js";\n/,
   "",
 );
 
@@ -19,7 +20,9 @@ class Element {
   attributes = new Map<string, string>();
   classList = { toggle() {}, add() {} };
   addEventListener() {}
-  insertAdjacentHTML() {}
+  insertAdjacentHTML(_position: string, html: string) {
+    this.innerHTML += html;
+  }
   replaceChildren(...options: Element[]) {
     this.options = options;
   }
@@ -63,6 +66,9 @@ async function dashboard(fetch: (url: string) => Promise<unknown>) {
       fetch,
       renderSourceHealthSummary: () => "",
       renderSourceHealth: () => "",
+      sourceScenes,
+      studioChoices,
+      visibleSourceStatuses,
       setTimeout: (_callback: unknown, delay: number) => {
         timers.set(++timerId, delay);
         return timerId;
@@ -255,6 +261,28 @@ test("HTML provides the empty-state text targets used by the dashboard", () => {
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.match(html, /<h3 id="empty-title">Loading catalogue…<\/h3>/);
   assert.match(html, /<p id="empty-message">Waiting for the catalogue response\.<\/p>/);
+});
+
+test("studio totals count visible cards and dropdown options follow scene labels", async () => {
+  const statuses = [
+    { sourceId: "vixen-anal", labelId: "vixen-anal", name: "Vixen", lastError: null },
+    { sourceId: "vixen-anal", labelId: "tushy", name: "Vixen", label: "Tushy" },
+    { sourceId: "madouqu", labelId: "madouqu", name: "Madouqu" },
+  ];
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      sources: statuses,
+      scenes: [
+        { ...release, sourceId: "vixen-anal", labelId: "tushy", label: "Tushy" },
+        { ...release, sourceId: "madouqu", labelId: "madouqu-peach", label: "Peach" },
+      ],
+    }),
+  );
+  assert.equal(app.element("#stat-studios").textContent, "2");
+  assert.doesNotMatch(app.element("#studio").innerHTML, /value="vixen-anal"/);
+  assert.match(app.element("#studio").innerHTML, /value="tushy">Tushy · 1/);
+  assert.match(app.element("#studio").innerHTML, /value="madouqu-peach">Peach · 1/);
 });
 
 test("overall progress uses only stages with known totals", async () => {

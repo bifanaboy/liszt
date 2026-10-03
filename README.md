@@ -96,13 +96,21 @@ Four categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                             | Matcher  |
 | -------------------------------------------- | ------------------------------------- | -------- |
-| Lancelot Styles Evolution, Mambo Perv, Tushy | `traxxx.me` REST, no auth             | yes      |
+| Lancelot Styles Evolution, Mambo Perv, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
 | fc2cmadb                                     | stub - interface unconfirmed          | yes      |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
+
+Traxxx watchlist entries use this exact grammar:
+`https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
+`?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
+rejected at startup. The built-in entry is the Vixen network filtered to the
+`anal` tag. `LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries
+and replaces that built-in list rather than appending to it, which makes a
+single lane easy to isolate during calibration.
 
 Two things are load-bearing and must not be "simplified" away:
 
@@ -291,6 +299,7 @@ required variable: everything has a working default.
 | `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
 | `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
+| `LISZT_TRAXXX_WATCHLIST`                        | Vixen `anal` listing | Comma-separated listing URLs; setting it replaces the built-in list.  |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |

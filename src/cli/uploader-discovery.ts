@@ -131,6 +131,7 @@ async function main(): Promise<void> {
   }
   const sources = createSources({
     madouquApiBase: config.madouquApiBase,
+    traxxxWatchlist: config.traxxxWatchlist,
     maximoListingUrl: config.maximoListingUrl,
   });
   const creatorBySource = new Map(

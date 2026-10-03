@@ -1,4 +1,10 @@
-import { renderSourceHealth, renderSourceHealthSummary } from "./source-health.js";
+import {
+  renderSourceHealth,
+  renderSourceHealthSummary,
+  sourceScenes,
+  studioChoices,
+  visibleSourceStatuses,
+} from "./source-health.js";
 
 const $ = (selector) => document.querySelector(selector);
 const list = $("#list");
@@ -138,15 +144,17 @@ function renderEmptyState(visibleCount = null) {
 }
 
 function renderSources() {
-  sourceSummary.innerHTML = renderSourceHealthSummary(statuses);
-  sourcesList.innerHTML = statuses.map((item) => {
+  const visible = visibleSourceStatuses(statuses);
+  sourceSummary.innerHTML = renderSourceHealthSummary(visible);
+  sourcesList.innerHTML = visible.map((item) => {
     const authority = item.authority || {};
-    const owned = scenes.filter((scene) => scene.sourceId === item.sourceId);
+    const owned = sourceScenes(item, scenes);
     const linked = owned.filter((scene) => linksFor(scene).length).length;
     const total = owned.length;
     const state = item.lastError ? (String(item.lastError).includes("not configured") ? "setup" : "error") : "ok";
     const url = safeUrl(authority.url);
-    return `<article class="source-card source-card--${state}"><div class="source-card-top"><span class="status-pill"><i></i>${state === "ok" ? "HEALTHY" : state === "setup" ? "SETUP REQUIRED" : "NEEDS ATTENTION"}</span><span class="source-mark">${esc((authority.name || "S").slice(0, 1))}</span></div><p class="source-role">${esc(authority.role || "Catalogue source")}</p><h3>${esc(item.name)}</h3><p class="source-provider">via ${esc(authority.name || "configured source")}</p><div class="source-metrics"><span><strong>${total}</strong> releases</span><span><strong>${total ? Math.round(linked / total * 100) : 0}%</strong> linked</span></div><div class="source-health">${renderSourceHealth(item, scenes)}</div><div class="source-card-bottom"><span>Last good: ${item.lastSuccessAt ? esc(new Date(item.lastSuccessAt).toLocaleDateString()) : "—"}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">Open source ↗</a>` : ""}</div></article>`;
+    const title = item.labelId !== item.sourceId ? item.label : item.name;
+    return `<article class="source-card source-card--${state}"><div class="source-card-top"><span class="status-pill"><i></i>${state === "ok" ? "HEALTHY" : state === "setup" ? "SETUP REQUIRED" : "NEEDS ATTENTION"}</span><span class="source-mark">${esc((authority.name || "S").slice(0, 1))}</span></div><p class="source-role">${esc(authority.role || "Catalogue source")}</p><h3>${esc(title || item.name)}</h3><p class="source-provider">via ${esc(authority.name || "configured source")}</p><div class="source-metrics"><span><strong>${total}</strong> releases</span><span><strong>${total ? Math.round(linked / total * 100) : 0}%</strong> linked</span></div><div class="source-health">${renderSourceHealth(item, scenes)}</div><div class="source-card-bottom"><span>Last good: ${item.lastSuccessAt ? esc(new Date(item.lastSuccessAt).toLocaleDateString()) : "—"}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noreferrer">Open source ↗</a>` : ""}</div></article>`;
   }).join("");
 }
 
@@ -163,7 +171,7 @@ function apply(data) {
   scenesTotal.textContent = Number(stats.total ?? scenes.length).toLocaleString();
   linkedTotal.textContent = Number(stats.live ?? 0).toLocaleString();
   linkRate.textContent = `${stats.total ? Math.round((stats.live / stats.total) * 100) : 0}% of catalogue`;
-  studiosTotal.textContent = statuses.length.toLocaleString();
+  studiosTotal.textContent = visibleSourceStatuses(statuses).length.toLocaleString();
   lastChecked.textContent = data.latestRun && data.latestRun.endedAt ? new Date(data.latestRun.endedAt).toLocaleString("en", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
   refreshState.textContent = refreshing
     ? "Refresh in progress…"
@@ -175,7 +183,7 @@ function apply(data) {
   refreshButton.disabled = refreshing;
   const selected = studio.value;
   studio.replaceChildren(new Option("All studios", "all"));
-  studio.insertAdjacentHTML("beforeend", statuses.map((item) => `<option value="${esc(item.labelId)}">${esc(item.label || item.name)} · ${scenes.filter((scene) => scene.labelId === item.labelId).length}</option>`).join(""));
+  studio.insertAdjacentHTML("beforeend", studioChoices(scenes).map((item) => `<option value="${esc(item.labelId)}">${esc(item.label)} · ${item.sceneCount}</option>`).join(""));
   if ([...studio.options].some((option) => option.value === selected)) studio.value = selected;
   renderSources();
   render();
