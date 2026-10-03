@@ -461,3 +461,11 @@ is no data exchange between them and this database.
 
 The rebuild exists because the older pair could not do the obvious thing - poll
 regularly - and because a scene missing from one snapshot silently vanished.
+
+## Documentation and contributor guidance
+
+This guide describes the app and its supported local workflows. When it may
+disagree with the implementation, verify behavior against the source, tests,
+package scripts, and workflows before changing the guide. Repository-wide agent
+rules are in [AGENTS.md](AGENTS.md); scheduled maintenance prompts are in
+[`prompts/`](prompts/).
