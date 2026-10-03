@@ -660,6 +660,26 @@ test("a failed refresh still reports truncation alongside its source failures", 
   );
 });
 
+test("the last run says how much of its match count was a guess", async () => {
+  // "Catalogue up to date" says nothing about whether the links it found were
+  // identified. A run where 56 of 69 winners were the terminal fallback's flagged
+  // guesses reads as a clean refresh, and the only way to see the difference was
+  // to reconstruct it from other counters.
+  for (const [resolverHealth, expected] of [
+    [{ winnerFallback: 56 }, "Catalogue up to date · 56 low-confidence guesses"],
+    [{ winnerPool: 13, winnerSxyprn: 0, winnerFallback: 0 }, "Catalogue up to date"],
+    // A named match is not a verdict either: how much of it was a guess is.
+    [
+      { winnerPool: 9, winnerSxyprn: 4, winnerFallback: 1 },
+      "Catalogue up to date · 1 low-confidence guess",
+    ],
+  ] as const) {
+    const app = await dashboard(async () => response(catalogue));
+    app.apply({ ...catalogue, latestRun: { ok: true, resolverHealth } });
+    assert.equal(app.element("#refresh-state").textContent, expected);
+  }
+});
+
 test("the last run says what the slow source cost, and what went wrong with it", async () => {
   // A clean run is not always a cheap one: the ladder tries the fast pool first,
   // and every scene it could not resolve there costs a ten-second wait at the

@@ -213,11 +213,16 @@ function renderCatalogue() {
  * listed too, and stays first: a rung that could not answer is worse news than
  * one that answered about part of the set.
  *
- * The slow source's request count comes last and is not a verdict. The ladder
+ * The slow source's request count comes next and is not a verdict. The ladder
  * tries the fast pool first, so a run that spent requests there can be a perfectly
  * good run. It is here because that source makes us wait ten seconds per request,
  * so this is the number that says how long a refresh took - and for a long time
  * nobody could read it off anywhere.
+ *
+ * The guess count is last. "Catalogue up to date" says nothing about whether the
+ * links it found were identified, and a run where most of them were guesses reads
+ * as a clean refresh without it. The scenes themselves are already labelled
+ * LOW CONFIDENCE; this is the same fact as one number per run.
  */
 function refreshStatus(refreshing, run) {
   if (refreshing) return "Refresh in progress…";
@@ -228,6 +233,8 @@ function refreshStatus(refreshing, run) {
   if (Number(resolver.incomplete || 0)) parts.push("search truncated");
   const lookups = Number(resolver.sxyprnSearches || 0) + Number(resolver.sxyprnDetails || 0);
   if (lookups) parts.push(`${lookups} slow-source lookups`);
+  const guesses = Number(resolver.winnerFallback || 0);
+  if (guesses) parts.push(`${guesses} low-confidence ${guesses === 1 ? "guess" : "guesses"}`);
   const suffix = parts.length ? ` · ${parts.join(" · ")}` : "";
   return run.ok
     ? `Catalogue up to date${suffix}`

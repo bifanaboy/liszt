@@ -535,8 +535,62 @@ test("resolveLinks keeps ineligible scenes out of the queue and preserves order"
     ["test:1", "test:9", "test:10", "test:11"],
   );
   // The tier histogram is collected from real winners, not recovered from the
-  // stored confidence, so tiers 1/2/3 stay distinguishable.
-  assert.deepEqual(result.tiers, [1, 1, 1]);
+  // stored confidence, so tiers 1/2/3 stay distinguishable. The rung rides along,
+  // because a tier alone cannot say whether the pool named the scene.
+  assert.deepEqual(result.winners, [
+    { rung: "eporner-pool", tier: 1 },
+    { rung: "eporner-pool", tier: 1 },
+    { rung: "eporner-pool", tier: 1 },
+  ]);
+});
+
+test("each winner is recorded with the rung that produced it, guesses included", async () => {
+  // The run ledger used to store only the identity tier, so a named match and the
+  // terminal fallback's guess were the same observation from the ledger's side.
+  // That is the number that makes "69 matched" unreadable: most of it can be
+  // guesses, and nothing on the row says so.
+  const scenes = [
+    makeScene({ id: "test:named-pool", title: "Marfe takes it deep", performers: ["Marfe"] }),
+    makeScene({ id: "test:named-slow", title: "Marfe takes it deep", performers: ["Marfe"] }),
+    makeScene({ id: "test:guess", title: "Marfe takes it deep", performers: ["Marfe"] }),
+    makeScene({ id: "test:unlinked", title: "Marfe takes it deep", performers: ["Marfe"] }),
+  ];
+  const [poolNamed, , guess, unlinked] = scenes.map((entry) => entry.id) as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  let posts = 0;
+  const result = await resolveLinks({
+    scenes,
+    now,
+    mapWithConcurrency: async (items, task) =>
+      Promise.all(items.map((item, index) => task(item, index))),
+    matcherFor: () => ({ matcher: "sxyprn+eporner", creatorStudio: false }),
+    poolLookup: async (candidate) =>
+      candidate.id === poolNamed ? poolMatch() : poolMiss({ fallbackCandidates: [] }),
+    // The pool names one scene and misses the rest, so the slow rung is reached.
+    // It names one more, keeps only an unnamed survivor for the third, and has
+    // nothing at all for the fourth.
+    sxyprnLookup: async (candidate) => {
+      posts += 1;
+      const slug = posts.toString(16).padStart(13, "0");
+      const url = `https://sxyprn.com/post/${slug}.html`;
+      if (candidate.id === unlinked) return [];
+      if (candidate.id === guess) {
+        return [sxyprnHit({ identityTier: 0, title: "unrelated clip", url })];
+      }
+      return [sxyprnHit({ url })];
+    },
+  });
+
+  assert.deepEqual(result.winners, [
+    { rung: "eporner-pool", tier: 1 },
+    { rung: "sxyprn", tier: 2 },
+    { rung: "fallback", tier: 0 },
+  ]);
+  assert.equal(result.matched, 3, "the unlinked scene contributes no winner to record");
 });
 
 test("a deferred lane produces zero links and never enters the ladder", async () => {
