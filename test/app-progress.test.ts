@@ -163,6 +163,21 @@ test("an active retry takes precedence over a previous failed run", async () => 
   assert.equal(app.element("#empty-title").textContent, "Building the catalogue…");
 });
 
+test("a completed catalogue response does not request the catalogue again", async () => {
+  let loads = 0;
+  const app = await dashboard(async () => {
+    loads += 1;
+    return response(catalogue);
+  });
+  app.applyProgress(active);
+
+  app.apply({ ...catalogue, refreshing: false, progress: active });
+  await settle();
+
+  assert.equal(loads, 1);
+  assert.equal(app.element("#empty-title").textContent, "No releases in the catalogue");
+});
+
 test("completion waits for the latest catalogue before showing rows or a final empty state", async () => {
   let loads = 0;
   let finishLoad!: (value: unknown) => void;

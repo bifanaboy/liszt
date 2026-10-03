@@ -189,6 +189,7 @@ function apply(data) {
     refreshing
       ? progress
       : { ...progress, active: false, stage: progress.stage === "error" ? "error" : "idle" },
+    refreshing,
   );
 }
 
@@ -350,7 +351,7 @@ function syncRefreshChrome(active) {
 }
 
 /** Absorb one snapshot. Returns whether a cycle is live, which sets the next poll delay. */
-function applyProgress(next) {
+function applyProgress(next, reloadOnCompletion = true) {
   const wasActive = Boolean(progressState.active);
   const previousRun = progressState.runId || null;
   progressState = next && typeof next === "object" ? next : { active: false, stage: "idle" };
@@ -390,7 +391,7 @@ function applyProgress(next) {
     if (wasActive) {
       progressLive.textContent = progressState.stage === "error" ? "Refresh failed" : "Refresh finished";
     }
-    if (wasActive || newRun) {
+    if (reloadOnCompletion && (wasActive || newRun)) {
       catalogueReloadPending = true;
       load().catch(() => {
         catalogueReloadPending = false;
