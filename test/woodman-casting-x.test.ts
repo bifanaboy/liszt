@@ -169,6 +169,39 @@ test("the traxxx filter guard still holds for this lane", async () => {
   );
 });
 
+for (const dateField of ["date", "effectiveDate"] as const) {
+  test(`a full page of excluded old records stops pagination using ${dateField}`, async () => {
+    const scenes = Array.from({ length: 100 }, (_, id) => ({
+      id,
+      title: "XXXX",
+      [dateField]: "!Date:2026-07-04T00:00:00Z",
+      channel: { slug: WOODMAN_CASTING_X_SLUG },
+    }));
+    const { ctx, calls, logs } = setup((url) => {
+      if (url.searchParams.has("e") && url.searchParams.get("page") !== "1") {
+        return { scenes: [], total: 2071, limit: 100 };
+      }
+      return channelPage(scenes)(url);
+    });
+    const result = await createWoodmanCastingXSource().fetch(WINDOW_START, ctx);
+    assert.deepEqual(result.scenes, []);
+    assert.equal(result.verifiedEmpty, true);
+    assert.deepEqual(
+      calls
+        .map((url) => new URL(url))
+        .filter((url) => url.searchParams.has("e"))
+        .map((url) => url.searchParams.get("page")),
+      ["1"],
+    );
+    assert.deepEqual(logs.find((entry) => entry.message === "traxxx: lane complete")?.fields, {
+      records: 100,
+      emitted: 0,
+      filtered: 100,
+      excluded: 100,
+    });
+  });
+}
+
 test("a source failure keeps the last-good records instead of erasing the lane", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();

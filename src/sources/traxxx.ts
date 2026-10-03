@@ -455,7 +455,8 @@ export interface TraxxxStudioOptions {
   creatorStudio?: boolean;
   /**
    * Drop a record the studio itself marks as unwanted, e.g. Woodman Casting X's
-   * `XXXX` scenes (#82). It runs after the entity re-check and before parsing,
+   * `XXXX` scenes (#82). It runs after the entity and date boundary checks,
+   * before parsing the full scene,
    * so an excluded record costs one already-paid request and nothing else.
    */
   exclude?: (record: TraxxxSceneRecord) => boolean;
@@ -509,6 +510,9 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
             });
             continue;
           }
+          const releaseDate = parseTraxxxDate(record.date ?? record.effectiveDate);
+          const beforeWindow = releaseDate !== "" && releaseDate < windowStart;
+          if (beforeWindow) reachedWindowBoundary = true;
           if (exclude?.(record)) {
             filtered += 1;
             excluded += 1;
@@ -520,12 +524,11 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
             laneSlug: slug,
             laneName: name,
           });
-          if (parsed.releaseDate && parsed.releaseDate < windowStart) {
+          if (beforeWindow) {
             filtered += 1;
-            reachedWindowBoundary = true;
             continue;
           }
-          if (!withinWindow(parsed.releaseDate, windowStart, ctx.now)) {
+          if (!withinWindow(releaseDate, windowStart, ctx.now)) {
             filtered += 1;
             continue;
           }

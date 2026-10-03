@@ -8,6 +8,7 @@ import {
   parseTraxxxListingUrl,
 } from "../src/sources/traxxx-watchlist.ts";
 import { createSources } from "../src/sources/registry.ts";
+import { WOODMAN_CASTING_X_SLUG } from "../src/sources/woodman-casting-x.ts";
 
 test("parses supported network and channel listings with tag slugs", () => {
   assert.deepEqual(
@@ -100,4 +101,26 @@ test("watchlist rejects reserved IDs", () => {
     () => createTraxxxWatchlistStudios(TRAXXX_WATCHLIST, ["network-vixen-anal"]),
     /Reserved Traxxx watchlist ID "network-vixen-anal"/,
   );
+});
+
+test("the registry rejects Woodman channel watchlists with or without tags", () => {
+  for (const slug of [WOODMAN_CASTING_X_SLUG, WOODMAN_CASTING_X_SLUG.toUpperCase()]) {
+    for (const query of ["", "?tags=anal", "?tags=bbc,anal"]) {
+      assert.throws(
+        () =>
+          createSources({
+            madouquApiBase: "https://example.test",
+            traxxxWatchlist: [`https://traxxx.me/channel/${slug}/scenes/latest/1${query}`],
+          }),
+        /Reserved Traxxx watchlist channel/,
+      );
+    }
+  }
+});
+
+test("the Woodman watchlist reservation applies only to the channel namespace", () => {
+  const [lane] = createTraxxxWatchlistStudios([
+    `https://traxxx.me/network/${WOODMAN_CASTING_X_SLUG}/scenes/latest/1`,
+  ]);
+  assert.equal(lane?.id, `network-${WOODMAN_CASTING_X_SLUG}`);
 });
