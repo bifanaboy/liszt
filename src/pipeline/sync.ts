@@ -168,6 +168,7 @@ export function normaliseScene(
   raw: RawScene,
   now: Date,
   previous?: Scene,
+  studioMetadataCheckedAt?: string | null,
 ): Scene {
   const labelId = raw.studioId ?? adapter.id;
   const id = sceneKey(adapter, raw);
@@ -188,6 +189,7 @@ export function normaliseScene(
     deadVideoUrls: previous?.deadVideoUrls ?? [],
     videoCheckedAt: previous?.videoCheckedAt ?? null,
     videoMatching: previous?.videoMatching ?? null,
+    studioMetadataCheckedAt: studioMetadataCheckedAt ?? previous?.studioMetadataCheckedAt ?? null,
     provenance: [
       {
         source: provenance?.source ?? raw.source ?? adapter.name,

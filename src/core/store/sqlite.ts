@@ -74,6 +74,7 @@ interface SceneRow {
   provenance: string;
   field_provenance: string;
   metadata_poor: number;
+  studio_metadata_checked_at: string | null;
   video_checked_at: string | null;
   video_matching: string | null;
   storefront: string | null;
@@ -96,6 +97,7 @@ function rowToScene(row: SceneRow, live: VideoLink[], dead: DeadVideoLink[]): Sc
     provenance: JSON.parse(row.provenance) as unknown[],
     fieldProvenance: JSON.parse(row.field_provenance) as Record<string, string>,
     metadataPoor: row.metadata_poor === 1,
+    studioMetadataCheckedAt: row.studio_metadata_checked_at,
     videoUrls: live,
     deadVideoUrls: dead,
     videoCheckedAt: row.video_checked_at,
@@ -262,8 +264,9 @@ export class SqliteStore {
         .prepare(
           `INSERT INTO scenes (id, source_id, source, label_id, label, title, performers,
              release_date, duration_sec, thumbnail_url, release_url, studio_code, tags,
-             provenance, field_provenance, metadata_poor, video_checked_at, video_matching, storefront)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             provenance, field_provenance, metadata_poor, studio_metadata_checked_at,
+             video_checked_at, video_matching, storefront)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET
              source_id = excluded.source_id, source = excluded.source,
              label_id = excluded.label_id, label = excluded.label, title = excluded.title,
@@ -273,6 +276,7 @@ export class SqliteStore {
              tags = excluded.tags, provenance = excluded.provenance,
              field_provenance = excluded.field_provenance,
              metadata_poor = excluded.metadata_poor,
+             studio_metadata_checked_at = excluded.studio_metadata_checked_at,
              video_checked_at = excluded.video_checked_at,
              video_matching = excluded.video_matching, storefront = excluded.storefront`,
         )
@@ -293,6 +297,7 @@ export class SqliteStore {
           JSON.stringify(parsed.provenance),
           JSON.stringify(parsed.fieldProvenance),
           parsed.metadataPoor ? 1 : 0,
+          parsed.studioMetadataCheckedAt,
           parsed.videoCheckedAt,
           parsed.videoMatching ? JSON.stringify(parsed.videoMatching) : null,
           JSON.stringify({

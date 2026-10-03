@@ -65,6 +65,30 @@ function buildSync(store: SqliteStore, sources: SourceAdapter[], windowDays = 90
   });
 }
 
+test("studio metadata attempt time survives normalization and a store round trip", () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const studioMetadataCheckedAt = "2026-03-10T00:00:00.000Z";
+  const source = adapter("metadata", async () => ({ scenes: [], verifiedEmpty: true }));
+  try {
+    const first = normaliseScene(
+      source,
+      raw("checked"),
+      new Date(NOW),
+      undefined,
+      studioMetadataCheckedAt,
+    );
+    store.upsertScene(first);
+    const saved = store.getScene("metadata:checked");
+    assert.equal(saved?.studioMetadataCheckedAt, studioMetadataCheckedAt);
+
+    const refreshed = normaliseScene(source, raw("checked"), new Date(NOW), saved);
+    assert.equal(refreshed.studioMetadataCheckedAt, studioMetadataCheckedAt);
+  } finally {
+    store.close();
+  }
+});
+
 test("one failing source does not stop the others", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
