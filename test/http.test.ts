@@ -274,7 +274,7 @@ test("the sessions table is gone after migrating", () => {
       const applied = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all();
       assert.deepEqual(
         applied.map((row) => Number((row as { version: number }).version)),
-        [1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 6],
         "every migration applied, in filename order",
       );
       // And migrating again is a no-op rather than a second drop attempt.

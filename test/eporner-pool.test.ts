@@ -9,7 +9,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -299,6 +300,57 @@ test("the undated working set is ordered newest-first and capped in SQL", () => 
     assert.deepEqual(
       store.poolVideosUndated("Vovick17").map((row) => row.id),
       ["newest", "oldest"],
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test("the undated SQL cap rotates, so the rows it cut become reachable", () => {
+  // The undated working set is capped in SQL by `maxConsidered`, and ordering it
+  // by `rowid` alone made that cap a FIXED window: the same newest rows for every
+  // scene of every run. The fair rotation in the rung rotated *within* the cut
+  // and never past it, so an account holding more undated rows than the cap had
+  // identity-bearing candidates the bounded search could never examine, however
+  // many cycles ran.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      store.upsertPoolVideo({
+        id: `row${index}`,
+        uploader: "Vovick17",
+        title: `row${index}`,
+        added: null,
+        durationSec: 600,
+        hydratedAt: NOW.toISOString(),
+        views: null,
+      });
+    }
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["row0", "row1"],
+      "the first pass examines the newest rows, as before",
+    );
+
+    // A pass over the cut marks its rows, so they rotate behind the unattempted
+    // tail rather than being re-cut on every run.
+    store.markPoolHydrationAttempt("row0", "Vovick17", NOW.toISOString());
+    store.markPoolHydrationAttempt("row1", "Vovick17", new Date(NOW.getTime() + 1).toISOString());
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["row2", "row3"],
+      "the next pass examines rows the previous cap never reached",
+    );
+
+    // With everything attempted, the order is least-recently-attempted first, so
+    // the cut keeps moving instead of parking on one slice of the account.
+    store.markPoolHydrationAttempt("row2", "Vovick17", new Date(NOW.getTime() + 2).toISOString());
+    store.markPoolHydrationAttempt("row3", "Vovick17", new Date(NOW.getTime() + 3).toISOString());
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17").map((row) => row.id),
+      ["row0", "row1", "row2", "row3"],
+      "the longest-idle rows lead, so the cut cycles through the whole account",
     );
   } finally {
     store.close();
@@ -1046,3 +1098,152 @@ test("hydration attempts rotate after failures within a run with a fixed time", 
     store.close();
   }
 });
+
+test("duration-rejected undated rows rotate past the SQL cap without hydration attempts", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const now = new Date(NOW);
+  const scene = makeMatchScene({
+    id: "test:undated-scan-progress",
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const attemptedIds: string[] = [];
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>(url: string): Promise<T> => {
+      attemptedIds.push(new URL(url).searchParams.get("id")!);
+      throw new Error("temporary hydration failure");
+    },
+  };
+  const deps = {
+    store,
+    fetcher,
+    uploaders: ["Vovick17"],
+    durationToleranceSec: 1,
+    dateWindowDays: 7,
+    maxConsidered: 2,
+    maxHydrations: 1,
+    log: () => {},
+  };
+  try {
+    for (const id of ["rejected0", "rejected1", "matching0", "matching1", "matching2"]) {
+      store.upsertPoolVideo({
+        id,
+        uploader: "Vovick17",
+        title: "Marfe compilation",
+        added: null,
+        durationSec: id.startsWith("rejected") ? 600 : 2138,
+        hydratedAt: null,
+        views: null,
+      });
+    }
+    const first = await gatherPoolSurvivors(scene, deps, now);
+    assert.equal(first.considered, 2);
+    assert.equal(first.durationPassed, 0);
+    assert.deepEqual(attemptedIds, [], "rejections cost no hydration requests");
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["matching0", "matching1"],
+      "duration rejections no longer fill the SQL limit",
+    );
+    for (let pass = 0; pass < 4; pass += 1) {
+      const gathered = await gatherPoolSurvivors(scene, deps, now);
+      assert.equal(gathered.considered, 2);
+      assert.ok(gathered.durationPassed >= 1);
+    }
+    assert.deepEqual(
+      attemptedIds,
+      ["matching0", "matching1", "matching2", "matching0"],
+      "deferred survivors and failed requests rotate even with one fixed run time",
+    );
+    for (const row of store.poolVideosUndated("Vovick17")) {
+      if (!row.id.startsWith("rejected")) continue;
+      assert.equal(row.hydrationAttemptedAt, null);
+      assert.equal(row.hydratedAt, null);
+    }
+    await gatherPoolSurvivors({ ...scene, durationSec: 600 }, deps, now);
+    assert.equal(attemptedIds.at(-1), "rejected0", "rejections remain eligible for other scenes");
+  } finally {
+    store.close();
+  }
+});
+
+for (const durationSec of [600, 2138]) {
+  test(`pool progress stays ahead of persisted scans across sync cycles (${durationSec})`, async () => {
+    const directory = mkdtempSync(join(tmpdir(), "liszt-pool-progress-"));
+    const databasePath = join(directory, "pool.db");
+    let store = new SqliteStore(databasePath);
+    store.migrate();
+    const scene = makeMatchScene({
+      id: "test:persisted-pool-progress",
+      releaseDate: "2026-03-04",
+      durationSec: 2138,
+    });
+    const attemptedIds: string[] = [];
+    const fetcher: Fetcher = {
+      fetch: async () => new Response(""),
+      text: async () => "",
+      json: async <T>(url: string): Promise<T> => {
+        attemptedIds.push(new URL(url).searchParams.get("id")!);
+        throw new Error("temporary hydration failure");
+      },
+    };
+    try {
+      for (let index = 0; index < 6; index += 1) {
+        const id = `row${index}`;
+        store.upsertPoolVideo({
+          id,
+          uploader: "Vovick17",
+          title: "Marfe compilation",
+          added: null,
+          durationSec,
+          hydratedAt: null,
+          views: null,
+        });
+        store.markPoolUndatedScan(
+          id,
+          "Vovick17",
+          new Date(NOW.getTime() + 100 + index).toISOString(),
+        );
+      }
+      // A fresh store simulates resuming after a restart with saved progress
+      // ahead of the next run's clock. Reuse it for subsequent sync cycles.
+      store.close();
+      store = new SqliteStore(databasePath);
+      store.migrate();
+      for (const [pass, timeOffset] of [1, 2, -1000].entries()) {
+        const now = new Date(NOW.getTime() + timeOffset);
+        await gatherPoolSurvivors(
+          scene,
+          {
+            store,
+            fetcher,
+            uploaders: ["Vovick17"],
+            durationToleranceSec: 1,
+            dateWindowDays: 7,
+            maxConsidered: 2,
+            maxHydrations: 2,
+            log: () => {},
+          },
+          now,
+        );
+        const nextIndex = ((pass + 1) * 2) % 6;
+        assert.deepEqual(
+          store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+          [`row${nextIndex}`, `row${nextIndex + 1}`],
+          "each scan advances beyond the visited rows, even when the clock moves back",
+        );
+        assert.equal(now.getTime(), NOW.getTime() + timeOffset);
+      }
+      assert.deepEqual(
+        attemptedIds,
+        durationSec === 2138 ? ["row0", "row1", "row2", "row3", "row4", "row5"] : [],
+      );
+    } finally {
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}

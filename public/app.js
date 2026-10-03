@@ -158,6 +158,29 @@ function renderSources() {
   }).join("");
 }
 
+/**
+ * One line describing the last run.
+ *
+ * Truncation is its own state here, not a flavour of success. A bounded pool
+ * search that stopped at its hydration cap reported "no link found" without
+ * having looked at every candidate, so counting it as an ordinary negative
+ * makes a coverage problem look like a fact about the scene. An errored rung is
+ * listed too, and stays first: a rung that could not answer is worse news than
+ * one that answered about part of the set.
+ */
+function refreshStatus(refreshing, run) {
+  if (refreshing) return "Refresh in progress…";
+  if (!run) return "Waiting for first refresh";
+  const resolver = run.resolverHealth || {};
+  const problems = [];
+  if (Number(resolver.errored || 0)) problems.push("resolver unavailable");
+  if (Number(resolver.incomplete || 0)) problems.push("search truncated");
+  const suffix = problems.length ? ` · ${problems.join(" · ")}` : "";
+  return run.ok
+    ? `Catalogue up to date${suffix}`
+    : `${Number(resolver.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"}${suffix}`;
+}
+
 /** Apply a catalogue response to the scene list, source summary, and progress display. */
 function apply(data) {
   scenes = Array.isArray(data.scenes) ? data.scenes : [];
@@ -173,13 +196,7 @@ function apply(data) {
   linkRate.textContent = `${stats.total ? Math.round((stats.live / stats.total) * 100) : 0}% of catalogue`;
   studiosTotal.textContent = visibleSourceStatuses(statuses).length.toLocaleString();
   lastChecked.textContent = data.latestRun && data.latestRun.endedAt ? new Date(data.latestRun.endedAt).toLocaleString("en", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—";
-  refreshState.textContent = refreshing
-    ? "Refresh in progress…"
-    : data.latestRun
-      ? (data.latestRun.ok
-        ? (Number(data.latestRun.resolverHealth?.errored || 0) ? "Catalogue up to date · resolver unavailable" : "Catalogue up to date")
-        : (Number(data.latestRun.resolverHealth?.errored || 0) ? "Source and resolver failures" : "Last refresh had source failures"))
-      : "Waiting for first refresh";
+  refreshState.textContent = refreshStatus(refreshing, data.latestRun);
   refreshButton.disabled = refreshing;
   const selected = studio.value;
   studio.replaceChildren(new Option("All studios", "all"));

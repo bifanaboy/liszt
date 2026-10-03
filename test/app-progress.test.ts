@@ -456,3 +456,33 @@ test("an initial catalogue error still schedules idle progress polling", async (
   assert.equal(polls, 1);
   assert.deepEqual([...app.timers.values()], [20000]);
 });
+
+test("a truncated search is shown as its own outcome, not as a clean refresh", async () => {
+  // The reader has one line describing the last run, so a truncated search that
+  // reads "Catalogue up to date" is indistinguishable from an exhaustive one -
+  // which is exactly the coverage problem the counter was added to expose.
+  for (const [resolverHealth, expected] of [
+    [{ incomplete: 3 }, "Catalogue up to date · search truncated"],
+    [{ noMatch: 12 }, "Catalogue up to date"],
+    [
+      { errored: 2, incomplete: 3 },
+      "Catalogue up to date · resolver unavailable · search truncated",
+    ],
+  ] as const) {
+    const app = await dashboard(async () => response(catalogue));
+    app.apply({ ...catalogue, latestRun: { ok: true, resolverHealth } });
+    assert.equal(app.element("#refresh-state").textContent, expected);
+  }
+});
+
+test("a failed refresh still reports truncation alongside its source failures", async () => {
+  const app = await dashboard(async () => response(catalogue));
+  app.apply({
+    ...catalogue,
+    latestRun: { ok: false, resolverHealth: { incomplete: 1 } },
+  });
+  assert.equal(
+    app.element("#refresh-state").textContent,
+    "Last refresh had source failures · search truncated",
+  );
+});
