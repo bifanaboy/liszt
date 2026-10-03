@@ -21,10 +21,9 @@ import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
-import { createFc2CmadbStudio, FC2CMADB_ID } from "./fc2cmadb.ts";
+import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
-import type { Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 
