@@ -258,30 +258,32 @@ function identityTierFor(scene: MatchScene, title: string): IdentityTier {
 }
 
 /**
- * A rung that threw, named. Counted before this change, invisible after it.
+ * A rung that threw, named. Counted per rung, not across the ladder.
  *
- * The rejection counters roll every rung together into one `errored` number, so
- * a rung that fails on every scene it touches and a rung that fails on one are
- * indistinguishable in the run log. That is how the sxyprn rung came to be
- * described as "returns nothing in production" when all that had been observed
- * was an aggregate: nothing anywhere said WHAT it threw, and a blocked
- * datacenter IP, an uninstalled optional package and a genuine outage all look
- * identical from the outside. Throttled to the first failure and then every
- * tenth, so a rung that is down for a whole cycle cannot flood the log.
+ * One shared counter meant a rung that fails on every scene it touched and a
+ * rung that fails on one were indistinguishable in the run log: `seenSoFar` ran
+ * past 100 with no way to say which tube it belonged to. That is how the sxyprn
+ * rung came to be described as "returns nothing in production" on the strength
+ * of an aggregate - a blocked datacenter IP, an uninstalled optional package
+ * and a genuine outage all looked identical from the outside. Throttled per
+ * rung to its first failure and then every tenth, so a rung that is down for a
+ * whole cycle cannot flood the log while the other rung's failures stay
+ * countable on their own.
  */
-let rungFailuresLogged = 0;
+const rungFailuresLogged = new Map<string, number>();
 
-/** Log selected lookup failures using a shared counter to limit repeated warnings. */
+/** Log a rung's first failure and then every tenth, so a dead rung cannot flood the log. */
 function logRungFailure(deps: ResolveDeps, rung: string, error: unknown): void {
-  if (rungFailuresLogged !== 0 && rungFailuresLogged % 10 !== 0) {
-    rungFailuresLogged += 1;
-    return;
-  }
-  rungFailuresLogged += 1;
+  const seen = (rungFailuresLogged.get(rung) ?? 0) + 1;
+  rungFailuresLogged.set(rung, seen);
+  // The rung's first failure, then every tenth after it - so `seenSoFar` reads
+  // 1, 11, 21 rather than 1, 10, 20, and one rung's outage cannot swallow the
+  // other's log lines.
+  if (seen !== 1 && seen % 10 !== 1) return;
   deps.log?.warn("ladder rung failed", {
     rung,
     error: (error as Error)?.message ?? String(error),
-    seenSoFar: rungFailuresLogged,
+    seenSoFar: seen,
   });
 }
 
