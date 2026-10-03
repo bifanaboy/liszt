@@ -43,6 +43,8 @@
  * A URL already in `deadVideoUrls` is never re-added.
  */
 import { validSxyprnUrl, type SxyprnMatch } from "./sxyprn.ts";
+import { FC2_EPORNER_RULE, fc2ReleaseCode, type Fc2LookupResult } from "./fc2-eporner.ts";
+import { validEpornerUrl } from "./eporner.ts";
 import { toMatchScene, type MatchScene, type Rung } from "./types.ts";
 import type { PoolMatch } from "./eporner-pool.ts";
 import {
@@ -88,7 +90,7 @@ export interface ResolveResult {
   scene: Scene;
   changed: boolean;
   matched: boolean;
-  rung: Rung | "fallback" | "none" | null;
+  rung: Rung | "fallback" | "fc2-eporner" | "none" | null;
   /** The winner's identity tier, or null when nothing matched. */
   tier: IdentityTier | null;
 }
@@ -103,8 +105,8 @@ export interface ResolveResult {
  * from the guess the ladder makes when no tube can.
  */
 export interface Winner {
-  rung: Rung | "fallback";
-  tier: IdentityTier;
+  rung: Rung | "fallback" | "fc2-eporner";
+  tier: IdentityTier | null;
 }
 
 /**
@@ -287,7 +289,7 @@ function identityTierFor(scene: MatchScene, title: string): IdentityTier {
 const rungFailuresLogged = new Map<string, number>();
 
 /** Log a rung's first failure and then every tenth, so a dead rung cannot flood the log. */
-function logRungFailure(deps: ResolveDeps, rung: string, error: unknown): void {
+function logRungFailure(deps: Pick<ResolveDeps, "log">, rung: string, error: unknown): void {
   const seen = (rungFailuresLogged.get(rung) ?? 0) + 1;
   rungFailuresLogged.set(rung, seen);
   // The rung's first failure, then every tenth after it - so `seenSoFar` reads
@@ -439,6 +441,86 @@ export async function resolveScene(
   };
 }
 
+/** The source id whose scenes are resolved by the FC2 lane instead of the ladder. */
+export const FC2_LANE_SOURCE_ID = "fc2cmadb";
+
+/**
+ * Resolve one FC2 scene through the exact-release-code eporner lane.
+ *
+ * Every link the lane returns is stored, not just the first. That is the one
+ * place in the app where a scene can carry several live links, and it is why the
+ * result is high-confidence with no identity tier: the winner is not ranked at
+ * all - every exact-code upload is kept, each re-verified on its own later, and
+ * the only judgement applied is whether the uploads form a verified multipart
+ * group.
+ *
+ * The lane's own `error` is counted and named rather than dropped. It reports
+ * failures IN its result, so reading only `.links` turned an eporner outage into
+ * an empty list and this resolver stamped `videoCheckedAt` exactly as it would
+ * for a scene that genuinely has no upload - an invisible missed match, counted
+ * as a clean negative in the run ledger. Links returned alongside an error are
+ * still processed: a partial answer is an answer.
+ */
+export async function resolveFc2Scene(
+  scene: Scene,
+  deps: {
+    now: Date;
+    lookup: (code: string) => Promise<Fc2LookupResult>;
+    log?: ResolveDeps["log"];
+  },
+  rejections: RungRejections = emptyRejections(),
+): Promise<ResolveResult> {
+  const code = fc2ReleaseCode(scene.releaseUrl) ?? fc2ReleaseCode(scene.id.split(":").pop() ?? "");
+  const stamp = { videoCheckedAt: deps.now.toISOString() };
+  if (!code)
+    return { scene: { ...scene, ...stamp }, changed: true, matched: false, rung: null, tier: null };
+  const dead = new Set(scene.deadVideoUrls.map((link) => link.url));
+  let looked: Fc2LookupResult;
+  try {
+    looked = await deps.lookup(code);
+  } catch (error) {
+    // The lane reports failures in its result, so a throw here is the unexpected
+    // shape. It is still an outage rather than a clean no-match.
+    rejections.errored += 1;
+    logRungFailure(deps, "fc2-eporner", error);
+    // A lane that cannot read its evidence produces NO link rather than a
+    // guessed one. The scene is still stamped as checked so the next cycle
+    // reconsiders it rather than treating it as resolved.
+    return { scene: { ...scene, ...stamp }, changed: true, matched: false, rung: null, tier: null };
+  }
+  if (looked.error) {
+    rejections.errored += 1;
+    logRungFailure(deps, "fc2-eporner", looked.error);
+  }
+  const live = looked.links.filter((link) => validEpornerUrl(link.url) && !dead.has(link.url));
+  if (!live.length) {
+    return { scene: { ...scene, ...stamp }, changed: true, matched: false, rung: null, tier: null };
+  }
+  return {
+    scene: {
+      ...scene,
+      videoUrls: live.map((link) => ({
+        source: "eporner" as const,
+        url: link.url,
+        verifiedAt: deps.now.toISOString(),
+        verifyFailures: 0,
+        ...(link.part === undefined ? {} : { part: link.part }),
+      })),
+      ...stamp,
+      videoMatching: {
+        lane: "fc2-eporner",
+        matchedAt: deps.now.toISOString(),
+        rule: FC2_EPORNER_RULE,
+        confidence: "high" as const,
+      },
+    },
+    changed: true,
+    matched: true,
+    rung: "fc2-eporner",
+    tier: null,
+  };
+}
+
 export interface ResolveLinksOptions {
   scenes: Scene[];
   now: Date;
@@ -450,6 +532,20 @@ export interface ResolveLinksOptions {
   matcherFor: (scene: Scene) => { matcher: string | null; creatorStudio: boolean };
   poolLookup: ResolveDeps["poolLookup"];
   sxyprnLookup: ResolveDeps["sxyprnLookup"];
+  /**
+   * The FC2 lane's own resolver, applied INSTEAD of the ladder to scenes of
+   * `fc2SourceId`. Null leaves every scene on the shared ladder.
+   *
+   * This is a lane SWITCH rather than a third rung, and the difference is not
+   * cosmetic: the ladder may only link a candidate it can name, and an FC2
+   * release is named by a numeric code in a repost title rather than by a
+   * performer in either title. Adding that as a rung would mean widening the
+   * shared gates for every lane; keeping it here means the ladder's date,
+   * duration, performer and rung behaviour is untouched for every other lane.
+   */
+  fc2Lookup?: ((code: string) => Promise<Fc2LookupResult>) | null;
+  /** The source id whose scenes leave the ladder. Defaults to the FC2 lane. */
+  fc2SourceId?: string;
   log?: ResolveDeps["log"];
   /** Optional cap on how many eligible scenes are resolved this cycle. */
   limit?: number;
@@ -482,6 +578,8 @@ export async function resolveLinks({
   matcherFor,
   poolLookup,
   sxyprnLookup,
+  fc2Lookup = null,
+  fc2SourceId = FC2_LANE_SOURCE_ID,
   log,
   limit,
   onProgress,
@@ -513,7 +611,13 @@ export async function resolveLinks({
   let matched = 0;
   let done = 0;
   onProgress?.(0, queue.length, 0);
-  const results = await mapWithConcurrency(queue, async (scene) => {
+  // The FC2 queue is taken OUT of the ladder's queue before the fan-out rather
+  // than branched inside it. A rung that runs `tryPool` first and then ignores
+  // its result would still spend the trusted pool's hydration requests on every
+  // FC2 scene, which is the expensive part.
+  const fc2Queue = fc2Lookup ? queue.filter((scene) => scene.sourceId === fc2SourceId) : [];
+  const ladderQueue = fc2Lookup ? queue.filter((scene) => scene.sourceId !== fc2SourceId) : queue;
+  const ladder = await mapWithConcurrency(ladderQueue, async (scene) => {
     const { matcher, creatorStudio } = matcherFor(scene);
     const result = await resolveScene(
       scene,
@@ -525,14 +629,34 @@ export async function resolveLinks({
     onProgress?.(done, queue.length, matched);
     return result;
   });
+  // The FC2 lane is resolved through the same bounded fan-out. Its own resolver
+  // paces its requests internally and serialises them behind that gate, so the
+  // fan-out's concurrency costs nothing extra here.
+  const fc2Results = await mapWithConcurrency(fc2Queue, async (scene) => {
+    const result = await resolveFc2Scene(
+      scene,
+      {
+        now,
+        lookup: fc2Lookup as NonNullable<ResolveLinksOptions["fc2Lookup"]>,
+        ...(log ? { log } : {}),
+      },
+      rejections,
+    );
+    if (result.matched) matched += 1;
+    done += 1;
+    onProgress?.(done, queue.length, matched);
+    return result;
+  });
+  const results = [...ladder, ...fc2Results];
   const byId = new Map(results.map((result) => [result.scene.id, result.scene]));
   const winners: Winner[] = [];
   const changed: Scene[] = [];
   for (const result of results) {
     // A matched scene always carries a rung: `"none"` is the metadata-only lane,
     // which cannot have matched. Keeping the rung beside the tier is what lets the
-    // run row state a named match and a guess apart.
-    if (result.matched && result.tier !== null && result.rung && result.rung !== "none") {
+    // run row state a named match and a guess apart. The FC2 lane has tier `null`
+    // but its rung is `fc2-eporner`, not `none`.
+    if (result.matched && result.rung && result.rung !== "none") {
       winners.push({ rung: result.rung, tier: result.tier });
     }
     if (result.changed) changed.push(result.scene);
