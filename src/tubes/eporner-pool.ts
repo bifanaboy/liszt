@@ -762,8 +762,15 @@ export interface PoolGatherDeps {
  */
 const POOL_HYDRATION_CONCURRENCY = 4;
 
-// All scene lookups in a run share `now`; keep attempts ordered across them.
-const hydrationAttemptOffsets = new WeakMap<Date, number>();
+// All scene lookups in a run share `now`; keep scan and hydration progress
+// ordered across them, even when every row has already been visited once.
+const poolProgressOffsets = new WeakMap<Date, number>();
+
+function nextPoolProgressAt(now: Date): string {
+  const offset = poolProgressOffsets.get(now) ?? 0;
+  poolProgressOffsets.set(now, offset + 1);
+  return new Date(now.getTime() + offset).toISOString();
+}
 
 /**
  * Everything in the pool rung that happens BEFORE the date half: scan the
@@ -815,7 +822,11 @@ export async function gatherPoolSurvivors(
       if (examined >= maxConsidered) break;
       examined += 1;
       considered += 1;
-      if (preFilter(scene, row, { durationToleranceSec })) survivors.push(row);
+      if (preFilter(scene, row, { durationToleranceSec })) {
+        survivors.push(row);
+      } else if (row.added === null) {
+        store.markPoolUndatedScan(row.id, row.uploader, nextPoolProgressAt(now));
+      }
     }
   }
   const survivorDurations = survivors.flatMap((row) =>
@@ -853,13 +864,7 @@ export async function gatherPoolSurvivors(
   const hydrated = await mapIsolated(
     queue,
     async (video) => {
-      const attemptOffset = hydrationAttemptOffsets.get(now) ?? 0;
-      hydrationAttemptOffsets.set(now, attemptOffset + 1);
-      store.markPoolHydrationAttempt(
-        video.id,
-        video.uploader,
-        new Date(now.getTime() + attemptOffset).toISOString(),
-      );
+      store.markPoolHydrationAttempt(video.id, video.uploader, nextPoolProgressAt(now));
       return hydrate(video, { store, fetcher, now });
     },
     POOL_HYDRATION_CONCURRENCY,

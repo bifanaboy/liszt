@@ -1097,3 +1097,74 @@ test("hydration attempts rotate after failures within a run with a fixed time", 
     store.close();
   }
 });
+
+test("duration-rejected undated rows rotate past the SQL cap without hydration attempts", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const now = new Date(NOW);
+  const scene = makeMatchScene({
+    id: "test:undated-scan-progress",
+    releaseDate: "2026-03-04",
+    durationSec: 2138,
+  });
+  const attemptedIds: string[] = [];
+  const fetcher: Fetcher = {
+    fetch: async () => new Response(""),
+    text: async () => "",
+    json: async <T>(url: string): Promise<T> => {
+      attemptedIds.push(new URL(url).searchParams.get("id")!);
+      throw new Error("temporary hydration failure");
+    },
+  };
+  const deps = {
+    store,
+    fetcher,
+    uploaders: ["Vovick17"],
+    durationToleranceSec: 1,
+    dateWindowDays: 7,
+    maxConsidered: 2,
+    maxHydrations: 1,
+    log: () => {},
+  };
+  try {
+    for (const id of ["rejected0", "rejected1", "matching0", "matching1", "matching2"]) {
+      store.upsertPoolVideo({
+        id,
+        uploader: "Vovick17",
+        title: "Marfe compilation",
+        added: null,
+        durationSec: id.startsWith("rejected") ? 600 : 2138,
+        hydratedAt: null,
+        views: null,
+      });
+    }
+    const first = await gatherPoolSurvivors(scene, deps, now);
+    assert.equal(first.considered, 2);
+    assert.equal(first.durationPassed, 0);
+    assert.deepEqual(attemptedIds, [], "rejections cost no hydration requests");
+    assert.deepEqual(
+      store.poolVideosUndated("Vovick17", 2).map((row) => row.id),
+      ["matching0", "matching1"],
+      "duration rejections no longer fill the SQL limit",
+    );
+    for (let pass = 0; pass < 4; pass += 1) {
+      const gathered = await gatherPoolSurvivors(scene, deps, now);
+      assert.equal(gathered.considered, 2);
+      assert.ok(gathered.durationPassed >= 1);
+    }
+    assert.deepEqual(
+      attemptedIds,
+      ["matching0", "matching1", "matching2", "matching0"],
+      "deferred survivors and failed requests rotate even with one fixed run time",
+    );
+    for (const row of store.poolVideosUndated("Vovick17")) {
+      if (!row.id.startsWith("rejected")) continue;
+      assert.equal(row.hydrationAttemptedAt, null);
+      assert.equal(row.hydratedAt, null);
+    }
+    await gatherPoolSurvivors({ ...scene, durationSec: 600 }, deps, now);
+    assert.equal(attemptedIds.at(-1), "rejected0", "rejections remain eligible for other scenes");
+  } finally {
+    store.close();
+  }
+});
