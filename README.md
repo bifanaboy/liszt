@@ -189,10 +189,11 @@ so a late candidate becomes reachable rather than being cut off permanently.
 ### The FC2 lane
 
 FC2 releases are a separate path, not a fourth rung. They have no creator studio
-and no performer names, so the ladder's identity gate has nothing to test them
-with. `src/sources/fc2cmadb.ts` walks `fc2cmadb.com/tags/アナル` (tag id 47) by
-cursor, and `src/tubes/fc2-eporner.ts` looks each release up on eporner by its
-**bare numeric id**.
+or performer names, but `fc2cmadb` preserves each release title as `Scene.title`.
+Configured FC2 scenes bypass the ladder's identity gate and resolve through
+`src/tubes/fc2-eporner.ts` by their **bare numeric id**. `src/sources/fc2cmadb.ts`
+walks `fc2cmadb.com/tags/アナル` (tag id 47) by cursor, and the lane looks each
+release up on eporner by that id.
 
 The admission rule is stricter than a substring search on purpose: the id must
 appear as a **whole numeric token** in an eporner title or in an anchor's own

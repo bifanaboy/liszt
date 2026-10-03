@@ -34,7 +34,7 @@ import type {
   SourceResult,
 } from "../sources/types.ts";
 import { resolveLinks, emptyRejections, type RungRejections } from "../tubes/resolve.ts";
-import type { Fc2Link } from "../tubes/fc2-eporner.ts";
+import type { Fc2LookupResult } from "../tubes/fc2-eporner.ts";
 import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
 import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch } from "../tubes/sxyprn.ts";
@@ -210,7 +210,7 @@ export interface SyncLookups {
    * The FC2 lane's own resolver, applied INSTEAD of both rungs to scenes of the
    * FC2 source. Null leaves every scene on the shared ladder.
    */
-  fc2Lookup?: ((code: string) => Promise<Fc2Link[]>) | null;
+  fc2Lookup?: ((code: string) => Promise<Fc2LookupResult>) | null;
   /** Optional cap on scenes resolved per cycle. */
   limit?: number;
 }

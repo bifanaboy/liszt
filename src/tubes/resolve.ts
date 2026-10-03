@@ -43,7 +43,7 @@
  * A URL already in `deadVideoUrls` is never re-added.
  */
 import { validSxyprnUrl, type SxyprnMatch } from "./sxyprn.ts";
-import { FC2_EPORNER_RULE, fc2ReleaseCode, type Fc2Link } from "./fc2-eporner.ts";
+import { FC2_EPORNER_RULE, fc2ReleaseCode, type Fc2LookupResult } from "./fc2-eporner.ts";
 import { validEpornerUrl } from "./eporner.ts";
 import { toMatchScene, type MatchScene, type Rung } from "./types.ts";
 import type { PoolMatch } from "./eporner-pool.ts";
@@ -190,7 +190,7 @@ async function tryPool(
     match = await deps.poolLookup(scene, deps.now);
   } catch (error) {
     rejections.errored += 1;
-    logRungFailure(deps, "eporner-pool", error);
+    logRungFailure(deps.log, "eporner-pool", error);
     return emptyAttempt();
   }
   const leftovers = (match?.fallbackCandidates ?? [])
@@ -274,13 +274,13 @@ function identityTierFor(scene: MatchScene, title: string): IdentityTier {
 let rungFailuresLogged = 0;
 
 /** Log selected lookup failures using a shared counter to limit repeated warnings. */
-function logRungFailure(deps: ResolveDeps, rung: string, error: unknown): void {
+function logRungFailure(log: ResolveDeps["log"], rung: string, error: unknown): void {
   if (rungFailuresLogged !== 0 && rungFailuresLogged % 10 !== 0) {
     rungFailuresLogged += 1;
     return;
   }
   rungFailuresLogged += 1;
-  deps.log?.warn("ladder rung failed", {
+  log?.warn("ladder rung failed", {
     rung,
     error: (error as Error)?.message ?? String(error),
     seenSoFar: rungFailuresLogged,
@@ -304,7 +304,7 @@ async function trySxyprn(
     matches = await deps.sxyprnLookup(scene);
   } catch (error) {
     rejections.errored += 1;
-    logRungFailure(deps, "sxyprn", error);
+    logRungFailure(deps.log, "sxyprn", error);
     return emptyAttempt();
   }
   const usable = matches.filter(
@@ -437,26 +437,46 @@ export const FC2_LANE_SOURCE_ID = "fc2cmadb";
  * all - every exact-code upload is kept, each re-verified on its own later, and
  * the only judgement applied is whether the uploads form a verified multipart
  * group.
+ *
+ * The lane's own `error` is counted and named rather than dropped. It reports
+ * failures IN its result, so reading only `.links` turned an eporner outage into
+ * an empty list and this resolver stamped `videoCheckedAt` exactly as it would
+ * for a scene that genuinely has no upload - an invisible missed match, counted
+ * as a clean negative in the run ledger. Links returned alongside an error are
+ * still processed: a partial answer is an answer.
  */
 export async function resolveFc2Scene(
   scene: Scene,
-  deps: { now: Date; lookup: (code: string) => Promise<Fc2Link[]> },
+  deps: {
+    now: Date;
+    lookup: (code: string) => Promise<Fc2LookupResult>;
+    log?: ResolveDeps["log"];
+  },
+  rejections: RungRejections = emptyRejections(),
 ): Promise<ResolveResult> {
   const code = fc2ReleaseCode(scene.releaseUrl) ?? fc2ReleaseCode(scene.id.split(":").pop() ?? "");
   const stamp = { videoCheckedAt: deps.now.toISOString() };
   if (!code)
     return { scene: { ...scene, ...stamp }, changed: true, matched: false, rung: null, tier: null };
   const dead = new Set(scene.deadVideoUrls.map((link) => link.url));
-  let links: Fc2Link[];
+  let looked: Fc2LookupResult;
   try {
-    links = await deps.lookup(code);
-  } catch {
+    looked = await deps.lookup(code);
+  } catch (error) {
+    // The lane reports failures in its result, so a throw here is the unexpected
+    // shape. It is still an outage rather than a clean no-match.
+    rejections.errored += 1;
+    logRungFailure(deps.log, "fc2-eporner", error);
     // A lane that cannot read its evidence produces NO link rather than a
     // guessed one. The scene is still stamped as checked so the next cycle
     // reconsiders it rather than treating it as resolved.
     return { scene: { ...scene, ...stamp }, changed: true, matched: false, rung: null, tier: null };
   }
-  const live = links.filter((link) => validEpornerUrl(link.url) && !dead.has(link.url));
+  if (looked.error) {
+    rejections.errored += 1;
+    logRungFailure(deps.log, "fc2-eporner", looked.error);
+  }
+  const live = looked.links.filter((link) => validEpornerUrl(link.url) && !dead.has(link.url));
   if (!live.length) {
     return { scene: { ...scene, ...stamp }, changed: true, matched: false, rung: null, tier: null };
   }
@@ -507,7 +527,7 @@ export interface ResolveLinksOptions {
    * shared gates for every lane; keeping it here means the ladder's date,
    * duration, performer and rung behaviour is untouched for every other lane.
    */
-  fc2Lookup?: ((code: string) => Promise<Fc2Link[]>) | null;
+  fc2Lookup?: ((code: string) => Promise<Fc2LookupResult>) | null;
   /** The source id whose scenes leave the ladder. Defaults to the FC2 lane. */
   fc2SourceId?: string;
   log?: ResolveDeps["log"];
@@ -597,10 +617,15 @@ export async function resolveLinks({
   // paces its requests internally and serialises them behind that gate, so the
   // fan-out's concurrency costs nothing extra here.
   const fc2Results = await mapWithConcurrency(fc2Queue, async (scene) => {
-    const result = await resolveFc2Scene(scene, {
-      now,
-      lookup: fc2Lookup as NonNullable<ResolveLinksOptions["fc2Lookup"]>,
-    });
+    const result = await resolveFc2Scene(
+      scene,
+      {
+        now,
+        lookup: fc2Lookup as NonNullable<ResolveLinksOptions["fc2Lookup"]>,
+        ...(log ? { log } : {}),
+      },
+      rejections,
+    );
     if (result.matched) matched += 1;
     done += 1;
     onProgress?.(done, queue.length, matched);

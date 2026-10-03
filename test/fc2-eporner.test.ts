@@ -26,8 +26,10 @@ import {
   titleContainsExactCode,
   titleFromPage,
   type Fc2EpornerCandidate,
+  type Fc2Link,
+  type Fc2LookupResult,
 } from "../src/tubes/fc2-eporner.ts";
-import { resolveFc2Scene, resolveLinks } from "../src/tubes/resolve.ts";
+import { emptyRejections, resolveFc2Scene, resolveLinks } from "../src/tubes/resolve.ts";
 import { makeScene } from "./helpers.ts";
 import type { Fetcher } from "../src/sources/types.ts";
 
@@ -35,6 +37,15 @@ const FIXTURES = join(import.meta.dirname, "fixtures");
 const fixture = (name: string): string => readFileSync(join(FIXTURES, name), "utf8");
 const NOW = new Date("2026-10-03T00:00:00Z");
 const noSleep = async (): Promise<void> => {};
+/** A lane answer: the links plus the counters the lane reports alongside them. */
+const lookupResult = (links: Fc2Link[], error?: string): Fc2LookupResult => ({
+  links,
+  code: "4979341",
+  pagesRead: 1,
+  candidatePagesRead: 1,
+  relatedFollowed: 0,
+  ...(error === undefined ? {} : { error }),
+});
 
 /* ---- The release code ----------------------------------------------------- */
 
@@ -467,10 +478,11 @@ test("an FC2 scene takes every verified upload, with parts where earned", async 
   });
   const result = await resolveFc2Scene(scene, {
     now: NOW,
-    lookup: async () => [
-      { url: "https://www.eporner.com/video-a/", uploader: "U", part: 1 },
-      { url: "https://www.eporner.com/video-b/", uploader: "U", part: 2 },
-    ],
+    lookup: async () =>
+      lookupResult([
+        { url: "https://www.eporner.com/video-a/", uploader: "U", part: 1 },
+        { url: "https://www.eporner.com/video-b/", uploader: "U", part: 2 },
+      ]),
   });
   assert.ok(result.matched);
   assert.equal(
@@ -502,10 +514,11 @@ test("a dead URL is never re-added by the FC2 lane", async () => {
   });
   const result = await resolveFc2Scene(scene, {
     now: NOW,
-    lookup: async () => [
-      { url: "https://www.eporner.com/video-a/", uploader: "U" },
-      { url: "https://www.eporner.com/video-b/", uploader: "U" },
-    ],
+    lookup: async () =>
+      lookupResult([
+        { url: "https://www.eporner.com/video-a/", uploader: "U" },
+        { url: "https://www.eporner.com/video-b/", uploader: "U" },
+      ]),
   });
   assert.deepEqual(
     result.scene.videoUrls.map((link) => link.url),
@@ -519,12 +532,18 @@ test("a lookup that throws links nothing rather than guessing", async () => {
     sourceId: "fc2cmadb",
     releaseUrl: "https://fc2cmadb.com/articles/4979341",
   });
-  const result = await resolveFc2Scene(scene, {
-    now: NOW,
-    lookup: async () => {
-      throw new Error("upstream down");
+  const rejections = emptyRejections();
+  const result = await resolveFc2Scene(
+    scene,
+    {
+      now: NOW,
+      lookup: async () => {
+        throw new Error("upstream down");
+      },
     },
-  });
+    rejections,
+  );
+  assert.equal(rejections.errored, 1, "a throw is an outage, not a clean no-match");
   assert.equal(result.matched, false);
   assert.deepEqual(result.scene.videoUrls, []);
   assert.ok(result.scene.videoCheckedAt, "but the scene is still stamped as looked at");
@@ -532,7 +551,7 @@ test("a lookup that throws links nothing rather than guessing", async () => {
 
 test("a record with no release code links nothing", async () => {
   const scene = makeScene({ id: "fc2cmadb:?", sourceId: "fc2cmadb" });
-  const result = await resolveFc2Scene(scene, { now: NOW, lookup: async () => [] });
+  const result = await resolveFc2Scene(scene, { now: NOW, lookup: async () => lookupResult([]) });
   assert.equal(result.matched, false);
 });
 
@@ -562,7 +581,7 @@ test("an FC2 scene never enters the ladder, and another lane never enters FC2", 
     sxyprnLookup: null,
     fc2Lookup: async () => {
       fc2Asked += 1;
-      return [{ url: "https://www.eporner.com/video-a/", uploader: "U" }];
+      return lookupResult([{ url: "https://www.eporner.com/video-a/", uploader: "U" }]);
     },
   });
   assert.equal(poolAsked, 1, "the pool rung is asked about the non-FC2 scene only");

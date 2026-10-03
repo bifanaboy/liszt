@@ -21,7 +21,7 @@ import { HttpFetcher } from "./core/fetcher.ts";
 import { JsonLogger } from "./core/logger.ts";
 import { SqliteStore } from "./core/store/sqlite.ts";
 import { createSources } from "./sources/registry.ts";
-import { createFc2EpornerResolver, type Fc2Link } from "./tubes/fc2-eporner.ts";
+import { createFc2EpornerResolver } from "./tubes/fc2-eporner.ts";
 import { systemClock } from "./sources/types.ts";
 import { createSync } from "./pipeline/sync.ts";
 import { createProgressTracker } from "./pipeline/progress.ts";
@@ -92,7 +92,10 @@ async function main(): Promise<void> {
   // performer evidence. Built here so its request pacing is one instance for the
   // whole cycle rather than one per scene.
   const fc2Eporner = createFc2EpornerResolver(fetcher);
-  const fc2Lookup = async (code: string): Promise<Fc2Link[]> => (await fc2Eporner(code)).links;
+  // The whole result, not just its links: the lane reports its own failures in
+  // `error`, and dropping it here is what let an eporner outage read as a
+  // clean no-match downstream.
+  const fc2Lookup = async (code: string) => fc2Eporner(code);
 
   // One tracker for the whole cycle, begun here because the pool index runs
   // BEFORE `createSync` and is the longest cold-start phase. It is the single
