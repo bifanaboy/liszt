@@ -234,7 +234,10 @@ export function mergeStudioMetadata(
       Object.assign(merged, { [field]: page[field] });
       continue;
     }
-    if (previous?.fieldProvenance[field] === "studio-site") {
+    if (
+      raw.fieldProvenance?.[field] !== "studio-site" &&
+      previous?.fieldProvenance[field] === "studio-site"
+    ) {
       Object.assign(merged, { [field]: previous[field] });
     }
   }
@@ -480,7 +483,9 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             for (const raw of result.scenes) {
               try {
                 const previous = existing.get(sceneKey(adapter, raw));
-                const merged = mergeStudioMetadata(raw, pages.get(raw) ?? null, previous);
+                const merged = checkedAt.has(raw)
+                  ? mergeStudioMetadata(raw, pages.get(raw) ?? null, previous)
+                  : raw;
                 const scene = normaliseScene(adapter, merged, now, previous, checkedAt.get(raw));
                 const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
                 const unique = new Map(

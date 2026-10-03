@@ -9,7 +9,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSync, dateOnly, normaliseScene, type SyncLookups } from "../src/pipeline/sync.ts";
+import {
+  createSync,
+  dateOnly,
+  mergeStudioMetadata,
+  normaliseScene,
+  type SyncLookups,
+} from "../src/pipeline/sync.ts";
 import { createSingleFlight } from "../src/pipeline/scheduler.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { RETIRED_SOURCE_IDS } from "../src/sources/registry.ts";
@@ -69,6 +75,91 @@ function buildSync(
     resolveEnabled: false,
   });
 }
+
+test("studio metadata merge keeps fresh studio fields and falls back to previous studio values", () => {
+  const source = adapter("metadata", async () => ({ scenes: [], verifiedEmpty: true }));
+  const fieldProvenance = {
+    title: "studio-site",
+    releaseDate: "studio-site",
+    performers: "studio-site",
+    durationSec: "studio-site",
+    thumbnailUrl: "studio-site",
+    tags: "studio-site",
+  };
+  const previous = normaliseScene(
+    source,
+    raw("updated", {
+      thumbnailUrl: "https://example.test/old.jpg",
+      tags: ["Old"],
+      fieldProvenance,
+    }),
+    new Date(NOW),
+  );
+  const fresh = raw("updated", {
+    title: "Updated studio title",
+    releaseDate: "2026-03-02",
+    performers: ["Updated Performer"],
+    durationSec: 900,
+    thumbnailUrl: "https://example.test/new.jpg",
+    tags: ["New"],
+    fieldProvenance,
+  });
+
+  assert.deepEqual(mergeStudioMetadata(fresh, null, previous), { ...fresh, metadataPoor: false });
+  const fallback = mergeStudioMetadata(
+    { ...fresh, fieldProvenance: { title: "catalogue" } },
+    null,
+    previous,
+  );
+  assert.equal(fallback.title, previous.title);
+  assert.equal(fallback.durationSec, previous.durationSec);
+});
+
+test("sync passes through records not selected for studio lookup", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const releaseUrl = "https://www.tushy.com/videos/example";
+  const scenes = [
+    raw("direct"),
+    raw("unsupported", { source: "traxxx.me", releaseUrl: "https://example.test/scene" }),
+    raw("cooldown", { source: "traxxx.me", releaseUrl }),
+    raw("complete", { source: "traxxx.me", releaseUrl }),
+  ];
+  const source = adapter("metadata", async () => ({ scenes, verifiedEmpty: false }));
+  try {
+    for (const scene of scenes) {
+      store.upsertScene(
+        normaliseScene(
+          source,
+          {
+            ...scene,
+            title: "Old title",
+            fieldProvenance: {
+              title: "studio-site",
+              releaseDate: "studio-site",
+              performers: "studio-site",
+              durationSec: "studio-site",
+              thumbnailUrl: "studio-site",
+              ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
+            },
+          },
+          new Date(NOW),
+          undefined,
+          scene.sourceSceneId === "cooldown" ? new Date(NOW).toISOString() : null,
+        ),
+      );
+    }
+    const summary = await buildSync(store, [source], 90, offlineFetcher())("test");
+    assert.equal(summary.ok, true);
+    for (const scene of scenes) {
+      const saved = store.getScene(`metadata:${scene.sourceSceneId}`);
+      assert.equal(saved?.title, scene.title, scene.sourceSceneId);
+      assert.deepEqual(saved?.fieldProvenance, {}, scene.sourceSceneId);
+    }
+  } finally {
+    store.close();
+  }
+});
 
 test("studio metadata attempt time survives normalization and a store round trip", () => {
   const store = new SqliteStore(":memory:");
@@ -258,9 +349,10 @@ test("studio detail lookups are capped at 50 scenes per sync", async () => {
       releaseUrl: `https://www.tushy.com/videos/${slug}`,
     });
   });
+  const source = adapter("traxxx-watchlist", async () => ({ scenes, verifiedEmpty: false }));
   const sync = createSync({
     store,
-    sources: [adapter("traxxx-watchlist", async () => ({ scenes, verifiedEmpty: false }))],
+    sources: [source],
     fetcher,
     clock: fixedClock(NOW),
     log: new NullLogger(),
@@ -270,10 +362,22 @@ test("studio detail lookups are capped at 50 scenes per sync", async () => {
     resolveEnabled: false,
   });
   try {
+    for (const index of [0, 50]) {
+      store.upsertScene(
+        normaliseScene(
+          source,
+          { ...scenes[index]!, title: "Old title", fieldProvenance: { title: "studio-site" } },
+          new Date(NOW),
+        ),
+      );
+    }
     await sync("test");
     assert.equal(calls, 50);
     assert.ok(store.getScene("traxxx-watchlist:tushy:0")?.studioMetadataCheckedAt);
+    assert.equal(store.getScene("traxxx-watchlist:tushy:0")?.title, "Old title");
     assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.studioMetadataCheckedAt, null);
+    assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.title, scenes[50]!.title);
+    assert.deepEqual(store.getScene("traxxx-watchlist:tushy:50")?.fieldProvenance, {});
   } finally {
     store.close();
   }
