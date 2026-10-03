@@ -103,6 +103,11 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
     return elements.get(selector)!;
   };
   const listeners = new Map<string, (event: unknown) => void>();
+  // Window-level listeners live apart from the document's, because in a browser
+  // they are not the same thing: `hashchange` is fired at the Window and does not
+  // bubble, so a document listener for it never runs. Sharing one map would let
+  // a handler on the wrong target pass the suite.
+  const windowListeners = new Map<string, (event: unknown) => void>();
   const timers = new Map<number, number>();
   const callbacks = new Map<number, () => void>();
   let timerId = 0;
@@ -119,6 +124,9 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
         addEventListener(name: string, handler: (event: unknown) => void) {
           listeners.set(name, handler);
         },
+      },
+      addEventListener(name: string, handler: (event: unknown) => void) {
+        windowListeners.set(name, handler);
       },
       location: place,
       Option: Element,
@@ -166,12 +174,22 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
     }
   };
   const activeNav = () => links.filter((link) => link.active).map((link) => link.dataset.nav);
-  /** Do what the browser does on a back/forward over these anchors. */
+  /** Do what the browser does on a back/forward over these anchors: fire at the Window. */
   const setHash = (next: string) => {
     place.hash = next;
-    listeners.get("hashchange")?.({});
+    windowListeners.get("hashchange")?.({});
   };
-  return { ...api, element, timers, runTimers, listeners, links, activeNav, setHash };
+  return {
+    ...api,
+    element,
+    timers,
+    runTimers,
+    listeners,
+    windowListeners,
+    links,
+    activeNav,
+    setHash,
+  };
 }
 
 const response = (body: unknown) => ({ ok: true, json: async () => body });

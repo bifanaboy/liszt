@@ -573,7 +573,10 @@ document.querySelectorAll("[data-nav]").forEach((link) => link.addEventListener(
 }));
 // The hash is read as well as the click, so a bookmarked `#asian`, and the
 // browser's own back/forward over these anchors, land on the same page.
-document.addEventListener("hashchange", () => {
+// On `globalThis`, not `document`: the browser fires `hashchange` at the Window,
+// and it does not bubble, so a document listener would never run. `keydown`
+// below does bubble, and stays where it is.
+globalThis.addEventListener("hashchange", () => {
   syncNav(globalThis.location?.hash);
   selectCatalogue(globalThis.location?.hash);
 });
