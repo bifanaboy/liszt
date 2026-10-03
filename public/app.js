@@ -189,7 +189,16 @@ function apply(data) {
   render();
   // The read model carries a snapshot too, so a first paint that lands in the
   // middle of a cycle can already show its stage - the poll takes it from there.
-  applyProgress(data.progress);
+  // `refreshing` is the terminal-state authority. A completed catalogue can
+  // briefly arrive with the previous active progress payload, and replaying it
+  // would reopen a stale progress row until the page is reloaded.
+  const progress = data.progress && typeof data.progress === "object" ? data.progress : {};
+  applyProgress(
+    refreshing
+      ? progress
+      : { ...progress, active: false, stage: progress.stage === "error" ? "error" : "idle" },
+    refreshing,
+  );
 }
 
 async function load() {
@@ -223,6 +232,7 @@ let elapsedTimer = null;
 let rowShown = false;
 let primed = false;
 let announcedRun = null;
+let completedRun = null;
 
 /** Coerce a progress value to a finite number, using zero when conversion fails. */
 const num = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
@@ -350,12 +360,15 @@ function syncRefreshChrome(active) {
 }
 
 /** Absorb one snapshot. Returns whether a cycle is live, which sets the next poll delay. */
-function applyProgress(next) {
+function applyProgress(next, reloadOnCompletion = true) {
   const wasActive = Boolean(progressState.active);
   const previousRun = progressState.runId || null;
+  // A delayed active snapshot must not revive a run already observed ending.
+  if (next?.active && next.runId && next.runId === completedRun) return wasActive;
   progressState = next && typeof next === "object" ? next : { active: false, stage: "idle" };
   const active = Boolean(progressState.active);
   const run = progressState.runId || null;
+  if (!active) completedRun = run || previousRun || completedRun;
   const newRun = primed && run !== null && run !== previousRun;
 
   // The live region carries exactly two messages per run. The first snapshot of
@@ -390,7 +403,7 @@ function applyProgress(next) {
     if (wasActive) {
       progressLive.textContent = progressState.stage === "error" ? "Refresh failed" : "Refresh finished";
     }
-    if (wasActive || newRun) {
+    if (reloadOnCompletion && (wasActive || newRun)) {
       catalogueReloadPending = true;
       load().catch(() => {
         catalogueReloadPending = false;
