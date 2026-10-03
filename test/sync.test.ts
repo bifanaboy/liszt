@@ -115,17 +115,33 @@ test("studio metadata merge keeps fresh studio fields and falls back to previous
   assert.equal(fallback.durationSec, previous.durationSec);
 });
 
-test("sync passes through records not selected for studio lookup", async () => {
+test("sync preserves prior studio metadata only for Traxxx records not selected for lookup", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
   const releaseUrl = "https://www.tushy.com/videos/example";
   const scenes = [
-    raw("direct"),
+    raw("direct", { releaseUrl }),
+    raw("no-url", { source: "traxxx.me" }),
     raw("unsupported", { source: "traxxx.me", releaseUrl: "https://example.test/scene" }),
     raw("cooldown", { source: "traxxx.me", releaseUrl }),
     raw("complete", { source: "traxxx.me", releaseUrl }),
   ];
   const source = adapter("metadata", async () => ({ scenes, verifiedEmpty: false }));
+  const studioMetadata = {
+    title: "Old title",
+    releaseDate: "2026-03-02",
+    performers: ["Studio Performer"],
+    durationSec: 900,
+    thumbnailUrl: "https://example.test/studio.jpg",
+    tags: ["Studio"],
+  };
+  const fieldProvenance = {
+    title: "studio-site",
+    releaseDate: "studio-site",
+    performers: "studio-site",
+    durationSec: "studio-site",
+    thumbnailUrl: "studio-site",
+  };
   try {
     for (const scene of scenes) {
       store.upsertScene(
@@ -133,13 +149,9 @@ test("sync passes through records not selected for studio lookup", async () => {
           source,
           {
             ...scene,
-            title: "Old title",
+            ...studioMetadata,
             fieldProvenance: {
-              title: "studio-site",
-              releaseDate: "studio-site",
-              performers: "studio-site",
-              durationSec: "studio-site",
-              thumbnailUrl: "studio-site",
+              ...fieldProvenance,
               ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
             },
           },
@@ -153,8 +165,37 @@ test("sync passes through records not selected for studio lookup", async () => {
     assert.equal(summary.ok, true);
     for (const scene of scenes) {
       const saved = store.getScene(`metadata:${scene.sourceSceneId}`);
-      assert.equal(saved?.title, scene.title, scene.sourceSceneId);
-      assert.deepEqual(saved?.fieldProvenance, {}, scene.sourceSceneId);
+      assert.ok(saved);
+      const isTraxxx = scene.source === "traxxx.me";
+      for (const field of [
+        "title",
+        "releaseDate",
+        "performers",
+        "durationSec",
+        "thumbnailUrl",
+      ] as const) {
+        assert.deepEqual(
+          saved[field],
+          isTraxxx ? studioMetadata[field] : (scene[field] ?? ""),
+          `${scene.sourceSceneId}: ${field}`,
+        );
+      }
+      assert.deepEqual(saved.tags, scene.sourceSceneId === "complete" ? studioMetadata.tags : []);
+      assert.deepEqual(
+        saved.fieldProvenance,
+        isTraxxx
+          ? {
+              ...fieldProvenance,
+              ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
+            }
+          : {},
+        scene.sourceSceneId,
+      );
+      assert.equal(
+        saved.studioMetadataCheckedAt,
+        scene.sourceSceneId === "cooldown" ? new Date(NOW).toISOString() : null,
+        scene.sourceSceneId,
+      );
     }
   } finally {
     store.close();
@@ -376,8 +417,10 @@ test("studio detail lookups are capped at 50 scenes per sync", async () => {
     assert.ok(store.getScene("traxxx-watchlist:tushy:0")?.studioMetadataCheckedAt);
     assert.equal(store.getScene("traxxx-watchlist:tushy:0")?.title, "Old title");
     assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.studioMetadataCheckedAt, null);
-    assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.title, scenes[50]!.title);
-    assert.deepEqual(store.getScene("traxxx-watchlist:tushy:50")?.fieldProvenance, {});
+    assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.title, "Old title");
+    assert.deepEqual(store.getScene("traxxx-watchlist:tushy:50")?.fieldProvenance, {
+      title: "studio-site",
+    });
   } finally {
     store.close();
   }

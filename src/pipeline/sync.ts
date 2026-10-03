@@ -485,9 +485,10 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             for (const raw of result.scenes) {
               try {
                 const previous = existing.get(sceneKey(adapter, raw));
-                const merged = checkedAt.has(raw)
-                  ? mergeStudioMetadata(raw, pages.get(raw) ?? null, previous)
-                  : raw;
+                const merged =
+                  checkedAt.has(raw) || raw.source === "traxxx.me"
+                    ? mergeStudioMetadata(raw, pages.get(raw) ?? null, previous)
+                    : raw;
                 const scene = normaliseScene(adapter, merged, now, previous, checkedAt.get(raw));
                 const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
                 const unique = new Map(
