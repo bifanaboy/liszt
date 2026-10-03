@@ -178,7 +178,7 @@ for (const previous of ["version 3", "resolver version 4", "pool version 4"] as 
             .prepare("SELECT version FROM schema_migrations ORDER BY version")
             .all()
             .map((row) => row.version),
-          [1, 2, 3, 4, 5, 6, 7],
+          [1, 2, 3, 4, 5, 6, 7, 8],
         );
         assert.equal(
           upgraded
@@ -246,6 +246,40 @@ test("scan progress upgrades hydration history and persists separately across re
       reopened.close();
     }
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("upgrading current main adds FC2 state without skipping the ManyVids migration", () => {
+  const dir = mkdtempSync(join(tmpdir(), "liszt-fc2-upgrade-"));
+  const path = join(dir, "catalogue.db");
+  const db = new DatabaseSync(path);
+  try {
+    for (const [index, file] of [
+      "0001_init.sql",
+      "0002_drop_sessions.sql",
+      "0003_pool_video_views.sql",
+      "0004_run_resolver_health.sql",
+      "0005_pool_hydration_attempt.sql",
+      "0006_pool_undated_scan.sql",
+      "0007_manyvids.sql",
+    ].entries()) {
+      db.exec(readFileSync(new URL(file, migrations), "utf8"));
+      db.prepare("INSERT INTO schema_migrations VALUES (?, ?)").run(index + 1, "original");
+    }
+  } finally {
+    db.close();
+  }
+  const store = new SqliteStore(path);
+  try {
+    store.migrate();
+    store.noteFc2Sightings(
+      [{ videoId: "4979341", releaseDate: "2026-09-22" }],
+      "2026-10-03T00:00:00Z",
+    );
+    assert.equal(store.fc2Candidate("4979341")?.status, "pending");
+  } finally {
+    store.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

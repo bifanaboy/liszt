@@ -102,7 +102,7 @@ Five categories, in `src/sources/registry.ts`.
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
-| fc2cmadb                                     | stub - interface unconfirmed          | yes      |
+| fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes      |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
 
@@ -404,6 +404,10 @@ required variable: everything has a working default.
 | `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
 | `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
 | `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
+| `LISZT_FC2_LISTING_MIN_INTERVAL_MS`              | `2000`               | FC2 listing-page spacing.                                             |
+| `LISZT_FC2_DETAIL_MIN_INTERVAL_MS`               | `8500`               | FC2 detail-page spacing; the lane's dominant cost.                    |
+| `LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC`           | `20`                 | Detail checks one sync may read; the rest resume next sync.           |
+| `LISZT_FC2_RECHECK_DAYS`                         | `7`                  | Retries an unmarked censorship badge before retiring it undecided.   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
 | `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |
 | `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `1`                  | Duration band, identical on every rung.                               |

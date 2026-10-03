@@ -394,6 +394,10 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
                 });
               }
             }
+            // Only IDs the source positively excluded are deleted, and only from
+            // this lane. Absence from `scenes` deletes nothing: a bounded run
+            // that checked part of its queue must not remove the rest.
+            store.deleteSourceScenes(adapter.id, result.excludedSceneIds ?? []);
             recordSourceSuccess(store, adapter, count, now, windowDays, result.labels);
           });
           log.info("sync: source ok", {
