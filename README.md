@@ -62,6 +62,15 @@ the workflow file are all in scope. Since Render will not deploy while a
 required check fails, an unformatted docs-only edit blocks deploys exactly as a
 broken build does. Run `npm run format` before pushing any of them.
 
+`ci` is what Render's `checksPass` trigger waits on, so it has to report a
+result on **every** commit that reaches `main`. GitHub emits no `push` event for
+a merge made with its own automation token, which is how
+[`enable-auto-merge.yml`](.github/workflows/enable-auto-merge.yml) merges these
+PRs, so `ci` also listens for `pull_request_target: closed` on `main` and
+re-runs the identical checks on `merge_commit_sha`. Nothing is skipped or
+synthesised: an automatic merge that fails a check reports red, and Render does
+not deploy it. See [#5](https://github.com/bifanaboy/liszt/issues/5).
+
 ---
 
 ## Architecture

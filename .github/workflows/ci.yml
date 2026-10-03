@@ -4,16 +4,47 @@
 # checksPass` in render.yaml waits on.
 name: ci
 
-# GitHub's own automation token can merge a PR without starting workflows that
-# listen for pushes. Allow the same checks to be run on the merged
-# commit in that case, so Render still receives a real passing test result.
-on: [push, pull_request, workflow_dispatch]
+# GitHub does not emit a `push` event for a merge performed with its own
+# automation token, and `enable-auto-merge.yml` is what merges these PRs. Without
+# a second path an automatic merge lands on main with ZERO checks, Render's
+# `autoDeployTrigger: checksPass` never fires, and the merged commit stays
+# unreleased with nothing reporting a result either way.
+#
+# `pull_request_target: closed` is the event GitHub still delivers for such a
+# merge, so the same checks below run a second time on the merge commit itself.
+# This costs a duplicate run on a human merge into main, which `push` already
+# covers - the price of not having to guess who performed the merge. `main` is
+# the only branch that deploys, so nothing else needs a merge-commit check.
+on:
+  push:
+  pull_request:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+# `pull_request_target` is an elevated-trust trigger: it runs with the default
+# branch's workflow and a token that could write. Nothing here needs that, and
+# the checked-out code is the merged commit - already reviewed, already trusted
+# like a push. Say so explicitly rather than inheriting the default permissions.
+permissions:
+  contents: read
 
 jobs:
   check:
+    # `closed` also covers a PR that was closed without merging, and that has no
+    # merge commit to check. Every other trigger passes unconditionally.
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.merged }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A `pull_request_target` run executes the default branch's workflow,
+          # so `github.sha` is the base branch's tip and not necessarily the
+          # commit that was merged. Check out the merge commit itself: the
+          # result has to describe the code Render is about to deploy, and the
+          # check is reported against this commit.
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:

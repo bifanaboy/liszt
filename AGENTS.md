@@ -62,6 +62,13 @@ The live service is the **free Render deployment** at
 An instance replacement can lose the disposable catalogue and pool index;
 boot sync rebuilds them. An empty catalogue alone does not prove a bug.
 
+**`checksPass` depends on the `ci` workflow reporting a check on the commit
+that reached `main`.** GitHub sends no `push` event for a merge made with its
+own automation token, so `ci` also runs on `pull_request_target: closed` for
+`main` and checks out `merge_commit_sha`. Keep that trigger: without it an
+automatic merge reports zero checks and never deploys. Do not "simplify" it away
+as a duplicate, and do not replace a failing run with a green one.
+
 **`render.yaml` is a hypothetical paid persistent-disk option, not the live
 setup.** It declares `0.5c-512mb`, `oregon`, `npm ci --omit=dev`,
 `node src/app.ts`, `/health`, and a 1 GB `liszt-data` disk at `/data`,
