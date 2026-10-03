@@ -809,16 +809,9 @@ export class SqliteStore {
   // --------------------------------------------------------- fc2_candidates
 
   /**
-   * Record listing sightings WITHOUT disturbing an existing decision.
-   *
-   * The listing walk runs every cycle and is cheap; the detail walk is slow and
-   * bounded, so it must not repeat work it already did. A whole-row upsert would
-   * do exactly that: a sync re-seeing an accepted record with no verdict yet
-   * computed would overwrite a decided row with the pending default. So an
-   * existing row keeps its status, verdict, cached scene and recheck schedule,
-   * and only the release date moves - because the site does correct dates, and a
-   * corrected date invalidates the cached scene, which is then re-checked rather
-   * than re-emitted from a stale classification.
+   * Record listing sightings, preserving decisions for unchanged release dates.
+   * A corrected date resets classification and scheduling so the detail page is
+   * checked again before any cached scene can be emitted.
    */
   noteFc2Sightings(
     records: readonly { videoId: string; releaseDate: string }[],
@@ -831,9 +824,29 @@ export class SqliteStore {
        VALUES (?, ?, 'pending', '', NULL, ?, NULL, NULL, NULL)
        ON CONFLICT (video_id) DO UPDATE SET
          release_date = excluded.release_date,
+         status = CASE
+           WHEN fc2_candidates.release_date <> excluded.release_date THEN 'pending'
+           ELSE fc2_candidates.status
+         END,
+         verdict = CASE
+           WHEN fc2_candidates.release_date <> excluded.release_date THEN ''
+           ELSE fc2_candidates.verdict
+         END,
          scene_json = CASE
            WHEN fc2_candidates.release_date <> excluded.release_date THEN NULL
            ELSE fc2_candidates.scene_json
+         END,
+         checked_at = CASE
+           WHEN fc2_candidates.release_date <> excluded.release_date THEN NULL
+           ELSE fc2_candidates.checked_at
+         END,
+         recheck_at = CASE
+           WHEN fc2_candidates.release_date <> excluded.release_date THEN NULL
+           ELSE fc2_candidates.recheck_at
+         END,
+         retired_at = CASE
+           WHEN fc2_candidates.release_date <> excluded.release_date THEN NULL
+           ELSE fc2_candidates.retired_at
          END`,
     );
     this.transaction(() => {
@@ -922,7 +935,7 @@ export class SqliteStore {
   }
 
   /**
-   * Abandon pending work whose bounded recheck period has expired.
+   * Retire an unmarked candidate after its final scheduled detail retry.
    *
    * The rows are KEPT, with the timestamp, because "we looked and the site still
    * would not say" is a real fact about this candidate and deleting it would make
@@ -930,15 +943,16 @@ export class SqliteStore {
    * the due queue and from the pending count, which is what stops an unanswerable
    * record from blocking a verified-empty state forever.
    */
-  retireFc2StalePending(now: Date): number {
+  retireFc2StalePending(videoId: string, now: Date): number {
     return Number(
       this.db
         .prepare(
           `UPDATE fc2_candidates SET retired_at = ?
-             WHERE status = 'pending' AND retired_at IS NULL
-               AND recheck_at IS NOT NULL AND recheck_at <= ?`,
+             WHERE video_id = ? AND status = 'pending' AND retired_at IS NULL
+               AND recheck_at IS NOT NULL AND recheck_at <= checked_at
+               AND checked_at = ?`,
         )
-        .run(now.toISOString(), now.toISOString()).changes,
+        .run(now.toISOString(), videoId, now.toISOString()).changes,
     );
   }
 

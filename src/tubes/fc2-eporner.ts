@@ -392,8 +392,8 @@ export function createFc2EpornerResolver(
       if (!rows.length) break;
       let added = 0;
       for (const row of rows) {
-        if (admitted.has(row.url)) continue;
-        admitted.set(row.url, row);
+        if (admitted.has(row.id)) continue;
+        admitted.set(row.id, row);
         added += 1;
       }
       // A page that repeats the previous page's rows will repeat them for ever.
@@ -446,14 +446,11 @@ export function createFc2EpornerResolver(
         durationSec: epornerDurationFromPage(page.body),
         uploader: epornerUploaderFromPage(page.body),
       };
-      if (!admitted.has(candidate.url)) admitted.set(candidate.url, candidate);
-      const error = await hydrateCandidate(
-        candidate,
-        trimmed,
-        related,
-        Math.max(0, relatedBound - relatedFollowed),
+      if (!admitted.has(candidate.id)) admitted.set(candidate.id, candidate);
+      const remaining = Math.max(0, relatedBound - relatedFollowed - related.length);
+      related.push(
+        ...relatedFc2VideoIds(page.body, trimmed, { bound: remaining, exclude: walked }),
       );
-      firstError = firstError ?? error;
     }
 
     const final = [...admitted.values()];

@@ -526,6 +526,94 @@ test("an already-decided record is never re-read, and stays in the catalogue", a
   store.close();
 });
 
+for (const status of ["accepted", "excluded", "pending", "retired"] as const) {
+  test(`listing sightings preserve ${status} state unless the release date changes`, () => {
+    const store = new SqliteStore(":memory:");
+    store.migrate();
+    const seenAt = "2026-10-01T00:00:00.000Z";
+    const checkedAt = NOW.toISOString();
+    const record = { videoId: "4986883", releaseDate: "2026-10-02" };
+    store.noteFc2Sightings([record], seenAt);
+    store.decideFc2Candidate(
+      record.videoId,
+      status === "retired" ? "pending" : status,
+      "previous verdict",
+      { checkedAt, recheckAt: checkedAt, scene: { title: "cached scene" } },
+    );
+    if (status === "retired") store.retireFc2StalePending(record.videoId, NOW);
+    const previous = store.fc2Candidate(record.videoId);
+    store.noteFc2Sightings([record], checkedAt);
+    assert.deepEqual(store.fc2Candidate(record.videoId), previous);
+    store.noteFc2Sightings([{ ...record, releaseDate: "2026-10-03" }], checkedAt);
+    assert.deepEqual(store.fc2Candidate(record.videoId), {
+      ...previous,
+      releaseDate: "2026-10-03",
+      status: "pending",
+      verdict: "",
+      scene: null,
+      checkedAt: null,
+      recheckAt: null,
+      retiredAt: null,
+    });
+    assert.equal(store.fc2DueCandidates(NOW, 1)[0]?.videoId, record.videoId);
+    store.close();
+  });
+}
+
+test("a corrected release date is re-read and replaces the cached scene", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const record = { videoId: "4986883", releaseDate: "2026-10-02" };
+  const pages = [{ cursor: null, records: [record], nextCursor: null }];
+  const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+  const body = fixture("fc2-detail-uncensored.html");
+  await studio.fetch(WINDOW_START, context(laneFetcher(pages, () => body)));
+  record.releaseDate = "2026-10-03";
+  const fetcher = laneFetcher(pages, () => body.replaceAll("2026-10-02", "2026-10-03"));
+  const result = await studio.fetch(WINDOW_START, context(fetcher));
+  assert.equal(fetcher.calls.filter((url) => url.includes("/articles/")).length, 1);
+  assert.equal(result.scenes[0]?.releaseDate, "2026-10-03");
+  store.close();
+});
+
+for (const outcome of ["accepted", "excluded"] as const) {
+  test(`a scheduled retry can become ${outcome} instead of retiring`, async () => {
+    const store = new SqliteStore(":memory:");
+    store.migrate();
+    const pages = [
+      {
+        cursor: null,
+        records: [{ videoId: "4986794", releaseDate: "2026-10-02" }],
+        nextCursor: null,
+      },
+    ];
+    const studio = createFc2CmadbStudio({ store, sleep: noSleep });
+    await studio.fetch(
+      WINDOW_START,
+      context(laneFetcher(pages, () => fixture("fc2-detail-unmarked.html"))),
+    );
+    const later = new Date(store.fc2Candidate("4986794")!.recheckAt!);
+    const marked = fixture("fc2-detail-unmarked.html").replace(
+      '"censored": null',
+      `"censored": "${outcome === "accepted" ? "無" : "有"}"`,
+    );
+    const result = await studio.fetch(
+      WINDOW_START,
+      context(
+        laneFetcher(pages, () => marked),
+        later,
+      ),
+    );
+    const candidate = store.fc2Candidate("4986794");
+    assert.equal(candidate?.status, outcome);
+    assert.equal(candidate?.retiredAt, null);
+    assert.equal(candidate?.recheckAt, null);
+    assert.equal(result.scenes.length, outcome === "accepted" ? 1 : 0);
+    assert.equal(result.verifiedEmpty, outcome === "excluded");
+    store.close();
+  });
+}
+
 test("an unmarked record is rechecked, then retired undecided", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
@@ -546,10 +634,32 @@ test("an unmarked record is rechecked, then retired undecided", async () => {
   const first = await studio.fetch(WINDOW_START, context(fetcher()));
   assert.equal(first.scenes.length, 0, "an unmarked badge never becomes a scene");
   assert.equal(store.fc2Candidate("4986794")?.status, "pending");
-  assert.ok(store.fc2Candidate("4986794")?.recheckAt, "and it is scheduled for another look");
+  const recheckAt = store.fc2Candidate("4986794")?.recheckAt;
+  assert.ok(recheckAt, "and it is scheduled for another look");
+  const later = new Date(recheckAt);
 
-  // Nine days later the bounded recheck period has passed.
-  const later = new Date(NOW.getTime() + 9 * 86_400_000);
+  const before = fetcher();
+  await studio.fetch(WINDOW_START, context(before, new Date(later.getTime() - 1)));
+  assert.equal(before.calls.filter((url) => url.includes("/articles/")).length, 0);
+  assert.equal(store.fc2DueCandidates(later, 1).length, 1, "due at the retry time");
+
+  const noBudget = createFc2CmadbStudio({ store, sleep: noSleep, maxDetailChecksPerSync: 0 });
+  const deferred = await noBudget.fetch(WINDOW_START, context(fetcher(), later));
+  assert.equal(deferred.verifiedEmpty, false);
+  assert.equal(store.fc2Candidate("4986794")?.retiredAt, null);
+
+  const failed = await studio.fetch(
+    WINDOW_START,
+    context(
+      laneFetcher(pages, () => {
+        throw new Error("connection reset");
+      }),
+      later,
+    ),
+  );
+  assert.equal(failed.verifiedEmpty, false);
+  assert.equal(store.fc2Candidate("4986794")?.recheckAt, recheckAt);
+  assert.equal(store.fc2DueCandidates(later, 1).length, 1, "failed retries stay due");
   let reads = 0;
   const second = await studio.fetch(
     WINDOW_START,
@@ -561,12 +671,18 @@ test("an unmarked record is rechecked, then retired undecided", async () => {
       later,
     ),
   );
-  assert.equal(reads, 0, "an expired recheck costs no request");
+  assert.equal(reads, 1, "the scheduled retry reads the detail page");
   assert.equal(second.scenes.length, 0);
   const retired = store.fc2Candidate("4986794");
   assert.equal(retired?.status, "pending", "retired, never reclassified");
-  assert.ok(retired?.retiredAt, "the retirement is recorded");
+  assert.equal(retired?.retiredAt, later.toISOString(), "the retirement is recorded");
+  assert.equal(retired?.recheckAt, recheckAt, "the scheduled read time is preserved");
   assert.equal(store.countFc2Pending(), 0, "and it no longer blocks a verified-empty claim");
+  assert.equal(second.verifiedEmpty, true);
+  const after = fetcher();
+  const third = await studio.fetch(WINDOW_START, context(after, later));
+  assert.equal(after.calls.filter((url) => url.includes("/articles/")).length, 0);
+  assert.equal(third.verifiedEmpty, true);
   store.close();
 });
 

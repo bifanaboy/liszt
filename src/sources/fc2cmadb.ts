@@ -701,10 +701,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       const client = createFc2Client(ctx, clientOptions);
       const now = ctx.now;
 
-      // Abandoned pending work is retired BEFORE the walk, so the pending count
-      // read at the end of this run describes work that is genuinely still owed
-      // rather than work whose recheck period has already run out.
-      const retired = store ? store.retireFc2StalePending(now) : 0;
+      let retired = 0;
       const walk = await walkFc2Listing(client, windowStart, {
         maxPages: maxListingPages,
         log: ctx.log,
@@ -797,9 +794,14 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
           checkedAt: now.toISOString(),
           // Only an UNDECIDED record is scheduled for another look. Accepted and
           // excluded are decisions, not retries.
-          recheckAt: verdict.status === "pending" ? recheckAt : null,
+          recheckAt: verdict.status === "pending" ? (candidate.recheckAt ?? recheckAt) : null,
           scene: (scene ?? null) as Record<string, unknown> | null,
         });
+        // A scheduled retry must actually succeed before an unmarked record can
+        // retire. Failed reads and candidates outside this sync's budget stay due.
+        if (store && verdict.status === "pending" && candidate.recheckAt !== null) {
+          retired += store.retireFc2StalePending(candidate.videoId, now);
+        }
       }
 
       // An ACCEPTED record is re-emitted every sync from its cached scene, and
@@ -827,7 +829,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       }
 
       const pending = store ? store.countFc2Pending() : undecided;
-      const deferred = Math.max(pending, undecided);
+      const deferred = store ? pending : undecided;
       // `verifiedEmpty` needs all THREE of: a finished walk, no qualifying
       // record, and no outstanding undecided work. Claiming it while detail
       // checks are still owed would assert a completeness the lane does not have,

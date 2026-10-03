@@ -100,7 +100,7 @@ Four categories, in `src/sources/registry.ts`.
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
-| fc2cmadb                                     | stub - interface unconfirmed          | yes      |
+| fc2cmadb                                     | FC2 tag listing + paced detail pages          | yes      |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
 

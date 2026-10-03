@@ -416,6 +416,47 @@ test("the related walk is bounded and only admits on the code", async () => {
   );
 });
 
+test("search aliases and cyclic related links read and admit each video once", async () => {
+  const videos = [
+    { id: "a1b2c3", title: "4979341 part 1", url: "https://www.eporner.com/video-a1b2c3/first/" },
+    { id: "a1b2c3", title: "4979341 part 1", url: "https://www.eporner.com/video-a1b2c3/alias/" },
+    { id: "d4e5f6", title: "4979341 part 2", url: "https://www.eporner.com/video-d4e5f6/second/" },
+  ];
+  const ids = ["a1b2c3", "d4e5f6", "z9y8x7"];
+  const routes: Record<string, string> = {
+    "https://www.eporner.com/api/v2/video/search/": JSON.stringify({ videos }),
+  };
+  for (const id of ids) {
+    routes[`https://www.eporner.com/video-${id}/`] =
+      fixture(`eporner-fc2-video-${id}.html`) +
+      ids.map((other) => `<a href="/video-${other}/alias/">4979341</a>`).join("");
+  }
+  const fetcher = resolverFetcher(routes);
+  const reads: string[] = [];
+  const fetch = fetcher.fetch.bind(fetcher);
+  fetcher.fetch = async (url) => {
+    if (!url.includes("/api/")) reads.push(url);
+    return fetch(url);
+  };
+  const lookup = createFc2EpornerResolver(fetcher, {
+    sleep: noSleep,
+    minIntervalMs: 0,
+    relatedBound: 10,
+  });
+  const result = await lookup("4979341");
+  assert.deepEqual(
+    result.links.map((link) => link.url),
+    [videos[0]!.url, videos[2]!.url, "https://www.eporner.com/video-z9y8x7/"],
+  );
+  assert.deepEqual(
+    reads,
+    result.links.map((link) => link.url),
+  );
+  assert.equal(result.candidatePagesRead, 3);
+  assert.equal(result.relatedFollowed, 1);
+  assert.equal(result.error, undefined);
+});
+
 /* ---- The scene-level lane -------------------------------------------------- */
 
 test("an FC2 scene takes every verified upload, with parts where earned", async () => {
