@@ -233,6 +233,125 @@ test("a failed probe restarts the cooldown rather than retrying every call", asy
   assert.equal(calls, 2, "and the break is back, cooldown restarted from the probe");
 });
 
+/**
+ * A package that paces itself the way `sxyprn@0.1.0` does: `reserveRequestSlot`
+ * gives every request in the PROCESS a start time at least one interval after
+ * the previous one, and the wait happens inside the call, before the request is
+ * issued. The interval is scaled to milliseconds so a test can hold the same
+ * shape the production run had.
+ */
+function pacedPackageStub(intervalMs: number) {
+  let lastStart = 0;
+  const request = async <T>(work: () => T): Promise<T> => {
+    const start = Math.max(Date.now(), lastStart + intervalMs);
+    lastStart = start;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, start - Date.now())));
+    return work();
+  };
+  return {
+    videos: {
+      search: async () => request(() => ({ videos: [] })),
+      details: async () => request(() => ({})),
+    },
+  };
+}
+
+test("the package's own pacing is not charged to the call's deadline", async () => {
+  // The production shape of #23: a source answering every request, still
+  // reported as `errored: 110` of `attempted: 229`. The package holds each
+  // request until its own slot 10s after the last, the ladder asks four scenes
+  // at once, and the deadline started counting while a call waited its turn -
+  // so every call past the first expired without a request ever being made.
+  const interval = 40;
+  const timeoutMs = Math.round(interval * 1.5);
+  const client = createSxyprnClient(pacedPackageStub(interval), {
+    timeoutMs,
+    cooldownMs: 60_000,
+  });
+
+  const started = Date.now();
+  const outcomes = await Promise.all(
+    ["a", "b", "c"].map((query) =>
+      client.videos.search(query).then(
+        () => "ok",
+        (error: Error) => error.message,
+      ),
+    ),
+  );
+  const elapsed = Date.now() - started;
+  assert.ok(
+    elapsed >= interval,
+    `the three calls were paced over ${elapsed}ms, so the queue was real`,
+  );
+  assert.deepEqual(
+    outcomes,
+    ["ok", "ok", "ok"],
+    "a call that reached its slot answered instead of expiring in the queue",
+  );
+});
+
+test("a call that reaches the slot and then hangs is still bounded, and lets the next one through", async () => {
+  // The deadline must still bound the REQUEST. Moving it to the slot is what
+  // stops it measuring the queue; if it stopped bounding anything, a hung
+  // source would hold the one slot for ever and the rung would hang with it.
+  let calls = 0;
+  const client = createSxyprnClient(
+    packageStub({
+      search: async () => {
+        calls += 1;
+        return new Promise<never>(() => {});
+      },
+    }),
+    { timeoutMs: 40, maxConsecutiveFailures: 1, cooldownMs: 60_000 },
+  );
+  // The deadline timer is unref'd so a pending call cannot hold the process open
+  // at shutdown, which means a test with nothing else pending would see the loop
+  // drain instead of the timer firing. A server always has the loop; keep it
+  // alive here the same way.
+  const alive = setInterval(() => {}, 5);
+
+  await assert.rejects(client.videos.search("a"), /search timed out after 40ms/);
+  // The first call handed the slot back on the way out: the second is refused by
+  // the break rather than waiting behind a call that never finished.
+  await assert.rejects(client.videos.search("b"), /circuit open/);
+  clearInterval(alive);
+  assert.equal(calls, 1, "the hung call was abandoned, not waited on");
+});
+
+test("a burst of scenes costs one request, not one per scene, when the source is down", async () => {
+  // The queue must not turn a dead source into a burst of paid deadlines: the
+  // first call opens the break, and the scenes behind it are refused on arrival
+  // instead of each reaching the package.
+  let calls = 0;
+  const client = createSxyprnClient(
+    packageStub({
+      search: async () => {
+        calls += 1;
+        throw new Error("403 from Cloudflare");
+      },
+    }),
+    { timeoutMs: 500, maxConsecutiveFailures: 1, cooldownMs: 60_000 },
+  );
+
+  const outcomes = await Promise.all(
+    ["a", "b", "c", "d"].map((query) =>
+      client.videos.search(query).then(
+        () => "ok",
+        (error: Error) => error.message,
+      ),
+    ),
+  );
+  assert.equal(calls, 1, "one request paid for the burst");
+  assert.equal(
+    outcomes[0],
+    "403 from Cloudflare",
+    "the first call carries the source's own reason",
+  );
+  for (const outcome of outcomes.slice(1)) {
+    assert.match(outcome, /circuit open \(1 of 1 recent calls failed\); last: 403 from Cloudflare/);
+  }
+});
+
 /** A client whose search returns cards and whose details return posts. */
 function stubClient(over: {
   cards?: SxyprnCard[];

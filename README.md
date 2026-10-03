@@ -185,6 +185,16 @@ held-off tube is distinguishable in the logs from a live timeout.
 outcomes. A resolver outage therefore does not mark healthy catalogue polling
 as failed, and the dashboard reports resolver unavailability independently.
 
+The sxyprn rung is **paced by its own package**, which honours the site's
+`Crawl-delay: 10` and will not answer more than six requests a minute. So the
+rung asks for one request at a time and starts its per-call deadline only once
+that request reaches the front of the queue. That distinction is the whole fix
+for the run of `sxyprn search timed out after 15000ms` in production: the ladder
+fans several scenes out at once, and a deadline that counted the package's own
+10-second spacing expired on healthy calls that had not been asked yet. Waiting
+for the source is not a failure, so it is not reported as one, and it is not
+charged to the deadline that exists to bound a request that never answers.
+
 The trusted pool searches a bounded number of candidates per scene, so a scene
 with more survivors than that budget is **truncated, not exhausted**. Those
 searches are counted as `incomplete`, never as a clean no-match: the candidates
