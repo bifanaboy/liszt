@@ -95,13 +95,20 @@ test("a page with no payload is a shape failure, not an empty listing", () => {
   // THE distinction that matters: an empty tag and a page that is not a page look
   // identical to any reader that returns `[]` on failure, and the empty reading
   // would let the lane claim a verified emptiness it never verified.
-  assert.throws(() => extractInertiaPage(fixture("fc2-listing-no-payload.html")), Fc2ShapeError);
+  assert.throws(
+    () => extractInertiaPage(fixture("fc2-listing-no-payload.html")),
+    (error: Error) =>
+      error instanceof Fc2ShapeError && /no Inertia page payload/.test(error.message),
+  );
 });
 
 test("truncated page JSON fails loudly instead of parsing to something plausible", () => {
+  // A truncated response is a page that IS there with a payload that is not, so
+  // this must fail at `JSON.parse` rather than at the payload lookup - the two
+  // failures need different fixes and are told apart by their message.
   assert.throws(
     () => extractInertiaPage(fixture("fc2-listing-truncated-json.html")),
-    Fc2ShapeError,
+    (error: Error) => error instanceof Fc2ShapeError && /not valid JSON/.test(error.message),
   );
 });
 
