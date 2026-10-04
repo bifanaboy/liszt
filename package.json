@@ -17,7 +17,8 @@
     "start": "node --env-file-if-exists=.env src/app.ts",
     "calibrate": "node --env-file-if-exists=.env src/cli/calibrate.ts",
     "discover-uploaders": "node --env-file-if-exists=.env src/cli/uploader-discovery.ts",
-    "catalogue-coverage": "node --env-file-if-exists=.env src/cli/catalogue-coverage.ts"
+    "catalogue-coverage": "node --env-file-if-exists=.env src/cli/catalogue-coverage.ts",
+    "link-studios": "node --env-file-if-exists=.env src/cli/link-studios.ts"
   },
   "dependencies": {
     "zod": "^4.6.5"

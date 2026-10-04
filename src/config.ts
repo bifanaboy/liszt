@@ -5,6 +5,8 @@
  * outage* is a runtime error. They are not the same thing.
  */
 import { z } from "zod";
+import { readFileSync } from "node:fs";
+import { auditStudioLinks, StudioLinkSchema } from "./sources/studio-identity.ts";
 import { DEFAULT_FETCH_CONCURRENCY } from "./core/concurrency.ts";
 import { DEFAULT_TIMEOUT_MS } from "./core/fetcher.ts";
 import { TRAXXX_WATCHLIST } from "./sources/traxxx-watchlist.ts";
@@ -77,6 +79,15 @@ export const Config = z.object({
   traxxxMinIntervalMs: z.coerce.number().int().nonnegative().default(250),
   traxxxCacheTtlMs: z.coerce.number().int().positive().default(300_000),
   traxxxWatchlist: z.array(z.string().min(1)).default([...TRAXXX_WATCHLIST]),
+  /**
+   * Studios declared by URL rather than inferred from a name comparison.
+   *
+   * The watchlist above is a list of Traxxx listing URLs; this is where the
+   * same studio is bound to its ThePornDB site id so both databases file their
+   * releases under one key. A studio declared here may carry a Traxxx side, a
+   * TPDB side, or both.
+   */
+  studioLinks: z.array(StudioLinkSchema).default([]),
   madouquApiBase: z.string().url().default(DEFAULT_MADOUQU_API_BASE),
 
   // FC2 lane (fc2cmadb.com). The site answers slowly and asks to be walked
@@ -181,6 +192,46 @@ const optionalValue = (value: string | undefined): string | undefined => {
 };
 
 /**
+ * Read declared studio links from the environment.
+ *
+ * The declaration is JSON, not a comma-separated list: it is structured data
+ * with nested optional sides, and every attempt to flatten that into a string
+ * list loses a field. `LISZT_STUDIO_LINKS_FILE` points at a JSON file instead,
+ * which is the form `npm run link-studios` emits and the only one worth
+ * hand-editing. A malformed declaration is a configuration error naming the
+ * entry - a silently dropped studio is indistinguishable from a studio that
+ * released nothing.
+ */
+const studioLinksFromEnv = (value: string | undefined): unknown => {
+  const raw = optionalValue(value);
+  if (!raw) return undefined;
+  // A path to a .json file, or inline JSON. Both are supported because the
+  // declaration is long: the file is what `npm run link-studios` writes and
+  // what a human edits, while inline JSON keeps a one-studio test simple.
+  const text =
+    raw.startsWith("{") || raw.startsWith("[")
+      ? raw
+      : (() => {
+          try {
+            return readFileSync(raw, "utf8");
+          } catch (error) {
+            throw new Error(
+              `Invalid configuration: LISZT_STUDIO_LINKS points at ${raw}, which could not be read (${error instanceof Error && "code" in error ? String(error.code) : String(error)})`,
+              { cause: error },
+            );
+          }
+        })();
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      `Invalid configuration: LISZT_STUDIO_LINKS is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+      { cause: error },
+    );
+  }
+};
+
+/**
  * Parse configuration from the environment, naming any failing field.
  *
  * There is no credential and no production-only refusal any more. The app has
@@ -205,6 +256,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traxxxMinIntervalMs: env.LISZT_TRAXXX_MIN_INTERVAL_MS,
     traxxxCacheTtlMs: env.LISZT_TRAXXX_CACHE_TTL_MS,
     traxxxWatchlist: list(env.LISZT_TRAXXX_WATCHLIST),
+    studioLinks: studioLinksFromEnv(env.LISZT_STUDIO_LINKS),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
     fc2ListingMinIntervalMs: env.LISZT_FC2_LISTING_MIN_INTERVAL_MS,
     fc2DetailMinIntervalMs: env.LISZT_FC2_DETAIL_MIN_INTERVAL_MS,
@@ -235,6 +287,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("; ");
     throw new Error(`Invalid configuration: ${detail}`);
+  }
+  // Two studios claiming one TPDB site, or one key, is a configuration error
+  // rather than a merge to resolve at runtime: whichever loses would have its
+  // releases filed under the other's name, and the app would report success.
+  const conflicts = auditStudioLinks(result.data.studioLinks);
+  if (conflicts.length) {
+    throw new Error(`Invalid configuration: LISZT_STUDIO_LINKS ${conflicts.join("; ")}`);
   }
   return result.data;
 }

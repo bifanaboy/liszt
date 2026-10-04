@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTpdbWatchlistSource, cleanStudioName } from "../src/sources/tpdb-watchlist.ts";
+import { FetchError } from "../src/core/fetcher.ts";
 import type { SourceContext } from "../src/sources/types.ts";
 
 const studio = [{ studioId: "network-brazzers-anal", studio: "Brazzers", aliases: ["Brazzers"] }];
@@ -16,17 +17,41 @@ const scene = {
   tags: [{ name: "Anal" }],
   site: { name: "Brazzers" },
 };
+const site = { id: 7, name: "Brazzers", short_name: "brazzers" };
+const page = (data: unknown[], currentPage = 1, lastPage = 1) => ({
+  data,
+  meta: { current_page: currentPage, last_page: lastPage },
+});
 
-function context(responses: unknown[], opts: { now?: string; fail?: Error } = {}) {
+/** Routes a request by URL so a test states only what it cares about. */
+function context(
+  routes: { site?: unknown; scenes?: unknown[]; lookupMisses?: string[]; scenePages?: unknown[][] },
+  opts: { now?: string; fail?: Error } = {},
+) {
   const calls: Array<{ url: string; headers?: Record<string, string> }> = [];
+  const misses = new Set(routes.lookupMisses ?? []);
+  const pages = routes.scenePages ?? (routes.scenes ? [routes.scenes] : undefined);
   const ctx = {
     now: new Date(opts.now ?? "2026-10-04T00:00:00Z"),
     fetcher: {
       json: async (url: string, options?: { headers?: Record<string, string> }) => {
         calls.push({ url, headers: options?.headers });
         if (opts.fail) throw opts.fail;
-        if (!responses.length) throw new Error("unexpected request");
-        return responses.shift();
+        const parsed = new URL(url);
+        if (parsed.pathname.startsWith("/sites/")) {
+          const identifier = decodeURIComponent(parsed.pathname.slice("/sites/".length));
+          const absent = misses.has(identifier) || routes.site === undefined;
+          if (absent) throw new FetchError(`GET ${url} -> 404`, "definitive", 404);
+          return { data: routes.site };
+        }
+        if (parsed.pathname === "/scenes") {
+          if (!pages) throw new Error("unexpected scene request");
+          // Paged listings are served by the requested page number, so a test can
+          // assert that the walker reads page two and then stops at last_page.
+          const requested = Number(parsed.searchParams.get("page") ?? "1");
+          return page(pages[requested - 1] ?? [], requested, pages.length);
+        }
+        throw new Error(`unexpected request ${url}`);
       },
     },
     log: () => {},
@@ -38,73 +63,108 @@ function context(responses: unknown[], opts: { now?: string; fail?: Error } = {}
   return { ctx, calls };
 }
 
+const sceneCalls = (calls: Array<{ url: string }>) =>
+  calls.filter((call) => new URL(call.url).pathname === "/scenes");
+const siteCalls = (calls: Array<{ url: string }>) =>
+  calls.filter((call) => new URL(call.url).pathname.startsWith("/sites/"));
+
 test("cleans names without collapsing different words", () => {
   assert.equal(cleanStudioName("  Bräzzers & Co. "), "brazzers co");
   assert.notEqual(cleanStudioName("Anal Quest"), cleanStudioName("Analquest"));
 });
 
-test("uses bearer authentication, paginates and emits mapped TPDB scenes", async () => {
-  const { ctx, calls } = context([
-    { data: [{ id: 7, name: "Brazzers" }], meta: { current_page: 1, last: 2 } },
-    { data: [], meta: { current_page: 2, last: 2 } },
-    { data: [scene], meta: { current_page: 1, last: 2 } },
-    { data: [], meta: { current_page: 2, last: 2 } },
-  ]);
+test("looks a studio up directly and emits mapped TPDB scenes", async () => {
+  const { ctx, calls } = context({ site, scenes: [scene] });
   const result = await createTpdbWatchlistSource({
     token: "private-token",
     studios: studio,
   }).fetch("2026-10-01", ctx);
   assert.equal(calls[0]?.headers?.Authorization, "Bearer private-token");
-  assert.match(calls[2]!.url, /site_id=7/);
-  assert.match(calls[2]!.url, /date=2026-10-01/);
-  assert.match(calls[2]!.url, /date_operation=%3E%3D/);
-  assert.equal(calls.length, 4);
+  assert.equal(new URL(calls[0]!.url).pathname, "/sites/brazzers");
+  assert.equal(siteCalls(calls).length, 1, "one direct lookup per studio, not a catalogue walk");
+  const listing = sceneCalls(calls)[0]!.url;
+  assert.match(listing, /site_id=7/);
+  assert.match(listing, /date=2026-10-01/);
+  assert.match(listing, /date_operation=%3E%3D/);
   assert.equal(result.scenes[0]?.studioId, "network-brazzers-anal");
   assert.equal(result.scenes[0]?.durationSec, 600);
   assert.equal(result.scenes[0]?.releaseUrl, scene.url);
 });
 
-test("missing token, malformed pages and temporary failures throw without returning records", async () => {
-  const noToken = createTpdbWatchlistSource({ studios: studio });
-  await assert.rejects(noToken.fetch("2026-10-01", context([]).ctx), /token missing/);
-  const source = createTpdbWatchlistSource({ token: "secret", studios: studio });
-  await assert.rejects(
-    source.fetch("2026-10-01", context([{ data: [], meta: { current_page: 2, last: 2 } }]).ctx),
-    /inconsistent pagination/,
-  );
-  await assert.rejects(
-    source.fetch("2026-10-01", context([], { fail: new Error("temporary outage") }).ctx),
-    /temporary outage/,
-  );
+test("a multi-word alias resolves the site TPDB spells with spaces", async () => {
+  const { ctx, calls } = context({
+    site: { id: 1052, name: "Elegant Angel", short_name: "elegantangel" },
+    scenes: [scene],
+  });
+  await createTpdbWatchlistSource({
+    token: "token",
+    studios: [{ studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"] }],
+  }).fetch("2026-10-01", ctx);
+  assert.equal(new URL(calls[0]!.url).pathname, "/sites/elegant%20angel");
+  assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
 });
 
-test("a matched studio with no in-window scenes reports a verified empty result", async () => {
-  const matched = context([
-    { data: [{ id: 7, name: "Brazzers" }], meta: { current_page: 1, last: 1 } },
-    { data: [], meta: { current_page: 1, last: 1 } },
-  ]);
-  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
-    "2026-10-01",
-    matched.ctx,
-  );
-  assert.deepEqual(result, { scenes: [], verifiedEmpty: true });
-});
-
-test("no matching site name is a source error, not a verified empty result", async () => {
-  const { ctx } = context([{ data: [], meta: { current_page: 1, last: 1 } }]);
+test("a lookup that returns a differently-named site is rejected, not trusted", async () => {
+  // /sites/{identifier} resolves loosely; the response must still name an alias
+  // of the studio being looked up or the lane would ingest another studio's scenes.
+  const { ctx } = context({
+    site: { id: 999, name: "Someone Else Entirely", short_name: "someoneelse" },
+    scenes: [scene],
+  });
   await assert.rejects(
     createTpdbWatchlistSource({ token: "token", studios: studio }).fetch("2026-10-01", ctx),
     /matched no configured studio names/,
   );
 });
 
+test("a studio TPDB does not carry is reported unmatched, and the rest still run", async () => {
+  const { ctx, calls } = context({ site, scenes: [scene], lookupMisses: ["jules jordan"] });
+  const result = await createTpdbWatchlistSource({
+    token: "token",
+    studios: [
+      ...studio,
+      { studioId: "lane-missing", studio: "Jules Jordan", aliases: ["Jules Jordan"] },
+    ],
+  }).fetch("2026-10-01", ctx);
+  assert.equal(result.scenes.length, 1, "the matched studio still contributes");
+  assert.equal(siteCalls(calls).length, 2, "the absent studio is looked up once, then skipped");
+  assert.equal(sceneCalls(calls).length, 1);
+});
+
+test("missing token and temporary failures throw without returning records", async () => {
+  const noToken = createTpdbWatchlistSource({ studios: studio });
+  await assert.rejects(noToken.fetch("2026-10-01", context({}).ctx), /token missing/);
+  const source = createTpdbWatchlistSource({ token: "secret", studios: studio });
+  await assert.rejects(
+    source.fetch(
+      "2026-10-01",
+      context({}, { fail: new FetchError("GET /sites/brazzers -> 503", "inconclusive", 503) }).ctx,
+    ),
+    /503/,
+    "a failing lookup propagates; it must not read as an absent studio",
+  );
+});
+
+test("a matched studio with no in-window scenes reports a verified empty result", async () => {
+  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
+    "2026-10-01",
+    context({ site, scenes: [] }).ctx,
+  );
+  assert.deepEqual(result, { scenes: [], verifiedEmpty: true });
+});
+
+test("no matching site name is a source error, not a verified empty result", async () => {
+  await assert.rejects(
+    createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
+      "2026-10-01",
+      context({ scenes: [scene] }).ctx,
+    ),
+    /matched no configured studio names/,
+  );
+});
+
 test("ambiguous TPDB studio names are excluded", async () => {
-  const { ctx, calls } = context([
-    {
-      data: [{ id: 7, name: "Shared Studio", short_name: "shared" }],
-      meta: { current_page: 1, last: 1 },
-    },
-  ]);
+  const { ctx, calls } = context({ site, scenes: [scene] });
   const source = createTpdbWatchlistSource({
     token: "token",
     studios: [
@@ -113,16 +173,11 @@ test("ambiguous TPDB studio names are excluded", async () => {
     ],
   });
   await assert.rejects(source.fetch("2026-10-01", ctx), /matched no configured studio names/);
-  assert.equal(calls.length, 1, "ambiguous matches do not fetch scene listings");
+  assert.equal(sceneCalls(calls).length, 0, "ambiguous matches fetch no scene listings");
 });
 
 test("three-way aliases stay ambiguous and an ambiguous full name cannot fall back to short name", async () => {
-  const { ctx, calls } = context([
-    {
-      data: [{ id: 7, name: "Shared Studio", short_name: "lane-a" }],
-      meta: { current_page: 1, last: 1 },
-    },
-  ]);
+  const { ctx, calls } = context({ site, scenes: [scene] });
   const source = createTpdbWatchlistSource({
     token: "token",
     studios: [
@@ -132,34 +187,135 @@ test("three-way aliases stay ambiguous and an ambiguous full name cannot fall ba
     ],
   });
   await assert.rejects(source.fetch("2026-10-01", ctx), /matched no configured studio names/);
-  assert.equal(calls.length, 1);
+  assert.equal(sceneCalls(calls).length, 0);
 });
 
 test("tagged lanes retain only TPDB scenes carrying every requested tag", async () => {
   const taggedScene = { ...scene, tags: [{ name: "Anal" }, { name: "Creampie" }] };
   const untaggedScene = { ...scene, id: "s2", tags: [{ name: "Anal" }] };
-  const { ctx } = context([
-    { data: [{ id: 7, name: "Brazzers" }], meta: { current_page: 1, last: 1 } },
-    { data: [taggedScene, untaggedScene], meta: { current_page: 1, last: 1 } },
-  ]);
   const result = await createTpdbWatchlistSource({
     token: "token",
     studios: [{ ...studio[0]!, tags: ["anal", "creampie"] }],
-  }).fetch("2026-10-01", ctx);
+  }).fetch("2026-10-01", context({ site, scenes: [taggedScene, untaggedScene] }).ctx);
   assert.deepEqual(
     result.scenes.map((entry) => entry.sourceSceneId),
     ["s1"],
   );
 });
 
+test("a multi-page listing is walked to last_page and then stops", async () => {
+  // Covers the pagination field this lane reads. The first page reports
+  // last_page 2, so the walker must request page two and must not ask for a
+  // third - an off-by-one here would either drop half the window or spin.
+  const second = { ...scene, id: "s2", title: "Second page scene" };
+  const { ctx, calls } = context({ site, scenePages: [[scene], [second]] });
+  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
+    "2026-10-01",
+    ctx,
+  );
+  assert.equal(sceneCalls(calls).length, 2, "page two is read, and no page three is requested");
+  assert.deepEqual(
+    result.scenes.map((entry) => entry.sourceSceneId),
+    ["s1", "s2"],
+  );
+});
+
+test("an unrecognised short name is an abbreviation, not a collision", async () => {
+  // TPDB short names are frequently an abbreviation of the display name
+  // ("elegantangel" for "Elegant Angel"). Treating an unknown short name as a
+  // disagreement would reject real studios; only a name owned by a DIFFERENT
+  // configured studio is a collision.
+  const { ctx, calls } = context({
+    site: { id: 1052, name: "Elegant Angel", short_name: "elegantangel" },
+    scenes: [scene],
+  });
+  const result = await createTpdbWatchlistSource({
+    token: "token",
+    studios: [{ studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"] }],
+  }).fetch("2026-10-01", ctx);
+  assert.equal(result.scenes.length, 1);
+  assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
+});
+
+test("a site whose short name belongs to another studio is rejected, not accepted", async () => {
+  // The name and the short name are separate evidence. If they disagree about
+  // which studio this is, that is a collision - accepting on the strength of
+  // one name would file another studio's releases under this lane.
+  const { ctx, calls } = context({
+    site: { id: 555, name: "Brazzers", short_name: "someotherstudio" },
+    scenes: [scene],
+  });
+  await assert.rejects(
+    createTpdbWatchlistSource({
+      token: "token",
+      studios: [
+        ...studio,
+        { studioId: "lane-other", studio: "Someotherstudio", aliases: ["Someotherstudio"] },
+      ],
+    }).fetch("2026-10-01", ctx),
+    /matched no configured studio names/,
+  );
+  assert.equal(sceneCalls(calls).length, 0, "no scene listing is fetched for a rejected site");
+});
+
+test("a failed lookup does not leave a partial site map cached for later polls", async () => {
+  // cachedSites.size is what marks resolution done. If a throwing lookup left it
+  // partly filled, every later poll would skip re-resolution and quietly run
+  // with only the studios that happened to resolve before the failure.
+  let failNext = false;
+  const calls: string[] = [];
+  const ctx = {
+    now: new Date("2026-10-04T00:00:00Z"),
+    fetcher: {
+      json: async (url: string) => {
+        calls.push(url);
+        const parsed = new URL(url);
+        if (parsed.pathname.startsWith("/sites/")) {
+          if (failNext) {
+            failNext = false;
+            throw new FetchError(`GET ${url} -> 503`, "inconclusive", 503);
+          }
+          const identifier = decodeURIComponent(parsed.pathname.slice("/sites/".length));
+          if (identifier !== "brazzers") {
+            throw new FetchError(`GET ${url} -> 404`, "definitive", 404);
+          }
+          return { data: site };
+        }
+        if (parsed.pathname === "/scenes") return page([], 1, 1);
+        throw new Error(`unexpected request ${url}`);
+      },
+    },
+    log: () => {},
+    mapWithConcurrency: async (items: unknown[], fn: (item: unknown) => unknown) =>
+      Promise.all(items.map(fn)),
+    mapIsolated: async (items: unknown[], fn: (item: unknown) => unknown) =>
+      Promise.all(items.map(fn)),
+  } as unknown as SourceContext;
+  const source = createTpdbWatchlistSource({
+    token: "token",
+    studios: [...studio, { studioId: "lane-x", studio: "Exotic", aliases: ["Exotic"] }],
+  });
+
+  failNext = true;
+  await assert.rejects(source.fetch("2026-10-01", ctx), /503/);
+  const beforeRetry = calls.filter((url) => new URL(url).pathname.startsWith("/sites/")).length;
+
+  // The retry must resolve from scratch, not settle for a partial map.
+  await source.fetch("2026-10-01", ctx);
+  const siteCallsAfter = calls
+    .slice(beforeRetry)
+    .filter((url) => new URL(url).pathname.startsWith("/sites/"));
+  assert.ok(
+    siteCallsAfter.length >= 2,
+    "both studios are looked up again after a failure, so no studio is silently dropped",
+  );
+});
+
 test("reuses the matched site map on later refreshes", async () => {
-  const { ctx, calls } = context([
-    { data: [{ id: 7, name: "Brazzers" }], meta: { current_page: 1, last: 1 } },
-    { data: [], meta: { current_page: 1, last: 1 } },
-    { data: [], meta: { current_page: 1, last: 1 } },
-  ]);
+  const { ctx, calls } = context({ site, scenes: [] });
   const source = createTpdbWatchlistSource({ token: "token", studios: studio });
   await source.fetch("2026-10-01", ctx);
   await source.fetch("2026-10-01", ctx);
-  assert.equal(calls.filter((call) => new URL(call.url).pathname === "/sites").length, 1);
+  assert.equal(siteCalls(calls).length, 1, "the site map is resolved once, not per poll");
+  assert.equal(sceneCalls(calls).length, 2, "scene listings are still re-read on each refresh");
 });
