@@ -12,6 +12,7 @@ export interface TraxxxLaneSpec {
 
 export const TRAXXX_WATCHLIST: readonly string[] = Object.freeze([
   "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/bang/scenes/latest/1?tags=anal",
 ]);
 
 export function parseTraxxxListingUrl(raw: string): TraxxxLaneSpec {

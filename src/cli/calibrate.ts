@@ -271,7 +271,6 @@ async function main(): Promise<void> {
     const sources = createSources({
       madouquApiBase: config.madouquApiBase,
       traxxxWatchlist: config.traxxxWatchlist,
-      ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
     }).filter((adapter) => traxxxLaneIds.has(adapter.id));
     const windowStart = dateOnly(new Date(now.getTime() - config.windowDays * DAY_MS));
 

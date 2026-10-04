@@ -62,7 +62,7 @@ test("ManyVids imports captured metadata and round-trips through SQLite", async 
   }));
   try {
     const result = await adapter.fetch("2026-07-01", ctx);
-    assert.equal(result.scenes.length, 9);
+    assert.equal(result.scenes.length, 5);
     const raw = result.scenes[0]!;
     const scene = normaliseScene(adapter, raw, ctx.now);
     store.upsertScene(scene);
@@ -77,6 +77,37 @@ test("ManyVids imports captured metadata and round-trips through SQLite", async 
     assert.deepEqual(saved.performers, [], "a store owner is not necessarily a performer");
     assert.equal(saved.videoUrls.length, 0, "a preview is not a playback link");
     assert.match(saved.releaseUrl!, /\/Video\/7871546\//);
+  } finally {
+    store.close();
+  }
+});
+
+test("ManyVids excludes the whole word trans in titles and tags", async () => {
+  const candidates = [
+    { ...video, id: "9900001", title: "Trans scene", slug: "trans-scene" },
+    {
+      ...video,
+      id: "9900002",
+      title: "Transatlantic anal scene",
+      slug: "transatlantic-anal-scene",
+      tags: ["anal"],
+    },
+    {
+      ...video,
+      id: "9900003",
+      title: "Anal scene",
+      slug: "anal-scene",
+      tags: ["trans"],
+    },
+  ];
+  const { store, adapter, ctx } = setup(() => page(candidates));
+  try {
+    const result = await adapter.fetch("2026-07-01", ctx);
+    assert.deepEqual(
+      result.scenes.map((scene) => scene.sourceSceneId),
+      ["9900002"],
+    );
+    assert.deepEqual(result.excludedSceneIds, ["9900001", "9900003"]);
   } finally {
     store.close();
   }

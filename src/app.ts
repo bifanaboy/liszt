@@ -68,7 +68,6 @@ async function main(): Promise<void> {
     manyvidsStoreIds: config.manyvidsStoreIds,
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
     store,
-    ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
   // Rung 2 is optional. A missing package is a calm state, not a crash.

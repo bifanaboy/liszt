@@ -70,9 +70,8 @@ broken build does. Run `npm run format` before pushing any of them.
 source adapters          pipeline              tube ladder            serving
 ─────────────            ────────              ───────────            ───────
 traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
-Bang!       ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
-Maximo      │            per-source       │    guess fallback   ─┘         │
-ManyVids    │
+ManyVids    ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
+            │            per-source       │    guess fallback   ─┘         │
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -93,16 +92,14 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
 
 ### Sources
 
-Five categories, in `src/sources/registry.ts`.
+Four categories, in `src/sources/registry.ts`.
 
-| Lane                                         | Mechanism                             | Matcher  |
-| -------------------------------------------- | ------------------------------------- | -------- |
-| Lancelot Styles Evolution, Mambo Perv, Woodman Casting X, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
-| Bang! Originals                              | listing + per-video JSON-LD           | yes      |
-| Maximo Garcia                                | direct scrape, listing URL configured | yes      |
+| Lane                                         | Mechanism                                  | Matcher  |
+| -------------------------------------------- | ------------------------------------------ | -------- |
+| Lancelot Styles Evolution, Mambo Perv, Woodman Casting X, Traxxx watchlist (including Bang) | `traxxx.me` REST, no auth | yes |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
-| madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
-| fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes      |
+| madouqu (11 categories)                      | WordPress REST + Mandarin classifier       | **none** |
+| fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
 
@@ -115,10 +112,12 @@ per sync and an incomplete page is retried no more than once per day.
 Traxxx watchlist entries use this exact grammar:
 `https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
 `?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
-rejected at startup. The built-in entry is the Vixen network filtered to the
-`anal` tag. `LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries
-and replaces that built-in list rather than appending to it, which makes a
-single lane easy to isolate during calibration.
+rejected at startup. The built-in entries are Vixen and Bang, both filtered to
+the `anal` tag. Bang's listing is
+`https://traxxx.me/network/bang/scenes/latest/1?tags=anal`.
+`LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries and replaces
+that built-in list rather than appending to it, which makes a single lane easy
+to isolate during calibration.
 
 **Woodman Casting X** is a traxxx channel lane like the two above, with one
 exclusion: the studio writes `XXXX` as a whole token in the scene title of the
@@ -379,9 +378,10 @@ The scene response keeps the store id, original UTC launch timestamp, UTC releas
 day, runtime in seconds, price (`regular`, `onSale`, `free`), thumbnail and preview
 URLs, and known tags. Preview clips are metadata, never verified playback links.
 The endpoint currently omits tags: we leave those unknown rather than fetching
-hundreds of tag-filtered lists each run. Tags never limit ingestion. Hidden and
-club-only videos are outside this public source; endpoint changes fail the poll
-and preserve last-good records.
+hundreds of tag-filtered lists each run. When provided, tags and titles containing
+the whole word `trans` are excluded and existing matching rows are removed on the
+next successful poll. Hidden and club-only videos are outside this public source;
+endpoint changes fail the poll and preserve last-good records.
 
 For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
 ManyVids and Traxxx records in the local rolling window. TPDB and StashDB are
@@ -424,11 +424,10 @@ required variable: everything has a working default.
 | `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
 | `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
-| `LISZT_TRAXXX_WATCHLIST`                        | Vixen `anal` listing | Comma-separated listing URLs; setting it replaces the built-in list.  |
+| `LISZT_TRAXXX_WATCHLIST`                        | Vixen and Bang `anal` listings | Comma-separated listing URLs; setting it replaces the built-in list.  |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
 | `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
 | `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
-| `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
 | `LISZT_FC2_LISTING_MIN_INTERVAL_MS`              | `2000`               | FC2 listing-page spacing.                                             |
 | `LISZT_FC2_DETAIL_MIN_INTERVAL_MS`               | `8500`               | FC2 detail-page spacing; the lane's dominant cost.                    |
 | `LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC`           | `20`                 | Detail checks one sync may read; the rest resume next sync.           |

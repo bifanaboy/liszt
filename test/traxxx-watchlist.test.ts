@@ -45,9 +45,15 @@ for (const [name, url] of [
   });
 }
 
-test("the default watchlist creates the Vixen anal lane and stable lane ids", () => {
-  assert.deepEqual(TRAXXX_WATCHLIST, ["https://traxxx.me/network/vixen/scenes/latest/1?tags=anal"]);
-  assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), ["network-vixen-anal"]);
+test("the default watchlist creates Vixen and Bang anal lanes with stable ids", () => {
+  assert.deepEqual(TRAXXX_WATCHLIST, [
+    "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/bang/scenes/latest/1?tags=anal",
+  ]);
+  assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), [
+    "network-vixen-anal",
+    "network-bang-anal",
+  ]);
   const [lane] = createTraxxxWatchlistStudios(TRAXXX_WATCHLIST);
   assert.equal(lane?.id, "network-vixen-anal");
 });
@@ -66,6 +72,9 @@ test("the registry replaces the retired Tushy lane with watchlist lanes", () => 
     traxxxWatchlist: TRAXXX_WATCHLIST,
   }).map((source) => source.id);
   assert.ok(ids.includes("network-vixen-anal"));
+  assert.ok(ids.includes("network-bang-anal"));
+  assert.ok(!ids.includes("bang-originals"));
+  assert.ok(!ids.includes("maximo-garcia"));
   assert.ok(!ids.includes("tushy"));
 });
 

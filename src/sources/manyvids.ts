@@ -126,10 +126,15 @@ export function createManyVidsSource({
         fullPulledAt: full ? ctx.now.toISOString() : prior!.fullPulledAt,
         videos: [...videos.values()],
       };
+      const excludedSceneIds: string[] = [];
       const scenes: RawScene[] = snapshot.videos.flatMap((video) => {
         const releaseDate = new Date(video.launchDate).toISOString().slice(0, 10);
         if (releaseDate < windowStart || releaseDate > ctx.now.toISOString().slice(0, 10))
           return [];
+        if (/\btrans\b/i.test(video.title) || video.tags?.some((tag) => /\btrans\b/i.test(tag))) {
+          excludedSceneIds.push(video.id);
+          return [];
+        }
         const releaseUrl = `https://www.manyvids.com/Video/${video.id}/${encodeURIComponent(video.slug)}/`;
         return [
           {
@@ -168,7 +173,11 @@ export function createManyVidsSource({
       const encoded = JSON.stringify(snapshot);
       if (store) store.setSourceSnapshot(id, encoded);
       else memory = encoded;
-      return { scenes, verifiedEmpty: scenes.length === 0 };
+      return {
+        scenes,
+        verifiedEmpty: scenes.length === 0,
+        ...(excludedSceneIds.length ? { excludedSceneIds } : {}),
+      };
     },
   };
 }

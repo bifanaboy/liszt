@@ -42,7 +42,7 @@ test("discovery rejects invalid numeric options instead of defaulting or bypassi
   assert.equal(JSON.parse(result.stdout).minDeltaSec, 0);
 });
 
-test("discovery uses registry creator metadata and fetches only canonical eporner pages", (t) => {
+test("discovery uses ManyVids creator metadata and fetches only canonical eporner pages", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "liszt-discovery-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const dbPath = join(dir, "test.db");
@@ -53,8 +53,8 @@ test("discovery uses registry creator metadata and fetches only canonical eporne
   store.migrate();
   store.upsertScene(
     makeScene({
-      id: "maximo-garcia:test",
-      sourceId: "maximo-garcia",
+      id: "manyvids-1003095958:test",
+      sourceId: "manyvids-1003095958",
       labelId: "different-label",
       label: "Registry Creator Label",
       title: "Example scene title",
