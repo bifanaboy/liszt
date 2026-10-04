@@ -133,6 +133,8 @@ export const SceneBase = z.object({
   metadataPoor: z.boolean().default(false),
   videoUrls: z.array(VideoLink).default([]),
   deadVideoUrls: z.array(DeadVideoLink).default([]),
+  /** Last attempt to read the studio's own release details, when applicable. */
+  studioMetadataCheckedAt: IsoTimestamp.nullable().default(null),
   videoCheckedAt: IsoTimestamp.nullable().default(null),
   videoMatching: VideoMatching.nullable().default(null),
 });

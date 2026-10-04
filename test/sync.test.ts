@@ -9,7 +9,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSync, dateOnly, normaliseScene, type SyncLookups } from "../src/pipeline/sync.ts";
+import {
+  createSync,
+  dateOnly,
+  mergeStudioMetadata,
+  normaliseScene,
+  type SyncLookups,
+} from "../src/pipeline/sync.ts";
 import { createSingleFlight } from "../src/pipeline/scheduler.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { RETIRED_SOURCE_IDS } from "../src/sources/registry.ts";
@@ -70,6 +76,430 @@ function buildSync(
   });
 }
 
+test("studio metadata merge keeps fresh studio fields and falls back to previous studio values", () => {
+  const source = adapter("metadata", async () => ({ scenes: [], verifiedEmpty: true }));
+  const fieldProvenance = {
+    title: "studio-site",
+    releaseDate: "studio-site",
+    performers: "studio-site",
+    durationSec: "studio-site",
+    thumbnailUrl: "studio-site",
+    tags: "studio-site",
+  };
+  const previous = normaliseScene(
+    source,
+    raw("updated", {
+      thumbnailUrl: "https://example.test/old.jpg",
+      tags: ["Old"],
+      fieldProvenance,
+    }),
+    new Date(NOW),
+  );
+  const fresh = raw("updated", {
+    title: "Updated studio title",
+    releaseDate: "2026-03-02",
+    performers: ["Updated Performer"],
+    durationSec: 900,
+    thumbnailUrl: "https://example.test/new.jpg",
+    tags: ["New"],
+    fieldProvenance,
+  });
+
+  assert.deepEqual(mergeStudioMetadata(fresh, null, previous), { ...fresh, metadataPoor: false });
+  const fallback = mergeStudioMetadata(
+    { ...fresh, fieldProvenance: { title: "catalogue" } },
+    null,
+    previous,
+  );
+  assert.equal(fallback.title, previous.title);
+  assert.equal(fallback.durationSec, previous.durationSec);
+});
+
+test("sync preserves prior studio metadata only for Traxxx records not selected for lookup", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const releaseUrl = "https://www.tushy.com/videos/example";
+  const scenes = [
+    raw("direct", { releaseUrl }),
+    raw("no-url", { source: "traxxx.me" }),
+    raw("unsupported", { source: "traxxx.me", releaseUrl: "https://example.test/scene" }),
+    raw("cooldown", { source: "traxxx.me", releaseUrl }),
+    raw("complete", { source: "traxxx.me", releaseUrl }),
+  ];
+  const source = adapter("metadata", async () => ({ scenes, verifiedEmpty: false }));
+  const studioMetadata = {
+    title: "Old title",
+    releaseDate: "2026-03-02",
+    performers: ["Studio Performer"],
+    durationSec: 900,
+    thumbnailUrl: "https://example.test/studio.jpg",
+    tags: ["Studio"],
+  };
+  const fieldProvenance = {
+    title: "studio-site",
+    releaseDate: "studio-site",
+    performers: "studio-site",
+    durationSec: "studio-site",
+    thumbnailUrl: "studio-site",
+  };
+  try {
+    for (const scene of scenes) {
+      store.upsertScene(
+        normaliseScene(
+          source,
+          {
+            ...scene,
+            ...studioMetadata,
+            fieldProvenance: {
+              ...fieldProvenance,
+              ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
+            },
+          },
+          new Date(NOW),
+          undefined,
+          scene.sourceSceneId === "cooldown" ? new Date(NOW).toISOString() : null,
+        ),
+      );
+    }
+    const summary = await buildSync(store, [source], 90, offlineFetcher())("test");
+    assert.equal(summary.ok, true);
+    for (const scene of scenes) {
+      const saved = store.getScene(`metadata:${scene.sourceSceneId}`);
+      assert.ok(saved);
+      const isTraxxx = scene.source === "traxxx.me";
+      for (const field of [
+        "title",
+        "releaseDate",
+        "performers",
+        "durationSec",
+        "thumbnailUrl",
+      ] as const) {
+        assert.deepEqual(
+          saved[field],
+          isTraxxx ? studioMetadata[field] : (scene[field] ?? ""),
+          `${scene.sourceSceneId}: ${field}`,
+        );
+      }
+      assert.deepEqual(saved.tags, scene.sourceSceneId === "complete" ? studioMetadata.tags : []);
+      assert.deepEqual(
+        saved.fieldProvenance,
+        isTraxxx
+          ? {
+              ...fieldProvenance,
+              ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
+            }
+          : {},
+        scene.sourceSceneId,
+      );
+      assert.equal(
+        saved.studioMetadataCheckedAt,
+        scene.sourceSceneId === "cooldown" ? new Date(NOW).toISOString() : null,
+        scene.sourceSceneId,
+      );
+    }
+  } finally {
+    store.close();
+  }
+});
+
+test("studio metadata attempt time survives normalization and a store round trip", () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const studioMetadataCheckedAt = "2026-03-10T00:00:00.000Z";
+  const source = adapter("metadata", async () => ({ scenes: [], verifiedEmpty: true }));
+  try {
+    const first = normaliseScene(
+      source,
+      raw("checked"),
+      new Date(NOW),
+      undefined,
+      studioMetadataCheckedAt,
+    );
+    store.upsertScene(first);
+    const saved = store.getScene("metadata:checked");
+    assert.equal(saved?.studioMetadataCheckedAt, studioMetadataCheckedAt);
+
+    const refreshed = normaliseScene(source, raw("checked"), new Date(NOW), saved);
+    assert.equal(refreshed.studioMetadataCheckedAt, studioMetadataCheckedAt);
+  } finally {
+    store.close();
+  }
+});
+
+test("sync prefers exact studio metadata and keeps Traxxx values for fields the page omits", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let calls = 0;
+  const fetcher = {
+    async fetch() {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          data: {
+            findOneVideo: {
+              slug: "hotel-vixen-season-3-episode-12-it-got-better",
+              title: "Studio title",
+              releaseDate: "2026-03-01T00:00:00Z",
+              runLength: "00:25:51",
+              models: [{ name: "Nicole Kitt" }],
+              categories: [{ name: "Anal" }],
+              images: { poster: [] },
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const sync = createSync({
+    store,
+    sources: [
+      adapter("traxxx-watchlist", async () => ({
+        scenes: [
+          raw("vixen-1", {
+            source: "traxxx.me",
+            studioId: "tushy",
+            studio: "Tushy",
+            releaseUrl:
+              "https://www.tushy.com/videos/hotel-vixen-season-3-episode-12-it-got-better",
+            durationSec: 1500,
+            performers: ["Traxxx Performer"],
+          }),
+        ],
+        verifiedEmpty: false,
+      })),
+    ],
+    fetcher,
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("test");
+    const scene = store.getScene("traxxx-watchlist:tushy:vixen-1");
+    assert.equal(calls, 1);
+    assert.equal(scene?.title, "Studio title");
+    assert.equal(scene?.durationSec, 1551);
+    assert.deepEqual(scene?.performers, ["Nicole Kitt"]);
+    assert.equal(scene?.fieldProvenance.durationSec, "studio-site");
+    assert.equal(scene?.studioMetadataCheckedAt, new Date(NOW).toISOString());
+  } finally {
+    store.close();
+  }
+});
+
+test("a corrected release URL is read again, even inside the retry interval", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const OLD_URL = "https://www.tushy.com/videos/hotel-vixen-season-3-episode-12-it-got-better";
+  const NEW_URL = "https://www.tushy.com/videos/hotel-vixen-season-3-episode-13-the-fix";
+  let releaseUrl = OLD_URL;
+  const requested: string[] = [];
+  const fetcher = {
+    async fetch(_url: string, options: { body?: string } = {}) {
+      const request = JSON.parse(options.body ?? "{}") as {
+        variables?: { videoSlug?: string };
+      };
+      requested.push(request.variables?.videoSlug ?? "");
+      return new Response(
+        JSON.stringify({
+          data: {
+            findOneVideo: {
+              slug: request.variables?.videoSlug,
+              title: "Studio title",
+              releaseDate: "2026-03-01T00:00:00Z",
+              runLength: "00:25:51",
+              models: [{ name: "Nicole Kitt" }],
+              categories: [],
+              images: { poster: [] },
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const source = adapter("traxxx-watchlist", async () => ({
+    scenes: [
+      raw("vixen-1", {
+        source: "traxxx.me",
+        studioId: "tushy",
+        releaseUrl,
+        fieldProvenance: {},
+      }),
+    ],
+    verifiedEmpty: false,
+  }));
+  const sync = createSync({
+    store,
+    sources: [source],
+    fetcher,
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("first");
+    assert.equal(store.getScene("traxxx-watchlist:tushy:vixen-1")?.title, "Studio title");
+    // The page is complete and the retry interval has not passed, so only a
+    // changed release URL can make the cycle read it again.
+    releaseUrl = NEW_URL;
+    await sync("corrected");
+    assert.deepEqual(requested, [
+      "hotel-vixen-season-3-episode-12-it-got-better",
+      "hotel-vixen-season-3-episode-13-the-fix",
+    ]);
+  } finally {
+    store.close();
+  }
+});
+
+test("incomplete studio metadata retries only after 24 hours", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let now = new Date(NOW);
+  let calls = 0;
+  const fetcher = {
+    async fetch() {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          data: {
+            findOneVideo: {
+              slug: "hotel-vixen-season-3-episode-12-it-got-better",
+              runLength: "00:25:51",
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const sync = createSync({
+    store,
+    sources: [
+      adapter("traxxx-watchlist", async () => ({
+        scenes: [
+          raw("vixen-1", {
+            source: "traxxx.me",
+            studioId: "tushy",
+            releaseUrl:
+              "https://www.tushy.com/videos/hotel-vixen-season-3-episode-12-it-got-better",
+          }),
+        ],
+        verifiedEmpty: false,
+      })),
+    ],
+    fetcher,
+    clock: { now: () => new Date(now) },
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("first");
+    now = new Date(new Date(NOW).getTime() + 23 * 60 * 60 * 1000);
+    await sync("too-soon");
+    assert.equal(calls, 1);
+    now = new Date(new Date(NOW).getTime() + 24 * 60 * 60 * 1000);
+    await sync("due");
+    assert.equal(calls, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("studio detail lookups are capped at 50 scenes per sync", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  let calls = 0;
+  const fetcher = {
+    async fetch(_url: string, options: { body?: string } = {}) {
+      calls += 1;
+      const request = JSON.parse(options.body ?? "{}") as {
+        variables?: { videoSlug?: string };
+      };
+      return new Response(
+        JSON.stringify({ data: { findOneVideo: { slug: request.variables?.videoSlug } } }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const scenes = Array.from({ length: 51 }, (_, index) => {
+    const slug = `tushy-release-${index}`;
+    return raw(String(index), {
+      source: "traxxx.me",
+      studioId: "tushy",
+      releaseUrl: `https://www.tushy.com/videos/${slug}`,
+    });
+  });
+  const source = adapter("traxxx-watchlist", async () => ({ scenes, verifiedEmpty: false }));
+  const sync = createSync({
+    store,
+    sources: [source],
+    fetcher,
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    for (const index of [0, 50]) {
+      store.upsertScene(
+        normaliseScene(
+          source,
+          { ...scenes[index]!, title: "Old title", fieldProvenance: { title: "studio-site" } },
+          new Date(NOW),
+        ),
+      );
+    }
+    await sync("test");
+    assert.equal(calls, 50);
+    assert.ok(store.getScene("traxxx-watchlist:tushy:0")?.studioMetadataCheckedAt);
+    assert.equal(store.getScene("traxxx-watchlist:tushy:0")?.title, "Old title");
+    assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.studioMetadataCheckedAt, null);
+    assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.title, "Old title");
+    assert.deepEqual(store.getScene("traxxx-watchlist:tushy:50")?.fieldProvenance, {
+      title: "studio-site",
+    });
+  } finally {
+    store.close();
+  }
+});
 /**
  * A fetcher that fails every request.
  *

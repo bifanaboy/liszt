@@ -178,7 +178,7 @@ for (const previous of ["version 3", "resolver version 4", "pool version 4"] as 
             .prepare("SELECT version FROM schema_migrations ORDER BY version")
             .all()
             .map((row) => row.version),
-          [1, 2, 3, 4, 5, 6, 7, 8],
+          [1, 2, 3, 4, 5, 6, 7, 8, 9],
         );
         assert.equal(
           upgraded

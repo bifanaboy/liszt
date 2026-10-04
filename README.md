@@ -106,6 +106,12 @@ Five categories, in `src/sources/registry.ts`.
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
 
+Traxxx discovers releases. Before matching, sync reads the exact release page
+for studios covered by a Stash CommunityScrapers scene scraper and prefers
+those page fields over Traxxx, keeping Traxxx as the fallback. Unsupported
+release hosts stay on Traxxx metadata. The detail lookup is capped at 50 scenes
+per sync and an incomplete page is retried no more than once per day.
+
 Traxxx watchlist entries use this exact grammar:
 `https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
 `?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
