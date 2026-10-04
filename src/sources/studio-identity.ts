@@ -81,6 +81,22 @@ export interface TpdbLookup {
    * verify a loose slug match, and to pick out of search results.
    */
   readonly name?: string;
+  /**
+   * Tag names a pasted SEARCH address asked for.
+   *
+   * TPDB's own `tags[...]` filter does not filter - verified 2026-10-04, every
+   * tag value returns the same rows - so these are recorded and applied by the
+   * caller's name match instead, which is the only path that actually works.
+   */
+  readonly tags?: readonly string[];
+  /**
+   * The `site_id` a pasted search address named, trusted as exact.
+   *
+   * Set only for a numeric `site_id`. It makes the lookup authoritative in the
+   * same way a UUID is, which is what stops a stale display slug in the same
+   * address from vetoing the site the id names.
+   */
+  readonly exactSiteId?: number;
 }
 
 /**
@@ -123,15 +139,55 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   if (!TPDB_WEB_HOSTS.includes(url.hostname)) {
     throw new Error(`Invalid TPDB studio URL ${raw}: unsupported host ${url.hostname}`);
   }
+  // The tag names a search address asked for. Read before the path is
+  // interpreted, and deliberately NOT forwarded to the API later.
+  const tags = readSearchTags(url, raw);
+  const tagsField = tags.length ? { tags } : {};
+  const nameHint = url.searchParams.get("name") ?? undefined;
   const segments = url.pathname
     .split("/")
     .map((segment) => segment.trim())
     .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
-  const uuid = segments.find((segment) => z.string().uuid().safeParse(segment).success);
-  const nameHint = url.searchParams.get("name") ?? undefined;
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        throw new Error(`Invalid TPDB studio URL ${raw}: malformed path encoding`);
+      }
+    });
+  // A UUID is the strongest identity TPDB offers, in the path or the query. It is
+  // read FIRST so a `site_id` in the same address cannot quietly override it, and
+  // before `site_id` is validated so junk in that parameter cannot abort an
+  // otherwise complete UUID.
+  const uuidParam = url.searchParams.get("uuid");
+  if (uuidParam !== null && !z.string().uuid().safeParse(uuidParam).success) {
+    throw new Error(`Invalid TPDB studio URL ${raw}: uuid is not a UUID`);
+  }
+  const uuid = uuidParam ?? segments.find((s) => z.string().uuid().safeParse(s).success);
   if (uuid) {
-    return { candidates: [uuid], uuid, ...(nameHint ? { name: nameHint } : {}) };
+    return { candidates: [uuid], uuid, ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
+  }
+  // `site_operation` is deliberately NOT read. TPDB's own implementation of it
+  // is broken: on site 116701 (75 scenes) `site_operation=Network` returns 0 and
+  // `site_operation=Single` returns no usable total, verified 2026-10-04. The
+  // lane already requests the single site its `site_id` names, which is what a
+  // `site_operation=Network` search on the wire actually resolves to. Honouring
+  // the parameter as written would return nothing.
+  const siteId = readSiteId(url, raw);
+  // A SEARCH address carries the studio in its query string, not its path.
+  // `/scenes` is a container view every search shares, so taking the last path
+  // segment as the identifier here named the container - and the lookup then
+  // fell back to a NAME SEARCH that could land on any site with a similar
+  // name. `site_id` is the identity; the id decides, never the slug.
+  if (siteId !== undefined) {
+    const slugHint = url.searchParams.get("site") ?? undefined;
+    const name = nameHint ?? (slugHint ? displayNameFromSlug(slugHint) : undefined);
+    return {
+      candidates: [String(siteId)],
+      exactSiteId: siteId,
+      ...tagsField,
+      ...(name ? { name } : {}),
+    };
   }
   // No uuid, so the identifier is the LAST path segment: the resource being
   // named. Earlier segments are containers (`/sites/...`) or sibling views
@@ -142,7 +198,114 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   if (!identifier) {
     throw new Error(`Invalid TPDB studio URL ${raw}: no studio identifier in the path`);
   }
-  return { candidates: [identifier], ...(nameHint ? { name: nameHint } : {}) };
+  // A container view with no site_id names the CONTAINER, not a studio. Accepting
+  // it would send `/sites/scenes` to the API and then let a name search pick a
+  // site, which is the silent wrong-studio path this parser exists to close.
+  if (isContainerSegment(last)) {
+    throw new Error(
+      `Invalid TPDB studio URL ${raw}: a ${identifier} search needs a site_id query parameter`,
+    );
+  }
+  return { candidates: [identifier], ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
+}
+
+/**
+ * Path segments that are a view over many studios rather than one studio.
+ *
+ * `/scenes` is the address a person copies after filtering in the browser, so it
+ * is the common case; the rest are listed so a future TPDB view is rejected the
+ * same way instead of being looked up as though it named a studio.
+ */
+const CONTAINER_SEGMENTS: ReadonlySet<string> = new Set(
+  ["scenes", "studios", "tags", "studios-scenes", "search", "categories"].map(cleanStudioName),
+);
+
+/** Whether a path segment names a container view rather than one studio. */
+function isContainerSegment(segment: string | undefined): boolean {
+  return segment !== undefined && CONTAINER_SEGMENTS.has(cleanStudioName(segment));
+}
+
+/**
+ * Tag names from a pasted search address, keyed `tags[N]=<Name>`.
+ *
+ * The bracket index is read and DISCARDED. It is not a tag id: TPDB tag ids are
+ * sparse and non-contiguous (id 70 and 856 are both unresolvable via
+ * `/tags/{id}` while scene tags carry real ids), and passing a real tag id in
+ * the index position returns nothing at all. Verified against the live API on
+ * 2026-10-04: the index and the value are both ignored by TPDB, so the only
+ * trustworthy reading is the tag NAME.
+ */
+function readSearchTags(url: URL, raw: string): string[] {
+  const names = new Set<string>();
+  for (const [key, value] of url.searchParams) {
+    if (!/^tags\[\d*\]$/.test(key)) continue;
+    const name = value.trim();
+    // A present-but-empty tag is a malformed address. Dropping it would produce
+    // an untagged declaration and the lane would collect the WHOLE site - the one
+    // outcome this change exists to prevent.
+    if (!name) {
+      throw new Error(
+        `Invalid TPDB studio URL ${raw}: ${key} has no tag name (expected a name like "Anal")`,
+      );
+    }
+    if (!cleanStudioName(name)) {
+      throw new Error(
+        `Invalid TPDB studio URL ${raw}: ${key}=${JSON.stringify(name)} has no letters or digits to match on`,
+      );
+    }
+    names.add(name);
+  }
+  // Case-insensitively de-duplicated, then ordered deterministically so the same
+  // address always yields the same declaration. Folding happens BEFORE the
+  // operation check, because "Anal" and "anal" are one tag and must not read as
+  // a multi-tag search.
+  const folded = new Map<string, string>();
+  for (const name of names) {
+    const key = cleanStudioName(name);
+    if (key && !folded.has(key)) folded.set(key, name);
+  }
+  // The declaration's tag list is an ALL-of match (tpdb-watchlist.ts), so a
+  // multi-tag search whose tags are ALTERNATIVES would be quietly narrowed to
+  // their intersection. `tag_and` is the operation; anything that is not an
+  // explicit all-of - including an omitted value, whose default is not something
+  // to guess at - is refused rather than reinterpreted.
+  const tagAnd = url.searchParams.get("tag_and");
+  const allOf = tagAnd !== null && ["1", "true", "and"].includes(tagAnd.trim().toLowerCase());
+  if (folded.size > 1 && !allOf) {
+    const seen = tagAnd === null ? "no tag_and" : `tag_and=${tagAnd}`;
+    throw new Error(
+      `Invalid TPDB studio URL ${raw}: ${seen} with ${folded.size} tags cannot be one lane`,
+    );
+  }
+  return [...folded.values()].sort((a, b) => cleanStudioName(a).localeCompare(cleanStudioName(b)));
+}
+
+/**
+ * The `site_id` of a pasted search address, or undefined when the address is a
+ * site page rather than a search.
+ *
+ * Rejected rather than ignored when present but malformed: an address carrying
+ * `site_id=abc` is a broken declaration, and quietly falling back to a name
+ * search is how the wrong studio gets bound in the first place.
+ */
+function readSiteId(url: URL, raw: string): number | undefined {
+  const value = url.searchParams.get("site_id");
+  if (value === null) return undefined;
+  // Number() silently rounds anything past MAX_SAFE_INTEGER, which would turn a
+  // typo into a plausible-looking wrong site id rather than an error.
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) <= 0) {
+    throw new Error(`Invalid TPDB studio URL ${raw}: site_id must be a positive integer`);
+  }
+  return Number(value);
+}
+
+/** `bangbros` -> `Bangbros`, for the display hint a `site=` slug carries. */
+function displayNameFromSlug(slug: string): string {
+  return slug
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 /**
@@ -155,6 +318,11 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
  */
 function siteSatisfies(site: z.infer<typeof TpdbSite>, lookup: TpdbLookup): boolean {
   if (lookup.uuid) return site.uuid === lookup.uuid;
+  // A numeric `site_id` is exact by construction, the same authority a UUID has.
+  // It must NOT be gated on a name: the only name available is the display slug
+  // the URL happened to carry, and TPDB renames sites, so a stale or abbreviated
+  // `site=` hint would otherwise veto the exact id the operator pasted.
+  if (lookup.exactSiteId !== undefined) return site.id === lookup.exactSiteId;
   const wanted = cleanStudioName(lookup.name ?? "");
   if (!wanted) return false;
   return studioNameKeys(site).includes(wanted);
@@ -227,6 +395,14 @@ export async function resolveTpdbSite(
       outcome: "resolved",
       candidates: [],
     };
+  }
+
+  // An exact `site_id` that did not resolve is TERMINAL. Falling through to the
+  // name search below would let a site that merely shares the name be written as
+  // the declaration - a different numeric id than the one the operator pasted,
+  // reported as resolved. A stale or removed id must report unresolved instead.
+  if (lookup.exactSiteId !== undefined) {
+    return { site: undefined, outcome: "absent", candidates: [] };
   }
 
   // Nothing verified directly. Ask TPDB what it does have, so the report can

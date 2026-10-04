@@ -24,9 +24,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { loadConfig } from "../config.ts";
 import { HttpFetcher } from "../core/fetcher.ts";
 import { parseTraxxxListingUrl, type TraxxxLaneSpec } from "../sources/traxxx-watchlist.ts";
+import { buildDeclaration, lookupForResolver } from "./link-studios-declaration.ts";
 import {
   auditStudioLinks,
-  canonicalStudioId,
   parseTpdbStudioUrl,
   resolveTpdbSite,
   studioAliases,
@@ -90,21 +90,7 @@ const lane: TraxxxLaneSpec | undefined = traxxxInput
 const lookup = tpdbInput ? parseTpdbStudioUrl(tpdbInput) : undefined;
 
 const resolved = lookup
-  ? await resolveTpdbSite(fetcher, config.tpdbApiKey, {
-      candidates: lookup.candidates,
-      ...(lookup.uuid ? { uuid: lookup.uuid } : {}),
-      // The display name is what verifies a loose slug match. Without one the
-      // lookup can only be exact, so a name is required for a name-only URL.
-      ...(displayName ? { name: displayName } : lookup.name ? { name: lookup.name } : {}),
-    })
-  : undefined;
-
-const traxxx = lane
-  ? {
-      kind: lane.kind,
-      slug: lane.slug,
-      url: lane.url,
-    }
+  ? await resolveTpdbSite(fetcher, config.tpdbApiKey, lookupForResolver(lookup, displayName))
   : undefined;
 
 const studio = displayName ?? (lane ? lane.slug.replace(/-/g, " ") : undefined);
@@ -112,28 +98,14 @@ if (!studio) {
   throw new Error("A studio display name is required: pass --name, or a Traxxx URL to derive one");
 }
 
-const link: StudioLink = {
-  studioId: canonicalStudioId({
-    ...(traxxx ? { traxxx } : {}),
-    ...(lane?.tags.length ? { tags: lane.tags } : {}),
-    ...(resolved?.site ? { tpdb: resolved.site } : {}),
-  }),
-  studio,
-  ...(lane?.tags.length ? { tags: lane.tags } : {}),
-  ...(traxxx ? { traxxx } : {}),
-  ...(resolved?.site
-    ? {
-        tpdb: {
-          siteId: resolved.site.siteId,
-          ...(resolved.site.uuid ? { uuid: resolved.site.uuid } : {}),
-          name: resolved.site.name,
-          ...(resolved.site.shortName ? { shortName: resolved.site.shortName } : {}),
-          ...(resolved.site.url ? { url: resolved.site.url } : {}),
-          ...(resolved.site.networkId ? { networkId: resolved.site.networkId } : {}),
-        },
-      }
-    : {}),
-};
+// Either side may be omitted: a Traxxx-only paste is a valid declaration, so a
+// missing TPDB side is not an error here.
+const link: StudioLink = buildDeclaration({
+  ...(lookup ? { lookup } : {}),
+  ...(resolved?.site ? { resolved: resolved.site } : {}),
+  ...(lane ? { lane } : {}),
+  studioName: studio,
+});
 
 out(`studio       ${link.studio}`);
 out(`studioId     ${link.studioId}`);
