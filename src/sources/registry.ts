@@ -19,10 +19,11 @@ import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxWatchlistStudios, parseTraxxxListingUrl } from "./traxxx-watchlist.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
+import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
+import { parseTpdbListingUrl, tpdbListingUrlsToStudios } from "./tpdb-listing-url.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 import type { StudioLink } from "./studio-identity.ts";
-import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
 
 export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
   "tushy",
@@ -66,13 +67,19 @@ export interface RegistryOptions {
   /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
    * failing every cycle, following the SETUP REQUIRED pattern. */
   tpdbApiKey?: string;
-  /**
-   * Studios declared by URL, with their TPDB site ids already resolved.
+  /** Studios declared by TPDB listing address, parsed into siteId + tags.
+   *  Each URL becomes a lane scoped to that site and its tag filter.
+   *  The tag filter is applied client-side (TPDB's own tag filter is broken),
+   *  and the `site_id` is forwarded to the API. Unknown query parameters are
+   *  rejected at boot time rather than silently ignored.
+   */
+  tpdbListingUrls?: readonly string[];
+  /** Studios declared by URL, with their TPDB site ids already resolved.
    *
-   * These take precedence over the name-derived studios below, and any Traxxx
-   * lane they do not mention keeps the old name lookup. That is what makes the
-   * migration incremental: declaring one studio pins it exactly, and everything
-   * else behaves as before.
+   *  These take precedence over the name-derived studios below, and any Traxxx
+   *  lane they do not mention keeps the old name lookup. That is what makes the
+   *  migration incremental: declaring one studio pins it exactly, and everything
+   *  else behaves as before.
    */
   studioLinks?: readonly StudioLink[];
 }
@@ -86,6 +93,7 @@ export function createSources({
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
   tpdbApiKey,
+  tpdbListingUrls,
   studioLinks,
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
@@ -101,47 +109,70 @@ export function createSources({
   ]);
   sources.splice(2, 0, ...watchlist, createWoodmanCastingXSource());
   const declared = studioLinks ?? [];
-  const studios: TpdbStudio[] = [
-    // A declared studio carries its resolved TPDB site id, so both databases file
-    // their releases under one key and the TPDB lane needs no name lookup for it.
-    ...declared.map((link) => ({
+  // TPDB listing addresses: each becomes a lane scoped to siteId + tag filter.
+  // These take precedence over name-derived studios; any Traxxx lane not mentioned
+  // keeps the old name lookup, enabling incremental migration.
+  const tpdbStudiosFromUrls = (tpdbListingUrls ?? []).flatMap((rawUrl): TpdbStudio[] => {
+    const _spec = parseTpdbListingUrl(rawUrl);
+    const studios = tpdbListingUrlsToStudios([rawUrl]);
+    const studio = studios[0];
+    if (!studio) return [];
+    return [studio];
+  });
+  // Convert declared StudioLink[] to TpdbStudio[] for the studios array
+  const declaredStudios: TpdbStudio[] = [];
+  for (const link of declared) {
+    const studio: TpdbStudio = {
       studioId: link.studioId,
       studio: link.studio,
       aliases: [...new Set([link.studio, ...(link.aliases ?? [])])],
-      ...(link.tags?.length ? { tags: link.tags } : {}),
-      ...(link.tpdb ? { siteId: link.tpdb.siteId } : {}),
-    })),
+    };
+    if (link.tags?.length) studio.tags = link.tags;
+    if (link.tpdb) studio.siteId = link.tpdb.siteId;
+    declaredStudios.push(studio);
+  }
+  const studios: TpdbStudio[] = [
+    // A declared studio carries its resolved TPDB site id, so both databases file
+    // their releases under one key and the TPDB lane needs no name lookup for it.
+    ...declaredStudios,
     // Every Traxxx lane not already declared keeps the name-lookup behaviour, so
     // an undeclared lane still works and the migration can be done studio by
     // studio rather than all at once.
     ...watchlist
       .filter((source) => !declared.some((link) => link.studioId === source.id))
-      .map((source) => {
+      .map((source): TpdbStudio => {
         const lane = traxxxWatchlist
           .map(parseTraxxxListingUrl)
           .find((spec) => spec.id === source.id)!;
         return {
           studioId: source.id,
           studio: source.name,
-          aliases: [source.name, source.id, ...(TPDB_STUDIO_ALIASES[lane.slug] ?? [])],
-          tags: lane.tags,
+          aliases: [
+            source.name,
+            source.id,
+            ...(TPDB_STUDIO_ALIASES[lane.slug] ?? []),
+          ] as readonly string[],
+          tags: lane.tags as readonly string[] | undefined,
         };
-      }),
+      })
+      .filter((s): s is TpdbStudio => s !== undefined),
     // ManyVids stores only contribute an alias when the store has a real display
     // name. A synthetic `ManyVids store <id>` label can never match a TPDB site
     // name, and registering it would let two unrelated stores collide on the same
     // cleaned alias and silently exclude a real studio (issue: synthetic aliases
     // create false collision opportunities).
-    ...[...new Set(manyvidsStoreIds)].flatMap((storeId) => {
+    ...[...new Set(manyvidsStoreIds)].flatMap((storeId): TpdbStudio[] => {
       const name = MANYVIDS_STUDIO_NAMES[storeId];
       return [
         {
           studioId: `manyvids-${storeId}`,
           studio: name ?? `ManyVids store ${storeId}`,
-          aliases: name ? [name] : [],
+          aliases: name ? [name] : ([] as readonly string[]),
         },
       ];
     }),
+    // TPDB listing address studios, declared by URL rather than by name.
+    ...tpdbStudiosFromUrls,
   ];
   sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios }));
   return sources;
