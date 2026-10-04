@@ -28,6 +28,8 @@ Node 24+. No build step: TypeScript runs through Node's native type stripping.
 | `npm run dev`                     | Watch-mode server.                                       |
 | `npm start`                       | Server.                                                  |
 | `npm run calibrate`               | Pool-match measurement. See [Calibration](#calibration). |
+| `npm run catalogue-coverage`      | Union-coverage audit. See [below](#manyvids-and-catalogue-coverage). |
+| `npm run discover-uploaders`      | Proposes trusted-pool accounts; writes nothing.          |
 | `npm test`                        | The suite. Fixture-driven, never live network.           |
 | `npm run typecheck` / `lint`      | `tsc --noEmit` / `eslint`.                               |
 | `npm run format` / `format:check` | Prettier. See the note below.                            |
@@ -57,10 +59,10 @@ are still read by no tool: not JavaScript, and not reformatable without
 rewriting vendored UI. `public/` remains a verbatim port, not hand-maintained
 code.
 
-`format:check` also covers Markdown and YAML — `README.md`, `render.yaml` and
-the workflow file are all in scope. Since Render will not deploy while a
-required check fails, an unformatted docs-only edit blocks deploys exactly as a
-broken build does. Run `npm run format` before pushing any of them.
+`format:check` covers YAML — `render.yaml` and the workflow files are in scope —
+but **Markdown is excluded** by `.prettierignore`, so `README.md` is never
+formatted or checked and a prose edit cannot fail this command. Run
+`npm run format` before pushing a YAML change.
 
 ---
 
@@ -86,6 +88,7 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
 | Canonical schema (the one parse boundary) | `src/core/schema.ts`        |
 | The measured gate (pure, no I/O)          | `src/core/matching.ts`      |
 | Ladder                                    | `src/tubes/resolve.ts`      |
+| FC2 exact-code lane                       | `src/tubes/fc2-eporner.ts`  |
 | Link lifecycle                            | `src/tubes/reverify.ts`     |
 | Trusted-pool index                        | `src/tubes/eporner-pool.ts` |
 | Sources                                   | `src/sources/`              |
@@ -97,7 +100,7 @@ Five categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                             | Matcher  |
 | -------------------------------------------- | ------------------------------------- | -------- |
-| Lancelot Styles Evolution, Mambo Perv, Woodman Casting X, Traxxx watchlist | `traxxx.me` REST, no auth             | yes      |
+| Woodman Casting X, plus the built-in Traxxx watchlist (18 lanes) | `traxxx.me` REST, no auth             | yes      |
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
@@ -115,12 +118,13 @@ per sync and an incomplete page is retried no more than once per day.
 Traxxx watchlist entries use this exact grammar:
 `https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
 `?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
-rejected at startup. The built-in entry is the Vixen network filtered to the
-`anal` tag. `LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries
-and replaces that built-in list rather than appending to it, which makes a
-single lane easy to isolate during calibration.
+rejected at startup. The built-in list is the eighteen lanes in
+`src/sources/traxxx-watchlist.ts`, fifteen of them filtered to the `anal` tag.
+`LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries and replaces
+that built-in list rather than appending to it, which makes a single lane easy
+to isolate during calibration.
 
-**Woodman Casting X** is a traxxx channel lane like the two above, with one
+**Woodman Casting X** is a traxxx channel lane like the watchlist ones, with one
 exclusion: the studio writes `XXXX` as a whole token in the scene title of the
 scenes it marks, and those are dropped before the record is parsed. The marker
 comes from traxxx's title, which is the studio's own title — not from the studio
@@ -177,6 +181,17 @@ evidence can identify it. A scene without a positive duration is not resolved.
 A named winner stops resolution and receives `confidence: "high"`. If a rung
 cannot name a candidate, resolution proceeds to the next tube. There is no
 third Eporner open-search rung.
+
+The FC2 lane is the one exception to the ladder, and it is a lane **switch**
+rather than a rung: `src/tubes/fc2-eporner.ts` resolves `fc2cmadb` scenes
+instead of the ladder, because an FC2 release is named by a numeric code in a
+repost title rather than by a performer, and widening the shared gates to admit
+that would weaken every other lane. It searches the bare code, admits a result
+only when the title carries that number as a whole token, and stores every live
+upload it finds — several links for one scene, each re-verified on its own.
+Those links are `confidence: "high"` with no identity tier, because nothing is
+ranked: the code is the evidence. Its winners are tallied under `winnerPool` on
+the run row.
 
 If neither rung produces a named winner, the terminal fallback picks the
 highest-view candidate from the retained date-and-duration survivors across
@@ -255,7 +270,10 @@ recorded running time is still examined rather than assumed away.
   is scoped to that one source. A scene only absent from a successful response is
   kept until it leaves the window.
 - Upserts are keyed on the stable id `<source-id>:<source-scene-id>`, so a repeat
-  sync converges instead of duplicating.
+  sync converges instead of duplicating. A source that emits several labels joins
+  the label into that key — `<source-id>:<label-id>:<source-scene-id>` — because a
+  cross-listed post would otherwise collide on one row, where the last label
+  processed would win and the others be lost.
 - A scene with a live link is not re-matched; re-verify owns it. A scene with no
   link is retried on later cycles. A scene with no duration stays unmatched
   rather than being admitted through a weaker rule.
@@ -308,6 +326,7 @@ What the app _does_ do with that posture:
 | `/health`      | GET / HEAD | Liveness only. Contentless by design; nothing else is evaluated first. |
 | `/api/health`  | GET        | Liveness with a timestamp. A different route, and a stateful one.      |
 | `/api/scenes`  | GET        | Read model: scenes, sources, window stats, last run.                   |
+| `/api/progress` | GET       | The live cycle's meters, polled on their own cadence.                  |
 | `/api/sources` | GET        | Per-source health.                                                     |
 | `/api/runs`    | GET        | Recent run ledger.                                                     |
 | `/api/refresh` | POST       | Start or join one cycle. Returns `202` immediately.                    |
@@ -424,7 +443,7 @@ required variable: everything has a working default.
 | `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
 | `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
-| `LISZT_TRAXXX_WATCHLIST`                        | Vixen `anal` listing | Comma-separated listing URLs; setting it replaces the built-in list.  |
+| `LISZT_TRAXXX_WATCHLIST`                        | 18 built-in lanes | Comma-separated listing URLs; setting it replaces the built-in list.  |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
 | `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
 | `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
@@ -434,7 +453,6 @@ required variable: everything has a working default.
 | `LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC`           | `20`                 | Detail checks one sync may read; the rest resume next sync.           |
 | `LISZT_FC2_RECHECK_DAYS`                         | `7`                  | Retries an unmarked censorship badge before retiring it undecided.   |
 | `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
-| `LISZT_EPORNER_LQ`                               | `0`                  | The API defaults to `1`, which _includes_ low-quality.                |
 | `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `1`                  | Duration band, identical on every rung.                               |
 | `LISZT_MATCH_DATE_WINDOW_DAYS`                   | `7`                  | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
 | `LISZT_POOL_FULL_REWALK_DAYS`                    | `7`                  | Drift/deletion correction cadence.                                    |
