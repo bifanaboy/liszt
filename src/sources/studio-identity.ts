@@ -375,10 +375,20 @@ export function auditStudioLinks(links: readonly StudioLink[]): string[] {
   const problems: string[] = [];
   const byKey = new Map<string, string[]>();
   const bySite = new Map<number, string[]>();
+  // Alias -> the studioIds claiming it. The TPDB lane resolves an alias to
+  // `null` when two studios claim it, so a duplicated alias is SAFE at runtime -
+  // but silently so: the lane just reports the studio as unmatched and never
+  // resolves, which is indistinguishable from a studio TPDB does not carry. That
+  // is exactly the failure this declaration exists to make visible, so it is
+  // caught here instead.
+  const byAlias = new Map<string, Set<string>>();
   for (const link of links) {
     byKey.set(link.studioId, [...(byKey.get(link.studioId) ?? []), link.studio]);
     if (link.tpdb)
       bySite.set(link.tpdb.siteId, [...(bySite.get(link.tpdb.siteId) ?? []), link.studioId]);
+    for (const alias of studioAliases(link)) {
+      byAlias.set(alias, (byAlias.get(alias) ?? new Set()).add(link.studioId));
+    }
   }
   for (const [key, studios] of byKey) {
     if (studios.length > 1)
@@ -386,6 +396,13 @@ export function auditStudioLinks(links: readonly StudioLink[]): string[] {
   }
   for (const [siteId, ids] of bySite) {
     if (ids.length > 1) problems.push(`TPDB site ${siteId} is claimed by ${ids.join(", ")}`);
+  }
+  for (const [alias, ids] of [...byAlias].sort(([a], [b]) => a.localeCompare(b))) {
+    if (ids.size > 1) {
+      problems.push(
+        `alias "${alias}" is claimed by ${[...ids].sort().join(", ")}; neither would resolve in TPDB`,
+      );
+    }
   }
   return problems;
 }
