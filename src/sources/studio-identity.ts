@@ -144,19 +144,24 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   const tags = readSearchTags(url, raw);
   const tagsField = tags.length ? { tags } : {};
   const nameHint = url.searchParams.get("name") ?? undefined;
-  const uuidParam = url.searchParams.get("uuid") ?? undefined;
-  const siteId = readSiteId(url, raw);
-  if (uuidParam) {
-    if (!z.string().uuid().safeParse(uuidParam).success) {
-      throw new Error(`Invalid TPDB studio URL ${raw}: uuid is not a UUID`);
-    }
-    return {
-      candidates: [uuidParam],
-      uuid: uuidParam,
-      ...tagsField,
-      ...(nameHint ? { name: nameHint } : {}),
-    };
+  const segments = url.pathname
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => decodeURIComponent(segment));
+  // A UUID is the strongest identity TPDB offers, in the path or the query. It is
+  // read FIRST so a `site_id` in the same address cannot quietly override it, and
+  // before `site_id` is validated so junk in that parameter cannot abort an
+  // otherwise complete UUID.
+  const uuidParam = url.searchParams.get("uuid");
+  if (uuidParam !== null && !z.string().uuid().safeParse(uuidParam).success) {
+    throw new Error(`Invalid TPDB studio URL ${raw}: uuid is not a UUID`);
   }
+  const uuid = uuidParam ?? segments.find((s) => z.string().uuid().safeParse(s).success);
+  if (uuid) {
+    return { candidates: [uuid], uuid, ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
+  }
+  const siteId = readSiteId(url, raw);
   // A SEARCH address carries the studio in its query string, not its path.
   // `/scenes` is a container view every search shares, so taking the last path
   // segment as the identifier here named the container - and the lookup then
@@ -172,15 +177,6 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
       ...(name ? { name } : {}),
     };
   }
-  const segments = url.pathname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
-  const uuid = segments.find((segment) => z.string().uuid().safeParse(segment).success);
-  if (uuid) {
-    return { candidates: [uuid], uuid, ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
-  }
   // No uuid, so the identifier is the LAST path segment: the resource being
   // named. Earlier segments are containers (`/sites/...`) or sibling views
   // (`/scenes`), and offering them as candidates would spend requests on
@@ -193,7 +189,7 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   // A container view with no site_id names the CONTAINER, not a studio. Accepting
   // it would send `/sites/scenes` to the API and then let a name search pick a
   // site, which is the silent wrong-studio path this parser exists to close.
-  if (!uuid && isContainerSegment(last)) {
+  if (isContainerSegment(last)) {
     throw new Error(
       `Invalid TPDB studio URL ${raw}: a ${identifier} search needs a site_id query parameter`,
     );
@@ -234,13 +230,17 @@ function readSearchTags(url: URL, raw: string): string[] {
     const name = value.trim();
     if (name) names.add(name);
   }
-  // `tag_and=0` means the tags are ALTERNATIVES; the declaration's tag list is an
-  // ALL-of match (tpdb-watchlist.ts), so adopting a multi-tag OR search would
-  // quietly narrow it to the intersection. Refuse rather than change its meaning.
+  // The declaration's tag list is an ALL-of match (tpdb-watchlist.ts), so a
+  // multi-tag search whose tags are ALTERNATIVES would be quietly narrowed to
+  // their intersection. `tag_and` is the operation; anything that is not an
+  // explicit all-of - including an omitted value, whose default is not something
+  // to guess at - is refused rather than reinterpreted.
   const tagAnd = url.searchParams.get("tag_and");
-  if (names.size > 1 && tagAnd !== null && tagAnd !== "1") {
+  const allOf = tagAnd !== null && ["1", "true", "and"].includes(tagAnd.trim().toLowerCase());
+  if (names.size > 1 && !allOf) {
+    const seen = tagAnd === null ? "no tag_and" : `tag_and=${tagAnd}`;
     throw new Error(
-      `Invalid TPDB studio URL ${raw}: a tag_and=0 search with ${names.size} tags cannot be one lane`,
+      `Invalid TPDB studio URL ${raw}: ${seen} with ${names.size} tags cannot be one lane`,
     );
   }
   // Case-insensitively de-duplicated, then ordered deterministically so the same

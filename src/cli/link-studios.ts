@@ -24,7 +24,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { loadConfig } from "../config.ts";
 import { HttpFetcher } from "../core/fetcher.ts";
 import { parseTraxxxListingUrl, type TraxxxLaneSpec } from "../sources/traxxx-watchlist.ts";
-import { buildDeclaration } from "./link-studios-declaration.ts";
+import { buildDeclaration, lookupForResolver } from "./link-studios-declaration.ts";
 import {
   auditStudioLinks,
   parseTpdbStudioUrl,
@@ -90,13 +90,7 @@ const lane: TraxxxLaneSpec | undefined = traxxxInput
 const lookup = tpdbInput ? parseTpdbStudioUrl(tpdbInput) : undefined;
 
 const resolved = lookup
-  ? await resolveTpdbSite(fetcher, config.tpdbApiKey, {
-      candidates: lookup.candidates,
-      ...(lookup.uuid ? { uuid: lookup.uuid } : {}),
-      // The display name is what verifies a loose slug match. Without one the
-      // lookup can only be exact, so a name is required for a name-only URL.
-      ...(displayName ? { name: displayName } : lookup.name ? { name: lookup.name } : {}),
-    })
+  ? await resolveTpdbSite(fetcher, config.tpdbApiKey, lookupForResolver(lookup, displayName))
   : undefined;
 
 const studio = displayName ?? (lane ? lane.slug.replace(/-/g, " ") : undefined);

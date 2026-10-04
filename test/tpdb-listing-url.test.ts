@@ -42,8 +42,9 @@ test("a search address carries its tag names, and the bracket index is discarded
 });
 
 test("every tag in a multi-tag search is kept, de-duplicated and ordered", () => {
+  // tag_and=1 states the operation explicitly: all of these tags.
   const lookup = parseTpdbStudioUrl(
-    "https://theporndb.net/scenes?site_id=92&tags%5B1%5D=Anal&tags%5B2%5D=BBC&tags%5B3%5D=Anal",
+    "https://theporndb.net/scenes?site_id=92&tag_and=1&tags%5B1%5D=Anal&tags%5B2%5D=BBC&tags%5B3%5D=Anal",
   );
   assert.deepEqual(lookup.tags, ["Anal", "BBC"]);
 });

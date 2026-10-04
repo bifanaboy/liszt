@@ -51,6 +51,24 @@ function tpdbLaneId(resolved: ResolvedTpdbSite, tags: readonly string[]): string
   return scope.length ? `${base}-${scope.join("-")}` : base;
 }
 
+/**
+ * The lookup the resolver is given, with the operator's display name applied.
+ *
+ * Every field the resolver reads is carried across. Dropping `exactSiteId` here
+ * made an exact `site_id` fall back to a name match, so a stale or simply
+ * different `--name` reported an id that is exact by construction as UNRESOLVED.
+ */
+export function lookupForResolver(lookup: TpdbLookup, displayName?: string): TpdbLookup {
+  return {
+    candidates: lookup.candidates,
+    ...(lookup.uuid ? { uuid: lookup.uuid } : {}),
+    ...(lookup.exactSiteId !== undefined ? { exactSiteId: lookup.exactSiteId } : {}),
+    // The display name is what verifies a loose slug match. Without one the
+    // lookup can only be exact, so a name is required for a name-only URL.
+    ...((displayName ?? lookup.name) ? { name: displayName ?? lookup.name } : {}),
+  };
+}
+
 export function buildDeclaration(input: DeclarationInput): StudioLink {
   const { lookup, resolved, lane, studioName } = input;
   const traxxx = lane ? { kind: lane.kind, slug: lane.slug, url: lane.url } : undefined;

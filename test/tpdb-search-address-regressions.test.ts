@@ -5,7 +5,7 @@ import {
   resolveTpdbSite,
   type TpdbLookup,
 } from "../src/sources/studio-identity.ts";
-import { buildDeclaration } from "../src/cli/link-studios-declaration.ts";
+import { buildDeclaration, lookupForResolver } from "../src/cli/link-studios-declaration.ts";
 import { FetchError } from "../src/core/fetcher.ts";
 import type { Fetcher } from "../src/sources/types.ts";
 
@@ -181,6 +181,30 @@ test("a Traxxx-only paste still builds a declaration", () => {
   assert.equal(link.studioId, "network-brazzers-anal");
   assert.equal(link.tpdb, undefined);
   assert.deepEqual(link.tags, ["anal"]);
+});
+
+test("the CLI passes the exact site id through to the resolver", () => {
+  // The CLI rebuilt the lookup from `candidates`/`uuid`/`name` only, dropping
+  // `exactSiteId`. Verified live before the fix: `?site_id=988` with a
+  // non-matching --name reported UNRESOLVED for an id that is exact by
+  // construction, and emitted a junk `tpdb-studio` declaration.
+  assert.equal(
+    lookupForResolver(parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988")).exactSiteId,
+    988,
+  );
+  assert.equal(
+    lookupForResolver(parseTpdbStudioUrl("https://theporndb.net/sites/brazzers"), "Brazzers").name,
+    "Brazzers",
+  );
+});
+
+test("a uuid in the path outranks a site_id in the query", () => {
+  // A UUID is the strongest identity available; the id must not silently win
+  // over it.
+  const uuid = "e3b61b3e-0c20-4bea-9441-b88430ed6317";
+  const lookup = parseTpdbStudioUrl(`https://theporndb.net/sites/${uuid}?site_id=988`);
+  assert.equal(lookup.uuid, uuid);
+  assert.deepEqual(lookup.candidates, [uuid]);
 });
 
 test("an explicit --name still verifies a slug-only address", async () => {
