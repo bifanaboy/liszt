@@ -25,6 +25,8 @@ export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
   "tushy",
   "lancelot-styles-evolution",
   "mambo-perv",
+  "bang-originals",
+  "maximo-garcia",
 ]);
 
 /**

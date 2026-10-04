@@ -71,7 +71,6 @@ source adapters          pipeline              tube ladder            serving
 ─────────────            ────────              ───────────            ───────
 traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
 ManyVids    ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
-            │            per-source       │    guess fallback   ─┘         │
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -102,6 +101,11 @@ Four categories, in `src/sources/registry.ts`.
 | fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes |
 
 **No API keys.** `traxxx.me` replaced TPDB entirely.
+
+Rows from retired source lanes are removed, along with their playback-link and
+source-health records, at the first sync after the upgrade. Their link history
+is not transferred to a replacement lane because the old and new scene ids do
+not provide a reliable one-to-one mapping.
 
 Traxxx discovers releases. Before matching, sync reads the exact release page
 for studios covered by a Stash CommunityScrapers scene scraper and prefers
@@ -378,10 +382,14 @@ The scene response keeps the store id, original UTC launch timestamp, UTC releas
 day, runtime in seconds, price (`regular`, `onSale`, `free`), thumbnail and preview
 URLs, and known tags. Preview clips are metadata, never verified playback links.
 The endpoint currently omits tags: we leave those unknown rather than fetching
-hundreds of tag-filtered lists each run. When provided, tags and titles containing
-the whole word `trans` are excluded and existing matching rows are removed on the
-next successful poll. Hidden and club-only videos are outside this public source;
-endpoint changes fail the poll and preserve last-good records.
+hundreds of tag-filtered lists each run. ManyVids applies the shared trans and
+cross-dressing exclusion terms to titles and descriptions today, and to tags if
+the endpoint starts returning them. Existing matching rows are removed on the
+next successful poll that also returns an eligible scene; an all-excluded poll is
+treated as suspicious and keeps the last-good rows. This filter applies only to
+ManyVids; Traxxx lanes use their configured listing filters and do not apply this
+catalogue-wide exclusion. Hidden and club-only videos are outside this public
+source; endpoint changes fail the poll and preserve last-good records.
 
 For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
 ManyVids and Traxxx records in the local rolling window. TPDB and StashDB are
