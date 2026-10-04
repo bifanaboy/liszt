@@ -15,7 +15,7 @@
  */
 import { z } from "zod";
 import { FetchError } from "../core/fetcher.ts";
-import type { RawScene, SourceAdapter, SourceContext } from "./types.ts";
+import type { RawScene, SourceAdapter } from "./types.ts";
 
 const BASE = "https://apiv3.fansly.com";
 const MIN_INTERVAL_MS = 2000;
@@ -50,7 +50,7 @@ const AccountResponse = z.object({
     }),
   ),
 });
-type Account = z.infer<typeof AccountResponse>["response"][0];
+// type Account = z.infer<typeof AccountResponse>["response"][0]; // unused
 
 /** Fansly timeline response from /api/v1/timelinenew/{creatorId} */
 const TimelineResponse = z.object({
@@ -223,16 +223,6 @@ export interface FanslyStudio {
   creatorId?: string;
 }
 
-function cleanStudioName(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
 function extractHashtags(content: string): string[] {
   const tags = content.match(/#[a-zA-Z0-9_]+/g);
   if (!tags) return [];
@@ -255,10 +245,6 @@ function extractTitle(content: string): string {
     }
   }
   return content.slice(0, 100).trim();
-}
-
-function findMedia(accountMedia: Timeline["response"]["accountMedia"], contentId: string) {
-  return accountMedia.find((am) => am.id === contentId);
 }
 
 function findVideoVariant(media: Timeline["response"]["accountMedia"][0]["media"]) {
@@ -350,7 +336,7 @@ export function createFanslySource(options: {
 
         // 2. Fetch timeline posts (paginated via before/after)
         let before = 0;
-        let after = 0;
+        const after = 0;
         let postCount = 0;
 
         while (postCount < MAX_POSTS_PER_SYNC) {

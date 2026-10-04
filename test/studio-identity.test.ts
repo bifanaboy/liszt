@@ -248,12 +248,12 @@ test("two studios claiming one alias are reported, because neither would resolve
   // which reads exactly like TPDB not carrying them. Naming the conflict is the
   // difference between a visible mistake and a lane that quietly stops working.
   const problems = auditStudioLinks([
-    { studioId: "network-brazzers", studio: "Brazzers", tpdb: { siteId: 92, name: "Brazzers" } },
+    { studioId: "network-brazzers", studio: "Brazzers", tpdb: { siteIds: [92], name: "Brazzers" } },
     {
       studioId: "channel-brazzers-exxtra",
       studio: "Brazzers Exxtra",
       aliases: ["Brazzers"],
-      tpdb: { siteId: 116, name: "Brazzers Exxtra" },
+      tpdb: { siteIds: [116], name: "Brazzers Exxtra" },
     },
   ]);
   assert.equal(problems.length, 1);
@@ -270,7 +270,7 @@ test("one studio repeating its own alias is not a conflict", () => {
         studioId: "network-brazzers",
         studio: "Brazzers",
         aliases: ["Brazzers", "BRAZZERS", "brazzers"],
-        tpdb: { siteId: 92, name: "Brazzers" },
+        tpdb: { siteIds: [92], name: "Brazzers" },
       },
     ]),
     [],
@@ -280,14 +280,19 @@ test("one studio repeating its own alias is not a conflict", () => {
 
 test("two studios claiming one key or one TPDB site are reported as conflicts", () => {
   const links: StudioLink[] = [
-    { studioId: "network-brazzers", studio: "Brazzers", tpdb: { siteId: 92, name: "Brazzers" } },
+    { studioId: "network-brazzers", studio: "Brazzers", tpdb: { siteIds: [92], name: "Brazzers" } },
     {
       studioId: "network-brazzers-2",
       studio: "Brazzers Vault",
-      tpdb: { siteId: 92, name: "Brazzers Vault" },
+      tpdb: { siteIds: [92], name: "Brazzers Vault" },
     },
-    { studioId: "channel-x", studio: "X", aliases: ["X"], tpdb: { siteId: 7, name: "X" } },
-    { studioId: "channel-x-2", studio: "X two", aliases: ["X"], tpdb: { siteId: 7, name: "X2" } },
+    { studioId: "channel-x", studio: "X", aliases: ["X"], tpdb: { siteIds: [7], name: "X" } },
+    {
+      studioId: "channel-x-2",
+      studio: "X two",
+      aliases: ["X"],
+      tpdb: { siteIds: [7], name: "X2" },
+    },
   ];
   const problems = auditStudioLinks(links);
   // Three distinct problems: the shared TPDB site 92, the shared TPDB site 7, and
@@ -298,11 +303,15 @@ test("two studios claiming one key or one TPDB site are reported as conflicts", 
   assert.ok(problems.some((problem) => problem.includes('alias "x" is claimed by')));
   assert.deepEqual(
     auditStudioLinks([
-      { studioId: "network-brazzers", studio: "Brazzers", tpdb: { siteId: 92, name: "Brazzers" } },
+      {
+        studioId: "network-brazzers",
+        studio: "Brazzers",
+        tpdb: { siteIds: [92], name: "Brazzers" },
+      },
       {
         studioId: "channel-brazzers-vault",
         studio: "Brazzers Vault",
-        tpdb: { siteId: 116, name: "Brazzers Vault" },
+        tpdb: { siteIds: [116], name: "Brazzers Vault" },
       },
     ]),
     [],

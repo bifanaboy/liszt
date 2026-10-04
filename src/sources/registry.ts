@@ -140,9 +140,9 @@ export function createSources({
       studioId: link.studioId,
       studio: link.studio,
       aliases: [...new Set([link.studio, ...(link.aliases ?? [])])],
+      siteIds: link.tpdb?.siteIds ?? [],
     };
     if (link.tags?.length) studio.tags = link.tags;
-    if (link.tpdb) studio.siteId = link.tpdb.siteId;
     declaredStudios.push(studio);
   }
   const studios: TpdbStudio[] = [
@@ -167,6 +167,7 @@ export function createSources({
             ...(TPDB_STUDIO_ALIASES[lane.slug] ?? []),
           ] as readonly string[],
           tags: lane.tags as readonly string[] | undefined,
+          siteIds: [],
         };
       })
       .filter((s): s is TpdbStudio => s !== undefined),
@@ -182,6 +183,7 @@ export function createSources({
           studioId: `manyvids-${storeId}`,
           studio: name ?? `ManyVids store ${storeId}`,
           aliases: name ? [name] : ([] as readonly string[]),
+          siteIds: [],
         },
       ];
     }),

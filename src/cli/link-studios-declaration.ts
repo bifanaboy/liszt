@@ -104,7 +104,7 @@ export function buildDeclaration(input: DeclarationInput): StudioLink {
     ...(resolved
       ? {
           tpdb: {
-            siteId: resolved.siteId,
+            siteIds: [resolved.siteId],
             ...(resolved.uuid ? { uuid: resolved.uuid } : {}),
             name: resolved.name,
             ...(resolved.shortName ? { shortName: resolved.shortName } : {}),

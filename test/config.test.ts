@@ -19,7 +19,7 @@ const brazzers = {
     slug: "brazzers",
     url: "https://traxxx.me/network/brazzers/scenes/latest/1",
   },
-  tpdb: { siteId: 92, name: "Brazzers" },
+  tpdb: { siteIds: [92], name: "Brazzers" },
 };
 
 test("declared studios are read from a file path or from inline JSON", () => {
@@ -58,7 +58,7 @@ test("two studios claiming one key or one TPDB site stop the app starting", () =
       ...brazzers,
       studioId: "network-brazzers-2",
       studio: "Brazzers Vault",
-      tpdb: { siteId: 92, name: "Brazzers Vault" },
+      tpdb: { siteIds: [92], name: "Brazzers Vault" },
     },
   ];
   assert.throws(() => loadConfig({ LISZT_STUDIO_LINKS: JSON.stringify(conflict) }), /TPDB site 92/);
@@ -67,7 +67,7 @@ test("two studios claiming one key or one TPDB site stop the app starting", () =
       loadConfig({
         LISZT_STUDIO_LINKS: JSON.stringify([
           brazzers,
-          { ...brazzers, tpdb: { siteId: 116, name: "Brazzers Vault" } },
+          { ...brazzers, tpdb: { siteIds: [116], name: "Brazzers Vault" } },
         ]),
       }),
     /duplicate studioId "network-brazzers-anal"/,
