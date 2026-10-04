@@ -45,11 +45,52 @@ for (const [name, url] of [
   });
 }
 
-test("the default watchlist creates the Vixen anal lane and stable lane ids", () => {
-  assert.deepEqual(TRAXXX_WATCHLIST, ["https://traxxx.me/network/vixen/scenes/latest/1?tags=anal"]);
-  assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), ["network-vixen-anal"]);
-  const [lane] = createTraxxxWatchlistStudios(TRAXXX_WATCHLIST);
-  assert.equal(lane?.id, "network-vixen-anal");
+test("the default watchlist creates the intended lanes and stable lane ids", () => {
+  assert.deepEqual(TRAXXX_WATCHLIST, [
+    "https://traxxx.me/channel/elegantangel/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/brazzers/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/bangbros/scenes/latest/1?tags=anal",
+    "https://traxxx.me/channel/disciplesofdesire/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/bang/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/mikeadriano/scenes/latest/1?tags=anal",
+    "https://traxxx.me/channel/hookuphotshot/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/julesjordan/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/xempire/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/teamskeet/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/pervcity/scenes/latest/1?tags=anal",
+    "https://traxxx.me/channel/rickysroom/scenes/latest/1?tags=anal",
+    "https://traxxx.me/network/exploitedx/scenes/latest/1?tags=anal",
+    "https://traxxx.me/channel/herlimit/scenes/latest/1?tags=anal",
+    "https://traxxx.me/channel/natashateenfilms/scenes/latest/1",
+    "https://traxxx.me/network/firstanalquest/scenes/latest/1",
+    "https://traxxx.me/channel/wakeupnfuck/scenes/latest/1",
+    "https://traxxx.me/channel/darkkotv/scenes/latest/1?tags=anal",
+  ]);
+  const expectedIds = [
+    "channel-elegantangel-anal",
+    "network-brazzers-anal",
+    "network-bangbros-anal",
+    "channel-disciplesofdesire-anal",
+    "network-bang-anal",
+    "network-mikeadriano-anal",
+    "channel-hookuphotshot-anal",
+    "network-julesjordan-anal",
+    "network-xempire-anal",
+    "network-teamskeet-anal",
+    "network-pervcity-anal",
+    "channel-rickysroom-anal",
+    "network-exploitedx-anal",
+    "channel-herlimit-anal",
+    "channel-natashateenfilms",
+    "network-firstanalquest",
+    "channel-wakeupnfuck",
+    "channel-darkkotv-anal",
+  ];
+  assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), expectedIds);
+  assert.deepEqual(
+    createTraxxxWatchlistStudios(TRAXXX_WATCHLIST).map((lane) => lane.id),
+    expectedIds,
+  );
 });
 
 test("configuration replaces the default watchlist and empty input keeps the default", () => {
@@ -65,7 +106,9 @@ test("the registry replaces the retired Tushy lane with watchlist lanes", () => 
     madouquApiBase: "https://example.test",
     traxxxWatchlist: TRAXXX_WATCHLIST,
   }).map((source) => source.id);
-  assert.ok(ids.includes("network-vixen-anal"));
+  for (const id of createTraxxxLaneIds(TRAXXX_WATCHLIST)) {
+    assert.equal(ids.filter((sourceId) => sourceId === id).length, 1, id);
+  }
   assert.ok(!ids.includes("tushy"));
 });
 
@@ -90,7 +133,10 @@ test("watchlist rejects duplicate IDs, including reordered tags and ambiguous sl
       "https://traxxx.me/network/vixen/scenes/latest/1?tags=bbc,anal",
       "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal,bbc",
     ],
-    ["https://traxxx.me/network/vixen-anal/scenes/latest/1", TRAXXX_WATCHLIST[0]!],
+    [
+      "https://traxxx.me/network/vixen-anal/scenes/latest/1",
+      "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal",
+    ],
   ]) {
     assert.throws(() => createTraxxxWatchlistStudios(urls), /Duplicate Traxxx watchlist ID/);
   }
@@ -98,8 +144,8 @@ test("watchlist rejects duplicate IDs, including reordered tags and ambiguous sl
 
 test("watchlist rejects reserved IDs", () => {
   assert.throws(
-    () => createTraxxxWatchlistStudios(TRAXXX_WATCHLIST, ["network-vixen-anal"]),
-    /Reserved Traxxx watchlist ID "network-vixen-anal"/,
+    () => createTraxxxWatchlistStudios(TRAXXX_WATCHLIST, ["network-brazzers-anal"]),
+    /Reserved Traxxx watchlist ID "network-brazzers-anal"/,
   );
 });
 
