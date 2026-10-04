@@ -6,6 +6,22 @@ import {
   parseVixenResponse,
   scrapeReleaseMetadata,
 } from "../src/sources/studio-metadata.ts";
+import { extractStudioMetadata, isUrlAllowed } from "../src/sources/studio-site.ts";
+
+function htmlFetcher(html: string, onFetch?: (url: string) => void): Fetcher {
+  return {
+    async fetch(url) {
+      onFetch?.(url);
+      return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
+    },
+    async text() {
+      return html;
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+}
 
 const SLUG = "hotel-vixen-season-3-episode-12-it-got-better";
 
@@ -140,4 +156,50 @@ test("Woodman page extraction follows the Stash scene fields and does not claim 
   assert.deepEqual(result?.tags, ["Casting", "Behind the Scenes"]);
   assert.equal(result?.thumbnailUrl, "https://cdn.example.test/poster.jpg");
   assert.equal(result?.durationSec, undefined);
+});
+
+test("a page that names a different release is not used", async () => {
+  const html = `
+    <link rel="canonical" href="https://www.sexlikereal.com/watch/999">
+    <h1>Someone else's scene</h1>
+    <script>{"duration":"PT30M"}</script>
+  `;
+  const result = await scrapeReleaseMetadata(
+    "https://www.sexlikereal.com/watch/123",
+    htmlFetcher(html),
+  );
+  assert.equal(result, null);
+});
+
+test("a malformed page date is dropped instead of failing the scene", async () => {
+  const html = `
+    <h1>A scene with a broken date</h1>
+    <i class="bi-calendar3"></i> 2026-02-31
+    <script>{"duration":"PT30M"}</script>
+  `;
+  const result = await scrapeReleaseMetadata(
+    "https://www.bustyworld.com/watch/123",
+    htmlFetcher(html),
+  );
+  assert.equal(result?.releaseDate, undefined);
+  assert.equal(result?.title, "A scene with a broken date");
+});
+
+test("BustyWorld performer names are read from the link text, not the markup", () => {
+  const html = `<h1 class="watch__title"><a href="/p/1">Jane Doe</a></h1>`;
+  assert.deepEqual(extractStudioMetadata(html, "https://www.bustyworld.com/watch/123").performers, [
+    "Jane Doe",
+  ]);
+});
+
+test("an inherited object property is not a registered studio host", () => {
+  for (const host of ["constructor", "__proto__", "toString"]) {
+    assert.equal(getStudioMetadataProfile(`https://${host}/videos/example`), null, host);
+  }
+});
+
+test("a redirect cannot move the request to another port or with credentials", () => {
+  assert.equal(isUrlAllowed(new URL("https://www.sexlikereal.com:8443/watch/1")), false);
+  assert.equal(isUrlAllowed(new URL("https://user@www.sexlikereal.com/watch/1")), false);
+  assert.equal(isUrlAllowed(new URL("https://www.sexlikereal.com/watch/1")), true);
 });

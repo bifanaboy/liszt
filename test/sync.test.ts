@@ -297,6 +297,81 @@ test("sync prefers exact studio metadata and keeps Traxxx values for fields the 
   }
 });
 
+test("a corrected release URL is read again, even inside the retry interval", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  const OLD_URL = "https://www.tushy.com/videos/hotel-vixen-season-3-episode-12-it-got-better";
+  const NEW_URL = "https://www.tushy.com/videos/hotel-vixen-season-3-episode-13-the-fix";
+  let releaseUrl = OLD_URL;
+  const requested: string[] = [];
+  const fetcher = {
+    async fetch(_url: string, options: { body?: string } = {}) {
+      const request = JSON.parse(options.body ?? "{}") as {
+        variables?: { videoSlug?: string };
+      };
+      requested.push(request.variables?.videoSlug ?? "");
+      return new Response(
+        JSON.stringify({
+          data: {
+            findOneVideo: {
+              slug: request.variables?.videoSlug,
+              title: "Studio title",
+              releaseDate: "2026-03-01T00:00:00Z",
+              runLength: "00:25:51",
+              models: [{ name: "Nicole Kitt" }],
+              categories: [],
+              images: { poster: [] },
+            },
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    },
+    async text() {
+      throw new Error("unused");
+    },
+    async json() {
+      throw new Error("unused");
+    },
+  };
+  const source = adapter("traxxx-watchlist", async () => ({
+    scenes: [
+      raw("vixen-1", {
+        source: "traxxx.me",
+        studioId: "tushy",
+        releaseUrl,
+        fieldProvenance: {},
+      }),
+    ],
+    verifiedEmpty: false,
+  }));
+  const sync = createSync({
+    store,
+    sources: [source],
+    fetcher,
+    clock: fixedClock(NOW),
+    log: new NullLogger(),
+    windowDays: 90,
+    fetchConcurrency: 2,
+    lookups: { poolLookup: null, sxyprnLookup: null },
+    resolveEnabled: false,
+  });
+  try {
+    await sync("first");
+    assert.equal(store.getScene("traxxx-watchlist:tushy:vixen-1")?.title, "Studio title");
+    // The page is complete and the retry interval has not passed, so only a
+    // changed release URL can make the cycle read it again.
+    releaseUrl = NEW_URL;
+    await sync("corrected");
+    assert.deepEqual(requested, [
+      "hotel-vixen-season-3-episode-12-it-got-better",
+      "hotel-vixen-season-3-episode-13-the-fix",
+    ]);
+  } finally {
+    store.close();
+  }
+});
+
 test("incomplete studio metadata retries only after 24 hours", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();

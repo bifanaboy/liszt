@@ -214,6 +214,24 @@ export function normaliseScene(
 }
 
 const STUDIO_RETRY_MS = 24 * 60 * 60 * 1000;
+/** The most studio release pages one cycle reads, across every source. */
+const STUDIO_LOOKUP_LIMIT = 50;
+
+/** One adapter's fetched records, its stored counterparts, and its lookups. */
+interface FetchedLane {
+  ok: true;
+  adapter: SourceAdapter;
+  result: SourceResult;
+  existing: Map<string, Scene>;
+  pages: Map<RawScene, Partial<RawScene> | null>;
+  checkedAt: Map<RawScene, string>;
+}
+
+/** One adapter that failed; its last-good records stay in the store. */
+interface FailedLane {
+  ok: false;
+  outcome: RunOutcome;
+}
 
 /** Merge one exact-page result without losing verified studio fields on later polls. */
 export function mergeStudioMetadata(
@@ -363,7 +381,6 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const from = dateOnly(new Date(now.getTime() - windowDays * 86_400_000));
     const runId = `sync-${now.getTime()}-${randomUUID().slice(0, 8)}`;
     const startedAt = now.toISOString();
-    const studioBudget = { remaining: 50 };
     // The tracker is CYCLE-scoped and is begun by the composition root, before
     // the pool index - the index runs first and its progress must survive. A
     // direct caller that never began it (a test, or `createSync` used on its
@@ -385,7 +402,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         error: null,
       });
       log.info("sync started", { runId, reason, window: { from, to } });
-      const outcomes = await fanOut(from, now, studioBudget);
+      const outcomes = await fanOut(from, now);
       const { matched, resolved, reverified, rejections, winners, expired, windowScenes } =
         await linkAndTally(from, to, now);
       return tally(
@@ -400,18 +417,20 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     }
   };
 
-  /** Phase 1: every source, in isolation, one completion per configured adapter. */
-  async function fanOut(
-    from: string,
-    now: Date,
-    studioBudget: { remaining: number },
-  ): Promise<RunOutcome[]> {
+  /**
+   * Phase 1: every source, in isolation, one completion per configured adapter.
+   *
+   * Sources are fetched first and stored afterwards, because the studio lookup
+   * budget is spent across the whole cycle. Slicing it inside each adapter
+   * would hand it to whichever source answers first, and a source that had
+   * never been checked would wait behind another source's due retries.
+   */
+  async function fanOut(from: string, now: Date): Promise<RunOutcome[]> {
     progress?.stage("populating");
-    return mapWithConcurrency(
+    const all = await mapWithConcurrency(
       [...sources],
-      async (adapter): Promise<RunOutcome> => {
+      async (adapter): Promise<FetchedLane | FailedLane> => {
         progress?.sourceStart(adapter.id);
-        let outcome: RunOutcome;
         try {
           const result: SourceResult = await adapter.fetch(
             from,
@@ -428,104 +447,14 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
               "returned no scenes without asserting an empty source (suspicious extraction failure)",
             );
           }
-          let count = 0;
-          // One bulk read, not one per record: the stored links have to reach
-          // `normaliseScene` so the metadata upsert preserves them.
-          const existing = store.getScenesByIds(result.scenes.map((raw) => sceneKey(adapter, raw)));
-          const pages = new Map<RawScene, Partial<RawScene> | null>();
-          const checkedAt = new Map<RawScene, string>();
-          const traxxxScenes = result.scenes
-            .flatMap((raw) => {
-              if (raw.source !== "traxxx.me" || !raw.releaseUrl) return [];
-              const profile = getStudioMetadataProfile(raw.releaseUrl);
-              if (!profile) return [];
-              const previous = existing.get(sceneKey(adapter, raw));
-              if (
-                previous &&
-                profile.fields.every((field) => previous.fieldProvenance[field] === "studio-site")
-              ) {
-                return [];
-              }
-              const attemptedAt = previous?.studioMetadataCheckedAt;
-              if (
-                attemptedAt &&
-                now.getTime() - new Date(attemptedAt).getTime() < STUDIO_RETRY_MS
-              ) {
-                return [];
-              }
-              return [{ raw, previous, attemptedAt }];
-            })
-            .sort((a, b) => {
-              if (!a.attemptedAt && b.attemptedAt) return -1;
-              if (a.attemptedAt && !b.attemptedAt) return 1;
-              if (!a.attemptedAt && !b.attemptedAt) {
-                return a.raw.releaseDate.localeCompare(b.raw.releaseDate);
-              }
-              return (
-                (a.attemptedAt ? Date.parse(a.attemptedAt) : 0) -
-                (b.attemptedAt ? Date.parse(b.attemptedAt) : 0)
-              );
-            });
-          const selected = traxxxScenes.slice(0, studioBudget.remaining);
-          studioBudget.remaining -= selected.length;
-          for (const { raw } of selected) {
-            checkedAt.set(raw, now.toISOString());
-            try {
-              pages.set(raw, await scrapeReleaseMetadata(raw.releaseUrl!, fetcher));
-            } catch (error) {
-              pages.set(raw, null);
-              log.warn("sync: studio metadata lookup failed; keeping catalogue values", {
-                source: adapter.id,
-                scene: raw.sourceSceneId,
-                error: (error as Error).message,
-              });
-            }
-          }
-          store.transaction(() => {
-            for (const raw of result.scenes) {
-              try {
-                const previous = existing.get(sceneKey(adapter, raw));
-                const merged =
-                  checkedAt.has(raw) || raw.source === "traxxx.me"
-                    ? mergeStudioMetadata(raw, pages.get(raw) ?? null, previous)
-                    : raw;
-                const scene = normaliseScene(adapter, merged, now, previous, checkedAt.get(raw));
-                const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
-                const unique = new Map(
-                  provenance.map((item) => [
-                    `${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`,
-                    item,
-                  ]),
-                );
-                if (pages.get(raw)?.provenance) {
-                  const item = pages.get(raw)!.provenance!;
-                  unique.set(`${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`, {
-                    ...item,
-                    fetchedAt: now.toISOString(),
-                  } as Scene["provenance"][number]);
-                }
-                scene.provenance = [...unique.values()];
-                store.upsertScene(scene);
-                count += 1;
-              } catch (error) {
-                log.warn("sync: skipped an invalid record", {
-                  source: adapter.id,
-                  error: (error as Error).message,
-                });
-              }
-            }
-            // Only IDs the source positively excluded are deleted, and only from
-            // this lane. Absence from `scenes` deletes nothing: a bounded run
-            // that checked part of its queue must not remove the rest.
-            store.deleteSourceScenes(adapter.id, result.excludedSceneIds ?? []);
-            recordSourceSuccess(store, adapter, count, now, windowDays, result.labels);
-          });
-          log.info("sync: source ok", {
-            source: adapter.id,
-            count,
-            verifiedEmpty: result.verifiedEmpty,
-          });
-          outcome = { source: adapter.id, ok: true, count };
+          return {
+            ok: true,
+            adapter,
+            result,
+            existing: existingFor(adapter, result),
+            pages: new Map(),
+            checkedAt: new Map(),
+          };
         } catch (error) {
           const message = (error as Error).message;
           recordSourceFailure(store, adapter, message, windowDays);
@@ -533,12 +462,183 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             source: adapter.id,
             error: message,
           });
-          outcome = { source: adapter.id, ok: false, count: 0, error: message };
+          return {
+            ok: false,
+            outcome: { source: adapter.id, ok: false, count: 0, error: message },
+          };
+        } finally {
+          // An attempt, not a success: the meter has to reach its total even
+          // when a source throws, or a failing source reads as a stalled
+          // pipeline. Counted here because the store writes happen after
+          // every source has been fetched, and the bar has to stay live.
+          progress?.sourceDone(adapter.id);
         }
-        // An attempt, not a success: the meter has to reach its total even when
-        // a source throws, or a failing source reads as a stalled pipeline.
-        progress?.sourceDone(adapter.id);
-        return outcome;
+      },
+      fetchConcurrency,
+    );
+    const lanes = all.filter((lane): lane is FetchedLane => lane.ok);
+    const outcomes: RunOutcome[] = all
+      .filter((lane): lane is FailedLane => !lane.ok)
+      .map((lane) => lane.outcome);
+
+    await runStudioLookups(lanes, now);
+
+    for (const lane of lanes) {
+      let count = 0;
+      try {
+        store.transaction(() => {
+          for (const raw of lane.result.scenes) {
+            try {
+              const previous = lane.existing.get(sceneKey(lane.adapter, raw));
+              const merged = studioFieldsRetained(lane, raw)
+                ? mergeStudioMetadata(raw, lane.pages.get(raw) ?? null, previousFor(raw, previous))
+                : raw;
+              const scene = normaliseScene(
+                lane.adapter,
+                merged,
+                now,
+                previous,
+                lane.checkedAt.get(raw),
+              );
+              const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
+              const unique = new Map(
+                provenance.map((item) => [
+                  `${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`,
+                  item,
+                ]),
+              );
+              if (lane.pages.get(raw)?.provenance) {
+                const item = lane.pages.get(raw)!.provenance!;
+                unique.set(`${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`, {
+                  ...item,
+                  fetchedAt: now.toISOString(),
+                } as Scene["provenance"][number]);
+              }
+              scene.provenance = [...unique.values()];
+              store.upsertScene(scene);
+              count += 1;
+            } catch (error) {
+              log.warn("sync: skipped an invalid record", {
+                source: lane.adapter.id,
+                error: (error as Error).message,
+              });
+            }
+          }
+          // Only IDs the source positively excluded are deleted, and only from
+          // this lane. Absence from `scenes` deletes nothing: a bounded run
+          // that checked part of its queue must not remove the rest.
+          store.deleteSourceScenes(lane.adapter.id, lane.result.excludedSceneIds ?? []);
+          recordSourceSuccess(store, lane.adapter, count, now, windowDays, lane.result.labels);
+        });
+        log.info("sync: source ok", {
+          source: lane.adapter.id,
+          count,
+          verifiedEmpty: lane.result.verifiedEmpty,
+        });
+        outcomes.push({ source: lane.adapter.id, ok: true, count });
+      } catch (error) {
+        const message = (error as Error).message;
+        recordSourceFailure(store, lane.adapter, message, windowDays);
+        log.error("sync: source failed, retaining last-good records", {
+          source: lane.adapter.id,
+          error: message,
+        });
+        outcomes.push({ source: lane.adapter.id, ok: false, count: 0, error: message });
+      }
+    }
+    return outcomes;
+  }
+
+  /** One bulk read, not one per record: the stored links have to reach the upsert. */
+  function existingFor(adapter: SourceAdapter, result: SourceResult): Map<string, Scene> {
+    return store.getScenesByIds(result.scenes.map((raw) => sceneKey(adapter, raw)));
+  }
+
+  /** The stored scene, minus fields a different studio page supplied. */
+  function previousFor(raw: RawScene, previous: Scene | undefined): Scene | undefined {
+    const studioUrl = lastStudioUrl(previous);
+    if (!previous || !raw.releaseUrl || !studioUrl || studioUrl === raw.releaseUrl) {
+      return previous;
+    }
+    // The release URL changed, so the page that supplied these values is no
+    // longer the page being asked about. Their provenance goes with them.
+    const fieldProvenance = Object.fromEntries(
+      Object.entries(previous.fieldProvenance).filter(([, value]) => value !== "studio-site"),
+    );
+    return { ...previous, fieldProvenance };
+  }
+
+  /** True when a studio-supplied field may be carried forward for this record. */
+  function studioFieldsRetained(lane: FetchedLane, raw: RawScene): boolean {
+    return lane.checkedAt.has(raw) || raw.source === "traxxx.me";
+  }
+
+  /** The release page that last supplied studio fields, or undefined. */
+  function lastStudioUrl(scene: Scene | undefined): string | undefined {
+    return scene?.provenance.findLast(
+      (item) => item.source === "studio-site" && Boolean(item.recordUrl),
+    )?.recordUrl;
+  }
+
+  /** One studio lookup per selected record, in bounded parallel across lanes. */
+  async function runStudioLookups(lanes: FetchedLane[], now: Date): Promise<void> {
+    const candidates = lanes
+      .flatMap((lane) =>
+        lane.result.scenes.flatMap((raw) => {
+          if (raw.source !== "traxxx.me" || !raw.releaseUrl) return [];
+          const profile = getStudioMetadataProfile(raw.releaseUrl);
+          if (!profile) return [];
+          const previous = lane.existing.get(sceneKey(lane.adapter, raw));
+          const attemptedAt = previous?.studioMetadataCheckedAt ?? null;
+          // A release URL that no studio page has ever answered for has no
+          // cooldown either: the recorded attempt describes a different page.
+          const studioUrl = lastStudioUrl(previous);
+          if (previous && studioUrl && studioUrl !== raw.releaseUrl) {
+            return [{ lane, raw, previous, attemptedAt, profile }];
+          }
+          if (profile.fields.every((field) => previous?.fieldProvenance[field] === "studio-site")) {
+            return [];
+          }
+          if (attemptedAt && now.getTime() - new Date(attemptedAt).getTime() < STUDIO_RETRY_MS) {
+            return [];
+          }
+          return [{ lane, raw, previous, attemptedAt, profile }];
+        }),
+      )
+      .sort((a, b) => {
+        // Never attempted first, then oldest attempt: the order the cycle
+        // promises, decided once for every source rather than per adapter.
+        if (!a.attemptedAt && b.attemptedAt) return -1;
+        if (a.attemptedAt && !b.attemptedAt) return 1;
+        if (!a.attemptedAt && !b.attemptedAt) {
+          return a.raw.releaseDate.localeCompare(b.raw.releaseDate);
+        }
+        return (
+          (a.attemptedAt ? Date.parse(a.attemptedAt) : 0) -
+          (b.attemptedAt ? Date.parse(b.attemptedAt) : 0)
+        );
+      });
+    const selected = candidates.slice(0, STUDIO_LOOKUP_LIMIT);
+    const stamp = now.toISOString();
+    for (const candidate of selected) {
+      candidate.lane.checkedAt.set(candidate.raw, stamp);
+    }
+    // Isolated, not the shared pool: a studio that is timing out must not hold
+    // every other source's request behind it, and 50 serial lookups would add
+    // half a minute to a cycle for no gain.
+    await mapIsolated(
+      selected,
+      async ({ lane, raw }) => {
+        try {
+          lane.pages.set(raw, await scrapeReleaseMetadata(raw.releaseUrl!, fetcher));
+        } catch (error) {
+          lane.pages.set(raw, null);
+          log.warn("sync: studio metadata lookup failed; keeping catalogue values", {
+            source: lane.adapter.id,
+            scene: raw.sourceSceneId,
+            error: (error as Error).message,
+          });
+        }
       },
       fetchConcurrency,
     );

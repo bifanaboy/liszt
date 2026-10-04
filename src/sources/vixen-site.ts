@@ -1,7 +1,7 @@
 import { parseIsoDuration } from "./studio-site.ts";
 import type { Fetcher, RawScene } from "./types.ts";
 
-export const VIXEN_SITE_CODES: Readonly<Record<string, string>> = Object.freeze({
+const VIXEN_CODES: Readonly<Record<string, string>> = Object.freeze({
   "www.blacked.com": "BLACKED",
   "www.blackedraw.com": "BLACKEDRAW",
   "www.deeper.com": "DEEPER",
@@ -12,6 +12,18 @@ export const VIXEN_SITE_CODES: Readonly<Record<string, string>> = Object.freeze(
   "www.vixen.com": "VIXEN",
   "www.wifey.com": "WIFEY",
 });
+
+/**
+ * A `Map`, not the frozen record above: an object lookup answers `constructor`
+ * or `__proto__` from the prototype chain, so an unreviewed hostname supplied
+ * by a watched record would pass as a registered site.
+ */
+const VIXEN_SITE_CODES: ReadonlyMap<string, string> = new Map(Object.entries(VIXEN_CODES));
+
+/** The Vixen site code for an exact registered host, or null. */
+export function vixenSiteCodeFor(hostname: string): string | null {
+  return VIXEN_SITE_CODES.get(hostname.toLowerCase()) ?? null;
+}
 
 const VIDEO_QUERY = `query StudioVideo($videoSlug: String!, $site: Site!) {
   findOneVideo(input: { slug: $videoSlug, site: $site }) {
@@ -112,7 +124,7 @@ export async function scrapeVixenMetadata(
   } catch {
     return null;
   }
-  const site = VIXEN_SITE_CODES[url.hostname.toLowerCase()];
+  const site = vixenSiteCodeFor(url.hostname);
   const slug = videoSlug(url);
   if (url.protocol !== "https:" || !site || !slug || url.username || url.password || url.port) {
     return null;
