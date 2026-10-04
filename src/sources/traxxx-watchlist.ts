@@ -11,7 +11,24 @@ export interface TraxxxLaneSpec {
 }
 
 export const TRAXXX_WATCHLIST: readonly string[] = Object.freeze([
-  "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/elegantangel/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/brazzers/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/bangbros/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/disciplesofdesire/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/bang/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/mikeadriano/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/hookuphotshot/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/julesjordan/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/xempire/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/teamskeet/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/pervcity/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/rickysroom/scenes/latest/1?tags=anal",
+  "https://traxxx.me/network/exploitedx/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/herlimit/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/natashateenfilms/scenes/latest/1",
+  "https://traxxx.me/network/firstanalquest/scenes/latest/1",
+  "https://traxxx.me/channel/wakeupnfuck/scenes/latest/1",
+  "https://traxxx.me/channel/darkkotv/scenes/latest/1?tags=anal",
 ]);
 
 export function parseTraxxxListingUrl(raw: string): TraxxxLaneSpec {
