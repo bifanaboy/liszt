@@ -68,6 +68,7 @@ async function main(): Promise<void> {
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
     store,
     tpdbApiKey: config.tpdbApiKey,
+    studioLinks: config.studioLinks,
   });
 
   // Rung 2 is optional. A missing package is a calm state, not a crash.

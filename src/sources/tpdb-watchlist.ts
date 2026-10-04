@@ -41,6 +41,14 @@ export interface TpdbStudio {
   studio: string;
   aliases: readonly string[];
   tags?: readonly string[];
+  /**
+   * The TPDB site id, when the studio was declared with one.
+   *
+   * A declared id is authoritative and costs no request: the studio was
+   * resolved once, by `npm run link-studios`, against the live API. Only an
+   * undeclared studio falls back to the name lookup below.
+   */
+  siteId?: number;
 }
 
 export function cleanStudioName(value: string): string {
@@ -145,6 +153,14 @@ export function createTpdbWatchlistSource(options: {
       // lookups and past MAX_PAGES, so the walk could not complete at all.
       if (!cachedSites.size) {
         for (const studio of options.studios) {
+          // A declared site id is taken as given: it was resolved and verified
+          // once, by hand, against the live API. Re-deriving it from a name on
+          // every boot would risk resolving to a DIFFERENT site after TPDB
+          // renames something - a silent change of which releases a lane files.
+          if (studio.siteId !== undefined) {
+            cachedSites.set(studio.siteId, studio);
+            continue;
+          }
           if (studio.aliases.every((alias) => !cleanStudioName(alias))) continue;
           for (const alias of studio.aliases) {
             const key = cleanStudioName(alias);

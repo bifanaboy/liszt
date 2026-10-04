@@ -48,4 +48,13 @@ export default tseslint.config(
     languageOptions: { sourceType: "module" },
     rules: { "no-undef": "off" },
   },
+  {
+    // Local operator diagnostics: scripts run by hand to check the live sources,
+    // never imported by the app. Printing their result IS their output - unlike
+    // the CLIs in src/cli, which write to stdout deliberately rather than
+    // logging - so `no-console` is off here for the same reason it is off for
+    // public/: these files report to a human, not to a log pipeline.
+    files: ["tools/**/*.ts"],
+    rules: { "no-console": "off" },
+  },
 );
