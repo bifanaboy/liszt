@@ -499,7 +499,23 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     // too, so a release already in the catalogue keeps its existing row and
     // lane order decides ties.
     const claimed = new Map<string, string>();
+    // A scene its own source has POSITIVELY excluded does not hold its claim. It
+    // is about to be deleted, so if it kept the claim, a second lane's record
+    // for that same release would be suppressed as a duplicate - and then the
+    // stored row would be deleted by the exclusion, leaving the release absent
+    // from the catalogue until some later sync happened to re-import it. The
+    // claim map has to reflect what will exist AFTER the write phase, not what
+    // exists now.
+    // Matched on (source_id, native id) rather than a composed string: a scene
+    // id is `source:id` for a plain lane but `source:label:id` when the adapter
+    // emits sub-labels, and the exclusion list holds the NATIVE id either way.
+    const excluded = new Set(
+      lanes.flatMap((lane) =>
+        (lane.result.excludedSceneIds ?? []).map((id) => `${lane.adapter.id} ${id}`),
+      ),
+    );
     for (const scene of store.listAll()) {
+      if (excluded.has(`${scene.sourceId} ${scene.id.slice(scene.sourceId.length + 1)}`)) continue;
       const identity = scene.releaseUrl ? releaseIdentity(scene) : undefined;
       if (identity) claimed.set(identity, scene.id);
     }

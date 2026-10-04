@@ -118,6 +118,45 @@ test("a release with no URL is kept rather than dropped", async () => {
   }
 });
 
+test("an excluded stored scene releases its claim, so another lane's record survives", async () => {
+  // The claim map is seeded from stored rows, so an excluded scene that kept its
+  // claim would suppress the second lane's record for the same release - and the
+  // exclusion then deletes the stored row, leaving the release absent until a
+  // later sync happened to re-import it.
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const excluding = adapter("lane-a", () => []);
+    // A plain lane, so the stored id is exactly `lane-a:1` - the same shape
+    // `deleteSourceScenes` deletes by.
+    store.upsertScene(
+      normaliseScene(
+        adapter("lane-a", () => []),
+        raw("1", { releaseUrl: RELEASE }),
+        new Date(NOW),
+        undefined,
+        null,
+      ),
+    );
+    excluding.fetch = async (): Promise<SourceResult> => ({
+      scenes: [],
+      // A lane returning nothing MUST assert it is genuinely empty, or the sync
+      // treats it as a parser failure and the lane never reaches the dedup.
+      verifiedEmpty: true,
+      excludedSceneIds: ["1"],
+    });
+    await buildSync(store, [
+      excluding,
+      adapter("lane-b", () => [raw("other", { releaseUrl: RELEASE })]),
+    ])("first");
+    const rows = store.listAll();
+    assert.equal(rows.length, 1, "the release is still present, filed under the surviving lane");
+    assert.equal(rows[0]?.id, "lane-b:other");
+  } finally {
+    store.close();
+  }
+});
+
 test("two different releases from one lane are not collapsed into each other", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
