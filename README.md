@@ -61,8 +61,10 @@ code.
 
 `format:check` covers YAML — `render.yaml` and the workflow files are in scope —
 but **Markdown is excluded** by `.prettierignore`, so `README.md` is never
-formatted or checked and a prose edit cannot fail this command. Run
-`npm run format` before pushing a YAML change.
+formatted or checked and a prose edit cannot fail this command. The required
+check is still `checksPass`, so Render does not deploy while a required check
+fails: an unformatted YAML or TypeScript file blocks deploys exactly as a
+broken build does. Run `npm run format` before pushing either.
 
 ---
 
