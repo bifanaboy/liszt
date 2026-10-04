@@ -26,6 +26,7 @@ const ScenePage = z.object({
       image: z.string().url().nullable().optional(),
       poster: z.string().url().nullable().optional(),
       performers: z.array(z.object({ name: z.string().min(1) })).optional(),
+      tags: z.array(z.object({ name: z.string().min(1) })).optional(),
       site: z.object({ name: z.string().min(1) }).optional(),
     }),
   ),
@@ -34,11 +35,13 @@ const ScenePage = z.object({
 
 const MAX_PAGES = 1000;
 const BASE = "https://api.theporndb.net";
+const MIN_INTERVAL_MS = 250;
 
 export interface TpdbStudio {
   studioId: string;
   studio: string;
   aliases: readonly string[];
+  tags?: readonly string[];
 }
 
 export function cleanStudioName(value: string): string {
@@ -78,9 +81,7 @@ async function* pages<T extends { meta: { current_page: number; last: number } }
     const url = new URL(path, BASE);
     url.searchParams.set("per_page", "100");
     url.searchParams.set("page", String(page));
-    const raw = await ctx.fetcher.json(url.href, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const raw = await ctx.fetcher.json(url.href, { headers: { Authorization: `Bearer ${token}` } });
     const data = checkedPage(parse(raw), page, label);
     yield data;
     if (page >= data.meta.last) return;
@@ -91,18 +92,17 @@ export function createTpdbWatchlistSource(options: {
   token?: string;
   studios: readonly TpdbStudio[];
 }): SourceAdapter {
+  const cachedSites = new Map<number, TpdbStudio | null>();
   const aliases = new Map<string, TpdbStudio | null>();
   for (const studio of options.studios)
     for (const alias of studio.aliases) {
       const key = cleanStudioName(alias);
       if (!key) continue;
       const prior = aliases.get(key);
-      // When the prior entry is already null (ambiguity sentinel), keep it null
-      // so that later studios sharing the same cleaned alias also exclude themselves.
-      // Only set null when prior is a studio with a different studioId;
-      // if prior is null, do not overwrite it with a new studio.
-      const newValue = prior ? (prior.studioId !== studio.studioId ? null : prior) : null;
-      aliases.set(key, newValue);
+      aliases.set(
+        key,
+        prior === null || (prior && prior.studioId !== studio.studioId) ? null : studio,
+      );
     }
   return {
     id: "tpdb-watchlist",
@@ -112,28 +112,40 @@ export function createTpdbWatchlistSource(options: {
     async fetch(windowStart, ctx) {
       const token = options.token;
       if (!token) throw new Error("TPDB token missing; set TPDB_API_KEY in the server environment");
-      const sites = new Map<number, TpdbStudio>();
-      for await (const page of pages(ctx, "/sites", token, (raw) => SitePage.parse(raw), "sites")) {
-        for (const site of page.data) {
-          const studioByName = aliases.get(cleanStudioName(site.name));
-          // If the alias map returns null (studio name is ambiguous), do not fall
-          // through to the short_name check — an ambiguous name should not admit
-          // any studio via the short_name fallback.
-          let studio: TpdbStudio | undefined = studioByName !== null ? studioByName : undefined;
-          if (!studio && site.short_name) {
-            const studioByShort = aliases.get(cleanStudioName(site.short_name));
-            if (studioByShort !== null) {
-              studio = studioByShort;
-            }
+      let lastRequestAt = 0;
+      const fetchJson = async <T = unknown>(url: string): Promise<T> => {
+        const wait = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
+        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+        lastRequestAt = Date.now();
+        return ctx.fetcher.json<T>(url, { headers: { Authorization: `Bearer ${token}` } });
+      };
+      const pacedCtx = { ...ctx, fetcher: { ...ctx.fetcher, json: fetchJson } };
+      if (!cachedSites.size) {
+        for await (const page of pages(
+          pacedCtx,
+          "/sites",
+          token,
+          (raw) => SitePage.parse(raw),
+          "sites",
+        )) {
+          for (const site of page.data) {
+            const nameKey = cleanStudioName(site.name);
+            const studio = aliases.has(nameKey)
+              ? aliases.get(nameKey)
+              : site.short_name
+                ? aliases.get(cleanStudioName(site.short_name))
+                : undefined;
+            cachedSites.set(site.id, studio ?? null);
           }
-          if (studio) sites.set(site.id, studio);
         }
       }
+      const sites = cachedSites;
       const scenes: RawScene[] = [];
       for (const [siteId, studio] of sites) {
+        if (!studio) continue;
         for await (const page of pages(
-          ctx,
-          `/scenes?site_id=${siteId}`,
+          pacedCtx,
+          `/scenes?site_id=${siteId}&date=${encodeURIComponent(windowStart)}&date_operation=%3E%3D`,
           token,
           (raw) => ScenePage.parse(raw),
           `site(${siteId})`,
@@ -141,6 +153,8 @@ export function createTpdbWatchlistSource(options: {
           for (const scene of page.data) {
             if (scene.date < windowStart || scene.date > ctx.now.toISOString().slice(0, 10))
               continue;
+            const sceneTags = new Set((scene.tags ?? []).map((tag) => cleanStudioName(tag.name)));
+            if (!(studio.tags ?? []).every((tag) => sceneTags.has(cleanStudioName(tag)))) continue;
             const recordUrl = scene.url ?? undefined;
             scenes.push({
               sourceSceneId: scene.id,
@@ -168,12 +182,18 @@ export function createTpdbWatchlistSource(options: {
           }
         }
       }
-      ctx.log("TPDB watchlist fetched", { studios: sites.size, scenes: scenes.length });
-      // verifiedEmpty should reflect whether any sites were matched;
-      // if no sites matched (e.g. name drift, no token), report it explicitly
-      // rather than unconditionally claiming success.
-      const verified = sites.size > 0 || scenes.length > 0;
-      return { scenes, verifiedEmpty: verified };
+      const matched = [...sites.values()].filter((studio): studio is TpdbStudio => studio !== null);
+      const matchedStudioIds = new Set(matched.map((studio) => studio.studioId));
+      const unmatchedStudios = [
+        ...new Set(options.studios.map((studio) => studio.studioId)),
+      ].filter((studioId) => !matchedStudioIds.has(studioId));
+      ctx.log("TPDB watchlist fetched", {
+        studios: matched.length,
+        scenes: scenes.length,
+        unmatchedStudios,
+      });
+      if (!matched.length) throw new Error("TPDB watchlist matched no configured studio names");
+      return { scenes, verifiedEmpty: scenes.length === 0 };
     },
   };
 }

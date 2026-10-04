@@ -3,9 +3,8 @@
  *
  * THERE IS NO PERIMETER. Every route below is served to anyone who can reach the
  * port, including `POST /api/refresh`. That is the deliberate shape of this
- * deployment - a disposable public read model with no user data, no credentials
- * and no secrets - and the removed auth wrapper is what used to be the only
- * thing standing in front of it.
+ * deployment - a disposable public read model with no user accounts or private
+ * catalogue data. The optional TPDB credential is only used for source requests.
  *
  * `/health` is the one route with a fixed body: a constant, no version, no host,
  * no store state. It is Render's deploy gate, and a health check that leaked

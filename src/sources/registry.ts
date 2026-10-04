@@ -6,19 +6,17 @@
  *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, Woodman Casting X
  *                  (minus its XXXX scenes), plus the checked watchlist. No
  *                  auth; TPDB adds a separate authenticated watchlist lane.
- *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
- *                  (traxxx measures no scenes for it; listing is configured).
- *  3. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
+ *  2. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
  *                  Inertia HTML, its detail pages are paced at 8-9 seconds, and
  *                  its candidates' decisions live in `fc2_candidates` so a sync
  *                  never repays a detail request it already made.
- *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
- *  5. ManyVids - public creator store listings, incremental plus weekly full pulls.
- *  6. TPDB - one shared token, exact cleaned-name studio matching.
+ *  3. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
+ *  4. ManyVids - public creator store listings, incremental plus weekly full pulls.
+ *  5. TPDB - one shared token, exact cleaned-name studio matching.
  */
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
-import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
+import { createTraxxxWatchlistStudios, parseTraxxxListingUrl } from "./traxxx-watchlist.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
@@ -29,6 +27,8 @@ export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
   "tushy",
   "lancelot-styles-evolution",
   "mambo-perv",
+  "bang-originals",
+  "maximo-garcia",
 ]);
 
 /** The Asian-language lanes, listed here because the dashboard splits them onto
@@ -37,6 +37,17 @@ export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
  * that would silently drift from a renamed id.
  */
 export const ASIAN_SOURCE_IDS: readonly string[] = Object.freeze([FC2CMADB_ID, MADOUQU_ID]);
+
+const TPDB_STUDIO_ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  julesjordan: ["Jules Jordan"],
+  mikeadriano: ["Mike Adriano"],
+  teamskeet: ["Team Skeet"],
+  firstanalquest: ["First Anal Quest"],
+});
+const MANYVIDS_STUDIO_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  "1003095958": "Maximo Garcia",
+  "1008105753": "Filou Fitt",
+});
 
 export interface RegistryOptions {
   madouquApiBase: string;
@@ -51,10 +62,6 @@ export interface RegistryOptions {
   fc2?: Fc2StudioOptions;
   manyvidsStoreIds?: readonly string[];
   manyvidsMinIntervalMs?: number;
-  /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
-  maximoListingUrl?: string | undefined;
-  /** Hosts the Maximo listing and its video pages may live on. */
-  maximoAllowedHosts?: readonly string[];
   /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
    * failing every cycle, following the SETUP REQUIRED pattern. */
   tpdbApiKey?: string;
@@ -68,7 +75,7 @@ export function createSources({
   fc2 = {},
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
-a
+  tpdbApiKey,
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
@@ -82,33 +89,34 @@ a
     ...RETIRED_SOURCE_IDS,
   ]);
   sources.splice(2, 0, ...watchlist, createWoodmanCastingXSource());
-
-  // Build the TPDB studio alias map from watchlist and ManyVids sources.
-  // ManyVids synthetic aliases (manyvids-<id>) are excluded from TPDB matching
-  // because they can never match a TPDB site name — they are silently inert
-  // (issue: synthetic aliases create false collision opportunities). Only
-  // unambiguous TPDB-derived aliases and the watchlist sources themselves
-  // participate in studio matching.
-  const tpdbStudios: TpdbStudio[] = [
-    ...watchlist.map((source) => ({
-      studioId: source.id,
-      studio: source.name,
-      aliases: [source.name, source.id],
-    })),
+  const studios: TpdbStudio[] = [
+    ...watchlist.map((source) => {
+      const lane = traxxxWatchlist
+        .map(parseTraxxxListingUrl)
+        .find((spec) => spec.id === source.id)!;
+      return {
+        studioId: source.id,
+        studio: source.name,
+        aliases: [source.name, source.id, ...(TPDB_STUDIO_ALIASES[lane.slug] ?? [])],
+        tags: lane.tags,
+      };
+    }),
+    // ManyVids stores only contribute an alias when the store has a real display
+    // name. A synthetic `ManyVids store <id>` label can never match a TPDB site
+    // name, and registering it would let two unrelated stores collide on the same
+    // cleaned alias and silently exclude a real studio (issue: synthetic aliases
+    // create false collision opportunities).
+    ...[...new Set(manyvidsStoreIds)].flatMap((storeId) => {
+      const name = MANYVIDS_STUDIO_NAMES[storeId];
+      return [
+        {
+          studioId: `manyvids-${storeId}`,
+          studio: name ?? `ManyVids store ${storeId}`,
+          aliases: name ? [name] : [],
+        },
+      ];
+    }),
   ];
-  // Only add ManyVids studio entries if a TPDB token is configured; this
-  // prevents synthetic manyvids aliases from contaminating the TPDB alias map
-  // when TPDB is not set up (SETUP REQUIRED pattern).
-  if (tpdbApiKey) {
-    tpdbStudios.push(
-      ...[...new Set(manyvidsStoreIds)].map((storeId) => ({
-        studioId: `manyvids-${storeId}`,
-        studio: storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`,
-        aliases: [storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`],
-      })),
-    );
-  }
-
-  sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios: tpdbStudios }));
+  sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios }));
   return sources;
 }

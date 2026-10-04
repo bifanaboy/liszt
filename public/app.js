@@ -57,6 +57,7 @@ let statuses = [];
 let refreshing = false;
 let catalogueLoaded = false;
 let latestRun = null;
+
 /** Which catalogue page is showing. The Asian lanes are on their own page (#65). */
 let activeCatalogue = MAIN_CATALOGUE;
 /** The lanes on the Asian page, named by the server rather than guessed here. */
