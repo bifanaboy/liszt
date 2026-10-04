@@ -62,10 +62,12 @@ function buildSync(
   sources: SourceAdapter[],
   windowDays = 90,
   fetcher: HttpFetcher = new HttpFetcher(),
+  retiredSourceIds: readonly string[] = [],
 ) {
   return createSync({
     store,
     sources,
+    retiredSourceIds,
     fetcher,
     clock: fixedClock(NOW),
     log: new NullLogger(),
@@ -659,20 +661,28 @@ test("scene and child health writes are atomic for one lane", async () => {
 test("explicit retirement prunes only named source ids and keeps a failing active lane", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
+  const retired = adapter("tushy", async () => ({ scenes: [], verifiedEmpty: true }));
+  store.upsertScene(normaliseScene(retired, raw("old"), new Date(NOW)));
   let activeFails = false;
-  const sync = buildSync(store, [
-    adapter("tushy", async () => ({ scenes: [raw("old")], verifiedEmpty: false })),
-    adapter("active", async () => {
-      if (activeFails) throw new Error("temporary outage");
-      return { scenes: [raw("current")], verifiedEmpty: false };
-    }),
-  ]);
+  const sync = buildSync(
+    store,
+    [
+      adapter("active", async () => {
+        if (activeFails) throw new Error("temporary outage");
+        return { scenes: [raw("current")], verifiedEmpty: false };
+      }),
+    ],
+    90,
+    new HttpFetcher(),
+    RETIRED_SOURCE_IDS,
+  );
   await sync("healthy");
   activeFails = true;
   await sync("outage");
 
-  assert.equal(store.pruneScenesForUnknownSources(RETIRED_SOURCE_IDS), 1);
   assert.equal(store.getScene("tushy:old"), null);
+  assert.ok(RETIRED_SOURCE_IDS.includes("bang-originals"));
+  assert.ok(RETIRED_SOURCE_IDS.includes("maximo-garcia"));
   assert.ok(store.getScene("active:current"));
   assert.deepEqual(
     store.listSources().map((status) => status.sourceId),

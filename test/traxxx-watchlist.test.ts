@@ -93,6 +93,15 @@ test("the default watchlist creates the intended lanes and stable lane ids", () 
   );
 });
 
+test("Vixen remains available as a custom Traxxx network lane", () => {
+  const url = "https://traxxx.me/network/vixen/scenes/latest/1?tags=anal";
+  assert.deepEqual(createTraxxxLaneIds([url]), ["network-vixen-anal"]);
+  assert.deepEqual(
+    createTraxxxWatchlistStudios([url]).map((lane) => lane.id),
+    ["network-vixen-anal"],
+  );
+});
+
 test("configuration replaces the default watchlist and empty input keeps the default", () => {
   const custom = "https://traxxx.me/channel/tushy/scenes/latest/1?tags=anal";
   assert.deepEqual(loadConfig({ LISZT_TRAXXX_WATCHLIST: custom }).traxxxWatchlist, [custom]);
@@ -109,6 +118,8 @@ test("the registry replaces the retired Tushy lane with watchlist lanes", () => 
   for (const id of createTraxxxLaneIds(TRAXXX_WATCHLIST)) {
     assert.equal(ids.filter((sourceId) => sourceId === id).length, 1, id);
   }
+  assert.ok(!ids.includes("bang-originals"));
+  assert.ok(!ids.includes("maximo-garcia"));
   assert.ok(!ids.includes("tushy"));
 });
 
