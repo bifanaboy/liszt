@@ -43,6 +43,7 @@ import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
 import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
 import type { PoolMatch } from "../tubes/eporner-pool.ts";
+import { releaseIdentity } from "./release-identity.ts";
 import type { MatchScene } from "../tubes/types.ts";
 import { getStudioMetadataProfile, scrapeReleaseMetadata } from "../sources/studio-metadata.ts";
 import type { Fc2LookupResult } from "../tubes/fc2-eporner.ts";
@@ -489,6 +490,62 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const outcomes: RunOutcome[] = all
       .filter((lane): lane is FailedLane => !lane.ok)
       .map((lane) => lane.outcome);
+
+    // Claim each release URL once across ALL lanes before anything is written.
+    // A Traxxx studio lane and the TPDB lane both cover the same studio and
+    // both emit the studio's own release URL, so without this one release is
+    // stored - and shown - twice. Claimed across lanes rather than per-lane
+    // because the overlap is precisely cross-lane. Seeded from the stored rows
+    // too, so a release already in the catalogue keeps its existing row and
+    // lane order decides ties.
+    const claimed = new Map<string, string>();
+    // A scene its own source has POSITIVELY excluded does not hold its claim. It
+    // is about to be deleted, so if it kept the claim, a second lane's record
+    // for that same release would be suppressed as a duplicate - and then the
+    // stored row would be deleted by the exclusion, leaving the release absent
+    // from the catalogue until some later sync happened to re-import it. The
+    // claim map has to reflect what will exist AFTER the write phase, not what
+    // exists now.
+    // Matched on (source_id, native id) rather than a composed string: a scene
+    // id is `source:id` for a plain lane but `source:label:id` when the adapter
+    // emits sub-labels, and the exclusion list holds the NATIVE id either way.
+    const excluded = new Set(
+      lanes.flatMap((lane) =>
+        (lane.result.excludedSceneIds ?? []).map((id) => `${lane.adapter.id} ${id}`),
+      ),
+    );
+    for (const scene of store.listAll()) {
+      if (excluded.has(`${scene.sourceId} ${scene.id.slice(scene.sourceId.length + 1)}`)) continue;
+      const identity = scene.releaseUrl ? releaseIdentity(scene) : undefined;
+      if (identity) claimed.set(identity, scene.id);
+    }
+    for (const lane of lanes) {
+      const kept: RawScene[] = [];
+      let suppressed = 0;
+      for (const raw of lane.result.scenes) {
+        const identity = releaseIdentity(raw);
+        if (identity) {
+          // Claimed by a DIFFERENT row. Claimed by this record's own row is not
+          // a duplicate - it is this scene's previous version, and suppressing
+          // it would freeze the scene at its first write and stop every
+          // subsequent update from ever landing.
+          const owner = claimed.get(identity);
+          if (owner !== undefined && owner !== sceneKey(lane.adapter, raw)) {
+            suppressed += 1;
+            continue;
+          }
+          claimed.set(identity, sceneKey(lane.adapter, raw));
+        }
+        kept.push(raw);
+      }
+      if (suppressed) {
+        log.info("sync: dropped releases already covered by another lane", {
+          source: lane.adapter.id,
+          suppressed,
+        });
+        lane.result = { ...lane.result, scenes: kept };
+      }
+    }
 
     await runStudioLookups(lanes, now);
 
