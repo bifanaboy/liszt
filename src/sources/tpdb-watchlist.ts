@@ -1,20 +1,19 @@
 import { z } from "zod";
+import { FetchError } from "../core/fetcher.ts";
 import type { RawScene, SourceAdapter, SourceContext } from "./types.ts";
 
 const Meta = z.object({
   current_page: z.number().int().positive(),
-  last: z.number().int().nonnegative(),
+  /** TPDB names the final page `last_page`; `last` is not a field it returns. */
+  last_page: z.number().int().nonnegative(),
 });
-const SitePage = z.object({
-  data: z.array(
-    z.object({
-      id: z.number().int().positive(),
-      name: z.string().min(1),
-      short_name: z.string().optional(),
-    }),
-  ),
-  meta: Meta,
+const Site = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1),
+  short_name: z.string().optional(),
 });
+const SiteEnvelope = z.object({ data: Site });
+type TpdbSite = z.infer<typeof Site>;
 const ScenePage = z.object({
   data: z.array(
     z.object({
@@ -54,22 +53,42 @@ export function cleanStudioName(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-function checkedPage<T extends { meta: { current_page: number; last: number } }>(
+/** A site lookup by identifier, for the names TPDB accepts in place of an id. */
+async function fetchSite(
+  ctx: SourceContext,
+  identifier: string,
+  token: string,
+): Promise<TpdbSite | undefined> {
+  const url = new URL(`/sites/${encodeURIComponent(identifier)}`, BASE);
+  try {
+    const raw = await ctx.fetcher.json(url.href, { headers: { Authorization: `Bearer ${token}` } });
+    return SiteEnvelope.parse(raw).data;
+  } catch (error) {
+    // Only an ABSENT studio is tolerated. A timeout, a 500 or a malformed body
+    // means the lookup did not actually answer, and treating that as "this
+    // studio is not in TPDB" would quietly shrink the lane to whatever happened
+    // to succeed - the failure has to propagate instead.
+    if (error instanceof FetchError && error.kind === "definitive") return undefined;
+    throw error;
+  }
+}
+
+function checkedPage<T extends { meta: { current_page: number; last_page: number } }>(
   page: T,
   current: number,
   label: string,
 ): T {
   if (
     page.meta.current_page !== current ||
-    page.meta.last > MAX_PAGES ||
-    (page.meta.last < current && !(current === 1 && page.meta.last === 0))
+    page.meta.last_page > MAX_PAGES ||
+    (page.meta.last_page < current && !(current === 1 && page.meta.last_page === 0))
   ) {
     throw new Error(`TPDB ${label}: inconsistent pagination on page ${current}`);
   }
   return page;
 }
 
-async function* pages<T extends { meta: { current_page: number; last: number } }>(
+async function* pages<T extends { meta: { current_page: number; last_page: number } }>(
   ctx: SourceContext,
   path: string,
   token: string,
@@ -84,7 +103,7 @@ async function* pages<T extends { meta: { current_page: number; last: number } }
     const raw = await ctx.fetcher.json(url.href, { headers: { Authorization: `Bearer ${token}` } });
     const data = checkedPage(parse(raw), page, label);
     yield data;
-    if (page >= data.meta.last) return;
+    if (page >= data.meta.last_page) return;
   }
 }
 
@@ -120,22 +139,26 @@ export function createTpdbWatchlistSource(options: {
         return ctx.fetcher.json<T>(url, { headers: { Authorization: `Bearer ${token}` } });
       };
       const pacedCtx = { ...ctx, fetcher: { ...ctx.fetcher, json: fetchJson } };
+      // Resolve each configured studio with one direct lookup rather than
+      // paginating the whole /sites catalogue. That catalogue is ~104k rows
+      // (1042 pages at the API's 100-row cap), which is both slower than 18
+      // lookups and past MAX_PAGES, so the walk could not complete at all.
       if (!cachedSites.size) {
-        for await (const page of pages(
-          pacedCtx,
-          "/sites",
-          token,
-          (raw) => SitePage.parse(raw),
-          "sites",
-        )) {
-          for (const site of page.data) {
-            const nameKey = cleanStudioName(site.name);
-            const studio = aliases.has(nameKey)
-              ? aliases.get(nameKey)
-              : site.short_name
-                ? aliases.get(cleanStudioName(site.short_name))
-                : undefined;
-            cachedSites.set(site.id, studio ?? null);
+        for (const studio of options.studios) {
+          if (studio.aliases.every((alias) => !cleanStudioName(alias))) continue;
+          for (const alias of studio.aliases) {
+            const key = cleanStudioName(alias);
+            if (!key || aliases.get(key) !== studio) continue;
+            const site = await fetchSite(pacedCtx, key, token);
+            if (!site) continue;
+            // Only accept a site whose own name or short name is an alias of
+            // this studio. /sites/{identifier} resolves loosely (a slug may
+            // return a different site), so the response is verified rather
+            // than trusted.
+            const siteKeys = [cleanStudioName(site.name), cleanStudioName(site.short_name ?? "")];
+            if (!siteKeys.some((candidate) => aliases.get(candidate) === studio)) continue;
+            cachedSites.set(site.id, studio);
+            break;
           }
         }
       }
