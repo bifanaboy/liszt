@@ -21,6 +21,7 @@ import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2c
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
 import { parseTpdbListingUrl, tpdbListingUrlsToStudios } from "./tpdb-listing-url.ts";
+import { createFanslySource } from "./fansly.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 import type { StudioLink } from "./studio-identity.ts";
@@ -82,6 +83,12 @@ export interface RegistryOptions {
    *  else behaves as before.
    */
   studioLinks?: readonly StudioLink[];
+  /** Fansly usernames to watch. Each username becomes a lane with studioId
+   *  `fansly-<username>`. Public posts only; subscriber-only content requires
+   *  a sessionToken which this adapter does not handle. */
+  fanslyUsernames?: readonly string[];
+  /** Minimum spacing between Fansly API requests (default 2000ms). */
+  fanslyMinIntervalMs?: number;
 }
 
 /** The complete set of adapters run by the sync, in a stable order. */
@@ -95,6 +102,8 @@ export function createSources({
   tpdbApiKey,
   tpdbListingUrls,
   studioLinks,
+  fanslyUsernames,
+  fanslyMinIntervalMs,
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
@@ -103,6 +112,11 @@ export function createSources({
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
+  if (fanslyUsernames && fanslyUsernames.length > 0) {
+    sources.push(
+      createFanslySource({ usernames: fanslyUsernames, minIntervalMs: fanslyMinIntervalMs }),
+    );
+  }
   const watchlist = createTraxxxWatchlistStudios(traxxxWatchlist, [
     ...sources.map((source) => source.id),
     ...RETIRED_SOURCE_IDS,
