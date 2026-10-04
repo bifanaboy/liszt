@@ -4,6 +4,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import { DateOnly, IsoTimestamp, parseAtBoundary } from "../core/schema.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
 import type { RawScene, SourceAdapter } from "./types.ts";
+import { findTransExclusion } from "./trans-exclusion.ts";
 
 function durationSeconds(value: string): number {
   return value.split(":").reduce((seconds, component) => seconds * 60 + Number(component), 0);
@@ -12,6 +13,7 @@ function durationSeconds(value: string): number {
 const Video = z.object({
   id: z.string().regex(/^\d+$/),
   title: z.string().trim().min(1),
+  description: z.string().optional(),
   slug: z.string().min(1),
   duration: z
     .string()
@@ -126,10 +128,18 @@ export function createManyVidsSource({
         fullPulledAt: full ? ctx.now.toISOString() : prior!.fullPulledAt,
         videos: [...videos.values()],
       };
+      const excludedSceneIds: string[] = [];
       const scenes: RawScene[] = snapshot.videos.flatMap((video) => {
         const releaseDate = new Date(video.launchDate).toISOString().slice(0, 10);
         if (releaseDate < windowStart || releaseDate > ctx.now.toISOString().slice(0, 10))
           return [];
+        const excludedTerm = findTransExclusion(
+          [video.title, video.description ?? "", ...(video.tags ?? [])].join("\n"),
+        );
+        if (excludedTerm) {
+          excludedSceneIds.push(video.id);
+          return [];
+        }
         const releaseUrl = `https://www.manyvids.com/Video/${video.id}/${encodeURIComponent(video.slug)}/`;
         return [
           {
@@ -165,10 +175,21 @@ export function createManyVidsSource({
           },
         ];
       });
+      if (excludedSceneIds.length) {
+        ctx.log("ManyVids scenes excluded by the shared trans policy", {
+          storeId,
+          count: excludedSceneIds.length,
+          sampleIds: excludedSceneIds.slice(0, 5),
+        });
+      }
       const encoded = JSON.stringify(snapshot);
       if (store) store.setSourceSnapshot(id, encoded);
       else memory = encoded;
-      return { scenes, verifiedEmpty: scenes.length === 0 };
+      return {
+        scenes,
+        verifiedEmpty: scenes.length === 0 && excludedSceneIds.length === 0,
+        ...(excludedSceneIds.length ? { excludedSceneIds } : {}),
+      };
     },
   };
 }

@@ -19,9 +19,7 @@
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
-import { createBangOriginalsStudio } from "./bang-originals.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
-import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
@@ -68,23 +66,14 @@ export function createSources({
   traxxxWatchlist,
   store,
   fc2 = {},
-  maximoListingUrl,
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
-  maximoAllowedHosts = [
-    "sexlikereal.com",
-    "www.sexlikereal.com",
-    "analvids.com",
-    "www.analvids.com",
-  ],
-  tpdbApiKey,
+a
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
-    createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
     ),
-    createBangOriginalsStudio(),
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
