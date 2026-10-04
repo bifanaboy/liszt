@@ -292,6 +292,7 @@ export interface SyncLookups {
 export interface SyncOptions {
   store: SqliteStore;
   sources: readonly SourceAdapter[];
+  retiredSourceIds?: readonly string[];
   fetcher: Fetcher;
   clock: Clock;
   log: Logger;
@@ -366,6 +367,7 @@ function sourceContext(
  */
 export function createSync(options: SyncOptions): (reason: string) => Promise<SyncSummary> {
   const { store, sources, fetcher, clock, log, windowDays, fetchConcurrency } = options;
+  const retiredSourceIds = options.retiredSourceIds ?? [];
   const progress = options.progress;
   const resolveEnabled = options.resolveEnabled ?? true;
   const laneBySource = new Map(
@@ -401,6 +403,13 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         ok: null,
         error: null,
       });
+      const retiredScenes = store.pruneScenesForUnknownSources(retiredSourceIds);
+      if (retiredScenes) {
+        log.info("sync: retired source rows removed", {
+          count: retiredScenes,
+          sources: retiredSourceIds,
+        });
+      }
       log.info("sync started", { runId, reason, window: { from, to } });
       const outcomes = await fanOut(from, now);
       const { matched, resolved, reverified, rejections, winners, expired, windowScenes } =

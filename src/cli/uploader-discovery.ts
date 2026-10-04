@@ -133,7 +133,6 @@ async function main(): Promise<void> {
     madouquApiBase: config.madouquApiBase,
     traxxxWatchlist: config.traxxxWatchlist,
     manyvidsStoreIds: config.manyvidsStoreIds,
-    maximoListingUrl: config.maximoListingUrl,
   });
   const creatorBySource = new Map(
     sources.map((source) => [source.id, source.creatorStudio ?? false]),

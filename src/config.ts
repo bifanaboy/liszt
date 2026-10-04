@@ -78,8 +78,6 @@ export const Config = z.object({
   traxxxCacheTtlMs: z.coerce.number().int().positive().default(300_000),
   traxxxWatchlist: z.array(z.string().min(1)).default([...TRAXXX_WATCHLIST]),
   madouquApiBase: z.string().url().default(DEFAULT_MADOUQU_API_BASE),
-  /** Unset: the Maximo Garcia lane reports "not configured" and stays calm. */
-  maximoListingUrl: z.string().url().optional(),
 
   // FC2 lane (fc2cmadb.com). The site answers slowly and asks to be walked
   // gently, so both spacings are named here instead of buried in the adapter.
@@ -208,7 +206,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traxxxCacheTtlMs: env.LISZT_TRAXXX_CACHE_TTL_MS,
     traxxxWatchlist: list(env.LISZT_TRAXXX_WATCHLIST),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
-    maximoListingUrl: optionalValue(env.LISZT_MAXIMO_LISTING_URL),
     fc2ListingMinIntervalMs: env.LISZT_FC2_LISTING_MIN_INTERVAL_MS,
     fc2DetailMinIntervalMs: env.LISZT_FC2_DETAIL_MIN_INTERVAL_MS,
     fc2MaxDetailChecksPerSync: env.LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC,

@@ -62,7 +62,12 @@ test("ManyVids imports captured metadata and round-trips through SQLite", async 
   }));
   try {
     const result = await adapter.fetch("2026-07-01", ctx);
-    assert.equal(result.scenes.length, 9);
+    assert.deepEqual(
+      result.excludedSceneIds,
+      ["7859838", "7837829", "7835196", "7806710"],
+      "the shared trans policy excludes the four matching captured titles",
+    );
+    assert.equal(result.scenes.length, 5);
     const raw = result.scenes[0]!;
     const scene = normaliseScene(adapter, raw, ctx.now);
     store.upsertScene(scene);
@@ -77,6 +82,100 @@ test("ManyVids imports captured metadata and round-trips through SQLite", async 
     assert.deepEqual(saved.performers, [], "a store owner is not necessarily a performer");
     assert.equal(saved.videoUrls.length, 0, "a preview is not a playback link");
     assert.match(saved.releaseUrl!, /\/Video\/7871546\//);
+  } finally {
+    store.close();
+  }
+});
+
+test("ManyVids applies the shared exclusion terms to titles, descriptions, and tags", async () => {
+  const candidates = [
+    { ...video, id: "9900001", title: "Trans scene", slug: "trans-scene" },
+    {
+      ...video,
+      id: "9900004",
+      title: "Beautiful Shemale scene",
+      description: "A trans performer in the scene",
+      slug: "description-trans-scene",
+    },
+    {
+      ...video,
+      id: "9900005",
+      title: "Crossdress scene",
+      slug: "crossdress-scene",
+    },
+    {
+      ...video,
+      id: "9900002",
+      title: "Transatlantic anal scene",
+      slug: "transatlantic-anal-scene",
+      tags: ["anal"],
+    },
+    {
+      ...video,
+      id: "9900003",
+      title: "Anal scene",
+      slug: "anal-scene",
+      tags: ["trans"],
+    },
+  ];
+  const { store, adapter, ctx } = setup(() => page(candidates));
+  try {
+    const result = await adapter.fetch("2026-07-01", ctx);
+    assert.deepEqual(
+      result.scenes.map((scene) => scene.sourceSceneId),
+      ["9900002"],
+    );
+    assert.deepEqual(result.excludedSceneIds, ["9900001", "9900004", "9900005", "9900003"]);
+  } finally {
+    store.close();
+  }
+});
+
+test("a poll containing only excluded scenes is not reported as a verified empty store", async () => {
+  const { store, adapter, ctx } = setup(() =>
+    page([{ ...video, id: "9900007", title: "Trans scene" }]),
+  );
+  try {
+    const result = await adapter.fetch("2026-07-01", ctx);
+    assert.deepEqual(result.scenes, []);
+    assert.deepEqual(result.excludedSceneIds, ["9900007"]);
+    assert.equal(result.verifiedEmpty, false);
+  } finally {
+    store.close();
+  }
+});
+
+test("a successful poll removes previously stored scenes excluded by the shared policy", async () => {
+  const transScene = { ...video, id: "9900006", title: "Trans scene", slug: "trans-scene" };
+  const { store, adapter, ctx } = setup(() => page([transScene, video]));
+  try {
+    const seed = normaliseScene(
+      adapter,
+      {
+        sourceSceneId: "9900006",
+        title: "Trans scene",
+        releaseDate: "2026-10-02",
+        durationSec: 1000,
+        performers: [],
+        releaseUrl: "https://www.manyvids.com/Video/9900006/trans-scene/",
+      },
+      ctx.now,
+    );
+    store.upsertScene(seed);
+    assert.ok(store.getScene(seed.id));
+    const run = createSync({
+      store,
+      sources: [adapter],
+      fetcher: ctx.fetcher,
+      clock: fixedClock(ctx.now.toISOString()),
+      log: new NullLogger(),
+      windowDays: 90,
+      fetchConcurrency: 1,
+      lookups: { poolLookup: null, sxyprnLookup: null },
+      resolveEnabled: false,
+    });
+    await run("excluded-scene");
+    assert.equal(store.getScene(seed.id), null);
   } finally {
     store.close();
   }

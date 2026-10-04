@@ -19,7 +19,7 @@ import { loadConfig } from "./config.ts";
 import { HttpFetcher } from "./core/fetcher.ts";
 import { JsonLogger } from "./core/logger.ts";
 import { SqliteStore } from "./core/store/sqlite.ts";
-import { createSources } from "./sources/registry.ts";
+import { createSources, RETIRED_SOURCE_IDS } from "./sources/registry.ts";
 import { systemClock } from "./sources/types.ts";
 import { createSync } from "./pipeline/sync.ts";
 import { createProgressTracker } from "./pipeline/progress.ts";
@@ -68,7 +68,6 @@ async function main(): Promise<void> {
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
     store,
     tpdbApiKey: config.tpdbApiKey,
-    ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
   // Rung 2 is optional. A missing package is a calm state, not a crash.
@@ -101,6 +100,7 @@ async function main(): Promise<void> {
   const sync = createSync({
     store,
     sources,
+    retiredSourceIds: RETIRED_SOURCE_IDS,
     fetcher,
     clock: systemClock,
     log,
