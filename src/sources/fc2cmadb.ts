@@ -56,6 +56,8 @@ import type { Fc2Status } from "../core/schema.ts";
 import type { Fc2Candidate, SqliteStore } from "../core/store/sqlite.ts";
 import { parseClockDuration } from "../tubes/eporner-pool.ts";
 import type { Fetcher, RawScene, SourceAdapter, SourceContext, SourceResult } from "./types.ts";
+import { findTransExclusion } from "./trans-exclusion.ts";
+export { TRANS_EXCLUSION_TERMS as FC2_TRANS_TERMS } from "./trans-exclusion.ts";
 
 export const FC2CMADB_ID = "fc2cmadb";
 export const FC2CMADB_LANE = "FC2";
@@ -387,21 +389,6 @@ export const FC2_SAFETY_TERMS: readonly string[] = Object.freeze([
   "underage",
 ]);
 
-export const FC2_TRANS_TERMS: readonly string[] = Object.freeze([
-  "トランスジェンダー",
-  "性転換",
-  "女装",
-  "女装家",
-  "偽娘",
-  "男の娘",
-  "女体化",
-  "MtF",
-  "FtM",
-  "drag queen",
-  "crossdress",
-  "transgender",
-]);
-
 /** Whole-token alternatives, matched case-insensitively outside Japanese text. */
 const FC2_SAFETY_WORD_TERMS: readonly string[] = Object.freeze([
   "child",
@@ -412,8 +399,6 @@ const FC2_SAFETY_WORD_TERMS: readonly string[] = Object.freeze([
   "schoolboy",
   "femboy",
 ]);
-
-const FC2_TRANS_WORD_TERMS: readonly string[] = Object.freeze(["ts", "trans"]);
 
 /** A Latin substring match, so Japanese text cannot accidentally satisfy it. */
 function matchesLatinTerm(haystack: string, term: string): boolean {
@@ -467,8 +452,7 @@ export function classifyFc2Candidate(input: Fc2ClassifyInput): Fc2Verdict {
   const safety =
     firstMatch(haystack, FC2_SAFETY_TERMS) ?? firstWordMatch(haystack, FC2_SAFETY_WORD_TERMS);
   if (safety) return { status: "excluded", verdict: `safety exclusion: ${safety}` };
-  const trans =
-    firstMatch(haystack, FC2_TRANS_TERMS) ?? firstWordMatch(haystack, FC2_TRANS_WORD_TERMS);
+  const trans = findTransExclusion(haystack);
   if (trans) return { status: "excluded", verdict: `trans/crossdress exclusion: ${trans}` };
   // A record with no playable length cannot be compared to an upload's length, so
   // it can never be resolved - and it is not a release that is merely unread

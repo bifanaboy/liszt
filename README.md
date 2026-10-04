@@ -18,7 +18,7 @@ completeness claim.
 ```sh
 npm install
 cp .env.example .env       # optional: every value has a default
-npm run dev                # dashboard on http://127.0.0.1:3000, no login
+npm run dev                # dashboard on http://127.0.0.1:3000
 ```
 
 Node 24+. No build step: TypeScript runs through Node's native type stripping.
@@ -34,9 +34,8 @@ Node 24+. No build step: TypeScript runs through Node's native type stripping.
 | `npm run typecheck` / `lint`      | `tsc --noEmit` / `eslint`.                               |
 | `npm run format` / `format:check` | Prettier. See the note below.                            |
 
-There is no password and nothing to configure to start it. See
-[No perimeter](#no-perimeter) for why, and [Deployment](#deployment) for the one
-supported target.
+Set `TPDB_API_KEY` in the server environment to enable TPDB. The catalogue stays
+public; see [No perimeter](#no-perimeter) and [Deployment](#deployment).
 
 Formatting is Prettier at `printWidth: 100`, the column the code was already
 written to, and `format:check` runs in CI. `.prettierignore` holds back what must
@@ -74,9 +73,7 @@ broken build does. Run `npm run format` before pushing either.
 source adapters          pipeline              tube ladder            serving
 ─────────────            ────────              ───────────            ───────
 traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
-Bang!       ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
-Maximo      │            per-source       │    guess fallback   ─┘         │
-ManyVids    │
+ManyVids    ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -100,16 +97,25 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
 
 Five categories, in `src/sources/registry.ts`.
 
-| Lane                                         | Mechanism                             | Matcher  |
-| -------------------------------------------- | ------------------------------------- | -------- |
-| Woodman Casting X, plus the built-in Traxxx watchlist (18 lanes) | `traxxx.me` REST, no auth             | yes      |
-| Bang! Originals                              | listing + per-video JSON-LD           | yes      |
-| Maximo Garcia                                | direct scrape, listing URL configured | yes      |
+| Lane                                         | Mechanism                                  | Matcher  |
+| -------------------------------------------- | ------------------------------------------ | -------- |
+| Woodman Casting X, plus the built-in Traxxx watchlist (18 lanes, including Bang) | `traxxx.me` REST, no auth | yes |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
-| madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
+| TPDB watchlist                               | authenticated paginated API, matched studio names | yes |
+| madouqu (11 categories)                      | WordPress REST + Mandarin classifier       | **none** |
 | fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes      |
 
-**No API keys.** `traxxx.me` replaced TPDB entirely.
+TPDB supplements Traxxx and ManyVids. It lists only studios whose cleaned names
+match an existing watchlist studio. Set the shared `TPDB_API_KEY` environment
+variable to enable this source; the app never returns or logs its value.
+Overlapping listings collapse in the dashboard when their release URLs match,
+or when title, date and duration match and a release URL is unavailable. Missing
+metadata can be filled from the other provider.
+
+Rows from retired source lanes are removed, along with their playback-link and
+source-health records, at the first sync after the upgrade. Their link history
+is not transferred to a replacement lane because the old and new scene ids do
+not provide a reliable one-to-one mapping.
 
 Traxxx discovers releases. Before matching, sync reads the exact release page
 for studios covered by a Stash CommunityScrapers scene scraper and prefers
@@ -121,7 +127,8 @@ Traxxx watchlist entries use this exact grammar:
 `https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
 `?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
 rejected at startup. The built-in list is the eighteen lanes in
-`src/sources/traxxx-watchlist.ts`, fifteen of them filtered to the `anal` tag.
+`src/sources/traxxx-watchlist.ts`, fifteen of them filtered to the `anal` tag,
+including Bang's `https://traxxx.me/network/bang/scenes/latest/1?tags=anal`.
 `LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries and replaces
 that built-in list rather than appending to it, which makes a single lane easy
 to isolate during calibration.
@@ -293,21 +300,18 @@ re-enters resolution. Known-dead URLs are never re-added.
 
 ## No perimeter
 
-**There is none.** Every route is served to anyone who can reach the port,
-including `POST /api/refresh`. That is the deliberate shape of this deployment,
-not an oversight left behind by a removed feature.
+The catalogue remains public: every route is served to anyone who can reach the
+port, including `POST /api/refresh`.
 
 The reasoning, once, so it is not re-litigated: this is a disposable public read
-model. It holds no user data, no accounts, no personal state, no credentials and
-no secrets — the one secret it ever had, a shared login password, is gone along
-with the `sessions` table and the scrypt verifier. A password in front of a
-catalogue of public video links protects the catalogue from nobody: the links are
-already public, and the data behind them is already on the open web.
+model. It holds no user accounts or private catalogue data. The TPDB token is
+read from `TPDB_API_KEY`; the app never returns or logs its value.
 
 What the app _does_ do with that posture:
 
-- **No credentials exist.** Nothing to leak, rotate, or forget. `render.yaml`
-  contains six non-secret values and there is nothing to type into the dashboard.
+- **TPDB is optional.** Without a configured token its source reports that setup is
+  needed and retains any last-good catalogue records. A failed request does not
+  erase stored scenes.
 - **`/health` is answered before anything else**, from a constant
   `{"status":"ok"}` with no store or source state in it. It is Render's deploy
   gate, and a health check that leaked anything would leak it to whoever felt
@@ -334,8 +338,8 @@ What the app _does_ do with that posture:
 | `/api/refresh` | POST       | Start or join one cycle. Returns `202` immediately.                    |
 | `/` + static   | GET        | The dashboard.                                                         |
 
-Nothing is gated, and nothing sets a cookie — the session layer is gone. `/login`
-and `/logout` are not routes: they fall through to the normal unknown-path 404.
+The TPDB token is configured through the server's `TPDB_API_KEY` environment
+variable. It is never included in public responses or logs.
 
 `/api/sources`, not `/api/studios`: "source" is canonical, and one source may
 emit several studio labels. All responses are `no-store`, so no edge caches the
@@ -400,14 +404,19 @@ The scene response keeps the store id, original UTC launch timestamp, UTC releas
 day, runtime in seconds, price (`regular`, `onSale`, `free`), thumbnail and preview
 URLs, and known tags. Preview clips are metadata, never verified playback links.
 The endpoint currently omits tags: we leave those unknown rather than fetching
-hundreds of tag-filtered lists each run. Tags never limit ingestion. Hidden and
-club-only videos are outside this public source; endpoint changes fail the poll
-and preserve last-good records.
+hundreds of tag-filtered lists each run. ManyVids applies the shared trans and
+cross-dressing exclusion terms to titles and descriptions today, and to tags if
+the endpoint starts returning them. Existing matching rows are removed on the
+next successful poll that also returns an eligible scene; an all-excluded poll is
+treated as suspicious and keeps the last-good rows. This filter applies only to
+ManyVids; Traxxx lanes use their configured listing filters and do not apply this
+catalogue-wide exclusion. Hidden and club-only videos are outside this public
+source; endpoint changes fail the poll and preserve last-good records.
 
 For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
-ManyVids and Traxxx records in the local rolling window. TPDB and StashDB are
-reported as unavailable because this app has no adapters for them. To compare all
-four databases, pass normalized JSON exports:
+ManyVids and Traxxx records in the local rolling window. The coverage command
+does not read TPDB's live source; TPDB and StashDB are marked unavailable unless
+you provide normalized JSON exports. To compare all four databases, pass:
 
 ```sh
 npm run catalogue-coverage -- --tpdb tpdb.json --stashdb stashdb.json --traxxx traxxx.json --manyvids manyvids.json
@@ -432,24 +441,24 @@ provider precedence and does not merge or rewrite stored scenes.
 
 ## Configuration
 
-Full list with defaults in `.env.example`. There is no credential and no
-required variable: everything has a working default.
+Full list with defaults in `.env.example`. `TPDB_API_KEY` is optional; set it in
+the server environment to enable TPDB.
 
 | Variable                                         | Default              | Effect                                                                |
 | ------------------------------------------------ | -------------------- | --------------------------------------------------------------------- |
 | `LISZT_LISTEN_ADDR`                              | `127.0.0.1`          | Loopback by default; `render.yaml` overrides it for Render's proxy.   |
 | `LISZT_DB_PATH`                                  | `data/liszt.db`      | SQLite file.                                                          |
+| `TPDB_API_KEY`                                   | unset                | Shared TPDB API token; enables the TPDB watchlist.                     |
 | `PORT`                                           | `3000`               |                                                                       |
 | `LISZT_WINDOW_DAYS`                              | `90`                 | Rolling window.                                                       |
 | `LISZT_POLL_INTERVAL_MINUTES`                    | `30`                 | Poll cadence.                                                         |
 | `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
 | `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
-| `LISZT_TRAXXX_WATCHLIST`                        | 18 built-in lanes | Comma-separated listing URLs; setting it replaces the built-in list.  |
+| `LISZT_TRAXXX_WATCHLIST`                        | 18 built-in lanes, including Bang | Comma-separated listing URLs; setting it replaces the built-in list. |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
 | `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
 | `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
-| `LISZT_MAXIMO_LISTING_URL`                       | unset                | Unset ⇒ that lane reports "not configured", calmly.                   |
 | `LISZT_FC2_LISTING_MIN_INTERVAL_MS`              | `2000`               | FC2 listing-page spacing.                                             |
 | `LISZT_FC2_DETAIL_MIN_INTERVAL_MS`               | `8500`               | FC2 detail-page spacing; the lane's dominant cost.                    |
 | `LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC`           | `20`                 | Detail checks one sync may read; the rest resume next sync.           |

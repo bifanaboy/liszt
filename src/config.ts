@@ -59,6 +59,8 @@ export const Config = z.object({
    */
   listenAddr: z.string().min(1).default("127.0.0.1"),
   dbPath: z.string().min(1).default("data/liszt.db"),
+  /** Optional TPDB credential. Never included in logs or HTTP responses. */
+  tpdbApiKey: z.string().min(1).optional(),
   windowDays: z.coerce.number().int().positive().default(90),
   pollIntervalMinutes: z.coerce.number().int().positive().default(30),
   /** Run one sync on boot, in the background behind the listening port. */
@@ -76,8 +78,6 @@ export const Config = z.object({
   traxxxCacheTtlMs: z.coerce.number().int().positive().default(300_000),
   traxxxWatchlist: z.array(z.string().min(1)).default([...TRAXXX_WATCHLIST]),
   madouquApiBase: z.string().url().default(DEFAULT_MADOUQU_API_BASE),
-  /** Unset: the Maximo Garcia lane reports "not configured" and stays calm. */
-  maximoListingUrl: z.string().url().optional(),
 
   // FC2 lane (fc2cmadb.com). The site answers slowly and asks to be walked
   // gently, so both spacings are named here instead of buried in the adapter.
@@ -192,6 +192,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: env.PORT,
     listenAddr: env.LISZT_LISTEN_ADDR,
     dbPath: env.LISZT_DB_PATH,
+    tpdbApiKey: optionalValue(env.TPDB_API_KEY),
     windowDays: env.LISZT_WINDOW_DAYS,
     pollIntervalMinutes: env.LISZT_POLL_INTERVAL_MINUTES,
     bootSync:
@@ -205,7 +206,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traxxxCacheTtlMs: env.LISZT_TRAXXX_CACHE_TTL_MS,
     traxxxWatchlist: list(env.LISZT_TRAXXX_WATCHLIST),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
-    maximoListingUrl: optionalValue(env.LISZT_MAXIMO_LISTING_URL),
     fc2ListingMinIntervalMs: env.LISZT_FC2_LISTING_MIN_INTERVAL_MS,
     fc2DetailMinIntervalMs: env.LISZT_FC2_DETAIL_MIN_INTERVAL_MS,
     fc2MaxDetailChecksPerSync: env.LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC,
