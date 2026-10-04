@@ -8,6 +8,7 @@ import type { Config } from "../config.ts";
 import type { RunRecord, SqliteStore } from "../core/store/sqlite.ts";
 import type { Scene, SourceStatus } from "../core/schema.ts";
 import { ASIAN_SOURCE_IDS } from "../sources/registry.ts";
+import { cleanStudioName } from "../sources/tpdb-watchlist.ts";
 
 export interface WindowStats {
   total: number;
@@ -61,39 +62,69 @@ function releaseUrlKey(value: string | undefined): string | null {
 }
 
 function titleKey(value: string): string {
-  return value
-    .normalize("NFKD")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
+  return cleanStudioName(value);
 }
 
 /** Merge duplicate TPDB/storefront/watchlist records for display, filling only absent metadata. */
 export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
   const output: Scene[] = [];
+  const contributors = new Map<Scene, Set<string>>();
+  const candidates = new Map<string, Set<Scene>>();
+  const keysFor = (scene: Scene): string[] => {
+    const label = scene.labelId;
+    const url = releaseUrlKey(scene.releaseUrl);
+    const keys = url ? [`url:${label}\0${url}`] : [];
+    if (scene.durationSec)
+      keys.push(
+        `fallback:${label}\0${titleKey(scene.title)}\0${scene.releaseDate}\0${scene.durationSec}`,
+      );
+    return keys;
+  };
+  const index = (scene: Scene) => {
+    for (const key of keysFor(scene)) {
+      const group = candidates.get(key) ?? new Set<Scene>();
+      group.add(scene);
+      candidates.set(key, group);
+    }
+  };
   for (const scene of scenes) {
     const isProvider =
       scene.sourceId === "tpdb-watchlist" ||
       scene.source.toLowerCase().includes("manyvids") ||
       scene.source.toLowerCase().includes("traxxx");
+    const url = releaseUrlKey(scene.releaseUrl);
+    const fallbackKey = scene.durationSec
+      ? `fallback:${scene.labelId}\0${titleKey(scene.title)}\0${scene.releaseDate}\0${scene.durationSec}`
+      : "";
     const match = isProvider
-      ? output.find((prior) => {
-          if (prior.labelId !== scene.labelId || prior.sourceId === scene.sourceId) return false;
-          const firstUrl = releaseUrlKey(prior.releaseUrl);
-          const secondUrl = releaseUrlKey(scene.releaseUrl);
-          if (firstUrl && secondUrl) return firstUrl === secondUrl;
-          return Boolean(
-            prior.durationSec &&
-            scene.durationSec &&
-            prior.releaseDate === scene.releaseDate &&
-            prior.durationSec === scene.durationSec &&
-            titleKey(prior.title) === titleKey(scene.title),
+      ? (() => {
+          const eligible = (prior: Scene) => {
+            const sources = contributors.get(prior) ?? new Set([prior.sourceId]);
+            return (
+              !sources.has(scene.sourceId) &&
+              prior.labelId === scene.labelId &&
+              prior.sourceId !== scene.sourceId
+            );
+          };
+          if (url) {
+            const exact = [...(candidates.get(`url:${scene.labelId}\0${url}`) ?? [])].filter(
+              eligible,
+            );
+            if (exact.length) return exact.length === 1 ? exact[0] : undefined;
+          }
+          const fallback = [...(candidates.get(fallbackKey) ?? [])].filter(
+            (prior) => eligible(prior) && (!url || !releaseUrlKey(prior.releaseUrl)),
           );
-        })
+          return fallback.length === 1 ? fallback[0] : undefined;
+        })()
       : undefined;
     if (!match) {
       output.push(scene);
+      contributors.set(scene, new Set([scene.sourceId]));
+      index(scene);
       continue;
     }
+    contributors.get(match)!.add(scene.sourceId);
     const fill = <
       K extends
         | "title"
@@ -124,6 +155,8 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
         (!Array.isArray(incoming) || incoming.length > 0);
       if (empty && present) Object.assign(match, { [field]: incoming });
     };
+    match.metadataPoor = match.metadataPoor && scene.metadataPoor;
+    const filledProvenance = { ...match.fieldProvenance };
     for (const field of [
       "title",
       "performers",
@@ -136,9 +169,18 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
       "previewUrl",
       "price",
       "studioCode",
-    ] as const)
+    ] as const) {
+      const before = match[field];
       fill(field);
-    match.metadataPoor = match.metadataPoor && scene.metadataPoor;
+      if (before !== match[field] && scene.fieldProvenance[field])
+        filledProvenance[field] = scene.fieldProvenance[field]!;
+    }
+    const samePlaybackWinner = match.videoUrls[0]?.url === scene.videoUrls[0]?.url;
+    const useIncomingVerdict =
+      !match.videoUrls.length ||
+      (samePlaybackWinner &&
+        match.videoMatching?.confidence === "low" &&
+        scene.videoMatching?.confidence === "high");
     Object.assign(match, {
       provenance: [
         ...match.provenance,
@@ -149,20 +191,27 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
             ),
         ),
       ],
-      fieldProvenance: { ...scene.fieldProvenance, ...match.fieldProvenance },
-      videoUrls: [
-        ...match.videoUrls,
-        ...scene.videoUrls.filter(
-          (link) => !match.videoUrls.some((prior) => prior.url === link.url),
-        ),
-      ],
+      fieldProvenance: filledProvenance,
+      videoUrls: match.videoUrls.length
+        ? match.videoUrls
+        : scene.videoUrls.filter(
+            (link) => !match.deadVideoUrls.some((dead) => dead.url === link.url),
+          ),
       deadVideoUrls: [
         ...match.deadVideoUrls,
         ...scene.deadVideoUrls.filter(
-          (link) => !match.deadVideoUrls.some((prior) => prior.url === link.url),
+          (dead) => !match.deadVideoUrls.some((prior) => prior.url === dead.url),
         ),
       ],
+      videoMatching: useIncomingVerdict ? scene.videoMatching : match.videoMatching,
+      videoCheckedAt: useIncomingVerdict ? scene.videoCheckedAt : match.videoCheckedAt,
+      contributingSourceIds: [...contributors.get(match)!],
     });
+    match.videoUrls = match.videoUrls.filter(
+      (link) => !match.deadVideoUrls.some((dead) => dead.url === link.url),
+    );
+    if (!match.videoUrls.length) match.videoMatching = null;
+    index(match);
   }
   return output;
 }

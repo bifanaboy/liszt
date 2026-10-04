@@ -19,7 +19,7 @@
  */
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
-import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
+import { createTraxxxWatchlistStudios, parseTraxxxListingUrl } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
@@ -41,6 +41,17 @@ export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
  * that would silently drift from a renamed id.
  */
 export const ASIAN_SOURCE_IDS: readonly string[] = Object.freeze([FC2CMADB_ID, MADOUQU_ID]);
+
+const TPDB_STUDIO_ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  julesjordan: ["Jules Jordan"],
+  mikeadriano: ["Mike Adriano"],
+  teamskeet: ["Team Skeet"],
+  firstanalquest: ["First Anal Quest"],
+});
+const MANYVIDS_STUDIO_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  "1003095958": "Maximo Garcia",
+  "1008105753": "Filou Fitt",
+});
 
 export interface RegistryOptions {
   madouquApiBase: string;
@@ -95,16 +106,27 @@ export function createSources({
   ]);
   sources.splice(2, 0, ...watchlist, createWoodmanCastingXSource());
   const studios: TpdbStudio[] = [
-    ...watchlist.map((source) => ({
-      studioId: source.id,
-      studio: source.name,
-      aliases: [source.name, source.id],
-    })),
-    ...[...new Set(manyvidsStoreIds)].map((storeId) => ({
-      studioId: `manyvids-${storeId}`,
-      studio: storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`,
-      aliases: [storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`],
-    })),
+    ...watchlist.map((source) => {
+      const lane = traxxxWatchlist
+        .map(parseTraxxxListingUrl)
+        .find((spec) => spec.id === source.id)!;
+      return {
+        studioId: source.id,
+        studio: source.name,
+        aliases: [source.name, source.id, ...(TPDB_STUDIO_ALIASES[lane.slug] ?? [])],
+        tags: lane.tags,
+      };
+    }),
+    ...[...new Set(manyvidsStoreIds)].flatMap((storeId) => {
+      const name = MANYVIDS_STUDIO_NAMES[storeId] ?? `ManyVids store ${storeId}`;
+      return [
+        {
+          studioId: `manyvids-${storeId}`,
+          studio: name,
+          aliases: MANYVIDS_STUDIO_NAMES[storeId] ? [name] : [],
+        },
+      ];
+    }),
   ];
   sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios }));
   return sources;

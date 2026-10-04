@@ -19,12 +19,14 @@ export function isLiveLink(link) {
 
 export function sourceScenes(source, scenes) {
   const catalogue = Array.isArray(scenes) ? scenes : [];
+  const owns = (scene) =>
+    (scene.contributingSourceIds || [scene.sourceId]).includes(source?.sourceId);
   if (source?.labelId && source.labelId !== source.sourceId) {
     return catalogue.filter(
-      (scene) => scene.sourceId === source.sourceId && scene.labelId === source.labelId,
+      (scene) => owns(scene) && scene.labelId === source.labelId,
     );
   }
-  return catalogue.filter((scene) => scene.sourceId === source?.sourceId);
+  return catalogue.filter(owns);
 }
 
 export function sourceHealth(source, scenes) {

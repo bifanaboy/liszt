@@ -6,6 +6,7 @@ import {
   renderSourceHealthSummary,
   sourceCardState,
   sourceHealth,
+  sourceScenes,
   sourceStateLabel,
   studioChoices,
   visibleSourceStatuses,
@@ -97,6 +98,19 @@ test("child source health counts only scenes with the child's label", () => {
   assert.equal(health.sceneCount, 1);
   assert.equal(health.liveCount, 1);
   assert.equal(health.matchPercent, 100);
+});
+
+test("source health counts a provider's records after duplicate rows collapse", () => {
+  const merged = {
+    sourceId: "manyvids-1",
+    labelId: "network-brazzers-anal",
+    contributingSourceIds: ["manyvids-1", "tpdb-watchlist"],
+    videoUrls: [],
+  };
+  assert.deepEqual(
+    sourceScenes({ sourceId: "tpdb-watchlist", labelId: "tpdb-watchlist" }, [merged]),
+    [merged],
+  );
 });
 
 test("healthy lane rows hide behind children while failed and childless lanes remain visible", () => {
