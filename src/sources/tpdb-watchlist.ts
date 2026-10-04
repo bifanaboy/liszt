@@ -152,13 +152,19 @@ export function createTpdbWatchlistSource(options: {
       // (1042 pages at the API's 100-row cap), which is both slower than 18
       // lookups and past MAX_PAGES, so the walk could not complete at all.
       if (!cachedSites.size) {
+        // Resolved into a local map and only published once EVERY lookup has
+        // succeeded. Writing straight into cachedSites would leave it partially
+        // filled if a lookup threw, and because a non-empty map is what marks
+        // resolution done, every later poll would then skip re-resolution and
+        // quietly run with only the studios that happened to resolve first.
+        const resolved = new Map<number, TpdbStudio | null>();
         for (const studio of options.studios) {
           // A declared site id is taken as given: it was resolved and verified
           // once, by hand, against the live API. Re-deriving it from a name on
           // every boot would risk resolving to a DIFFERENT site after TPDB
           // renames something - a silent change of which releases a lane files.
           if (studio.siteId !== undefined) {
-            cachedSites.set(studio.siteId, studio);
+            resolved.set(studio.siteId, studio);
             continue;
           }
           if (studio.aliases.every((alias) => !cleanStudioName(alias))) continue;
@@ -171,12 +177,26 @@ export function createTpdbWatchlistSource(options: {
             // this studio. /sites/{identifier} resolves loosely (a slug may
             // return a different site), so the response is verified rather
             // than trusted.
+            //
+            // A name that maps to a DIFFERENT configured studio is a collision
+            // and rejects the site, even when the other name matches - that
+            // would file another studio's releases under this lane. A name that
+            // maps to nothing is not a collision: TPDB short names are often a
+            // legitimate abbreviation ("elegantangel" for "Elegant Angel"), so
+            // only a positive disagreement counts.
             const siteKeys = [cleanStudioName(site.name), cleanStudioName(site.short_name ?? "")];
-            if (!siteKeys.some((candidate) => aliases.get(candidate) === studio)) continue;
-            cachedSites.set(site.id, studio);
+            if (!siteKeys.filter(Boolean).some((candidate) => aliases.get(candidate) === studio))
+              continue;
+            const collides = siteKeys.some((candidate) => {
+              const owner = aliases.get(candidate);
+              return owner !== undefined && owner !== studio;
+            });
+            if (collides) continue;
+            resolved.set(site.id, studio);
             break;
           }
         }
+        for (const [siteId, studio] of resolved) cachedSites.set(siteId, studio);
       }
       const sites = cachedSites;
       const scenes: RawScene[] = [];

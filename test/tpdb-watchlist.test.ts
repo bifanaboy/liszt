@@ -18,18 +18,19 @@ const scene = {
   site: { name: "Brazzers" },
 };
 const site = { id: 7, name: "Brazzers", short_name: "brazzers" };
-const page = (data: unknown[], lastPage = 1) => ({
+const page = (data: unknown[], currentPage = 1, lastPage = 1) => ({
   data,
-  meta: { current_page: 1, last_page: lastPage },
+  meta: { current_page: currentPage, last_page: lastPage },
 });
 
 /** Routes a request by URL so a test states only what it cares about. */
 function context(
-  routes: { site?: unknown; scenes?: unknown[]; lookupMisses?: string[] },
+  routes: { site?: unknown; scenes?: unknown[]; lookupMisses?: string[]; scenePages?: unknown[][] },
   opts: { now?: string; fail?: Error } = {},
 ) {
   const calls: Array<{ url: string; headers?: Record<string, string> }> = [];
   const misses = new Set(routes.lookupMisses ?? []);
+  const pages = routes.scenePages ?? (routes.scenes ? [routes.scenes] : undefined);
   const ctx = {
     now: new Date(opts.now ?? "2026-10-04T00:00:00Z"),
     fetcher: {
@@ -44,8 +45,11 @@ function context(
           return { data: routes.site };
         }
         if (parsed.pathname === "/scenes") {
-          if (!routes.scenes) throw new Error("unexpected scene request");
-          return page(routes.scenes);
+          if (!pages) throw new Error("unexpected scene request");
+          // Paged listings are served by the requested page number, so a test can
+          // assert that the walker reads page two and then stops at last_page.
+          const requested = Number(parsed.searchParams.get("page") ?? "1");
+          return page(pages[requested - 1] ?? [], requested, pages.length);
         }
         throw new Error(`unexpected request ${url}`);
       },
@@ -196,6 +200,114 @@ test("tagged lanes retain only TPDB scenes carrying every requested tag", async 
   assert.deepEqual(
     result.scenes.map((entry) => entry.sourceSceneId),
     ["s1"],
+  );
+});
+
+test("a multi-page listing is walked to last_page and then stops", async () => {
+  // Covers the pagination field this lane reads. The first page reports
+  // last_page 2, so the walker must request page two and must not ask for a
+  // third - an off-by-one here would either drop half the window or spin.
+  const second = { ...scene, id: "s2", title: "Second page scene" };
+  const { ctx, calls } = context({ site, scenePages: [[scene], [second]] });
+  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
+    "2026-10-01",
+    ctx,
+  );
+  assert.equal(sceneCalls(calls).length, 2, "page two is read, and no page three is requested");
+  assert.deepEqual(
+    result.scenes.map((entry) => entry.sourceSceneId),
+    ["s1", "s2"],
+  );
+});
+
+test("an unrecognised short name is an abbreviation, not a collision", async () => {
+  // TPDB short names are frequently an abbreviation of the display name
+  // ("elegantangel" for "Elegant Angel"). Treating an unknown short name as a
+  // disagreement would reject real studios; only a name owned by a DIFFERENT
+  // configured studio is a collision.
+  const { ctx, calls } = context({
+    site: { id: 1052, name: "Elegant Angel", short_name: "elegantangel" },
+    scenes: [scene],
+  });
+  const result = await createTpdbWatchlistSource({
+    token: "token",
+    studios: [{ studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"] }],
+  }).fetch("2026-10-01", ctx);
+  assert.equal(result.scenes.length, 1);
+  assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
+});
+
+test("a site whose short name belongs to another studio is rejected, not accepted", async () => {
+  // The name and the short name are separate evidence. If they disagree about
+  // which studio this is, that is a collision - accepting on the strength of
+  // one name would file another studio's releases under this lane.
+  const { ctx, calls } = context({
+    site: { id: 555, name: "Brazzers", short_name: "someotherstudio" },
+    scenes: [scene],
+  });
+  await assert.rejects(
+    createTpdbWatchlistSource({
+      token: "token",
+      studios: [
+        ...studio,
+        { studioId: "lane-other", studio: "Someotherstudio", aliases: ["Someotherstudio"] },
+      ],
+    }).fetch("2026-10-01", ctx),
+    /matched no configured studio names/,
+  );
+  assert.equal(sceneCalls(calls).length, 0, "no scene listing is fetched for a rejected site");
+});
+
+test("a failed lookup does not leave a partial site map cached for later polls", async () => {
+  // cachedSites.size is what marks resolution done. If a throwing lookup left it
+  // partly filled, every later poll would skip re-resolution and quietly run
+  // with only the studios that happened to resolve before the failure.
+  let failNext = false;
+  const calls: string[] = [];
+  const ctx = {
+    now: new Date("2026-10-04T00:00:00Z"),
+    fetcher: {
+      json: async (url: string) => {
+        calls.push(url);
+        const parsed = new URL(url);
+        if (parsed.pathname.startsWith("/sites/")) {
+          if (failNext) {
+            failNext = false;
+            throw new FetchError(`GET ${url} -> 503`, "inconclusive", 503);
+          }
+          const identifier = decodeURIComponent(parsed.pathname.slice("/sites/".length));
+          if (identifier !== "brazzers") {
+            throw new FetchError(`GET ${url} -> 404`, "definitive", 404);
+          }
+          return { data: site };
+        }
+        if (parsed.pathname === "/scenes") return page([], 1, 1);
+        throw new Error(`unexpected request ${url}`);
+      },
+    },
+    log: () => {},
+    mapWithConcurrency: async (items: unknown[], fn: (item: unknown) => unknown) =>
+      Promise.all(items.map(fn)),
+    mapIsolated: async (items: unknown[], fn: (item: unknown) => unknown) =>
+      Promise.all(items.map(fn)),
+  } as unknown as SourceContext;
+  const source = createTpdbWatchlistSource({
+    token: "token",
+    studios: [...studio, { studioId: "lane-x", studio: "Exotic", aliases: ["Exotic"] }],
+  });
+
+  failNext = true;
+  await assert.rejects(source.fetch("2026-10-01", ctx), /503/);
+  const beforeRetry = calls.filter((url) => new URL(url).pathname.startsWith("/sites/")).length;
+
+  // The retry must resolve from scratch, not settle for a partial map.
+  await source.fetch("2026-10-01", ctx);
+  const siteCallsAfter = calls
+    .slice(beforeRetry)
+    .filter((url) => new URL(url).pathname.startsWith("/sites/"));
+  assert.ok(
+    siteCallsAfter.length >= 2,
+    "both studios are looked up again after a failure, so no studio is silently dropped",
   );
 });
 
