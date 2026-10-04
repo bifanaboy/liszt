@@ -96,7 +96,7 @@ Four categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                                  | Matcher  |
 | -------------------------------------------- | ------------------------------------------ | -------- |
-| Lancelot Styles Evolution, Mambo Perv, Woodman Casting X, Traxxx watchlist (including Bang) | `traxxx.me` REST, no auth | yes |
+| Woodman Casting X, Traxxx watchlist (18 listings, including Bang) | `traxxx.me` REST, no auth | yes |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier       | **none** |
 | fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes |
@@ -112,14 +112,14 @@ per sync and an incomplete page is retried no more than once per day.
 Traxxx watchlist entries use this exact grammar:
 `https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
 `?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
-rejected at startup. The built-in entries are Vixen and Bang, both filtered to
-the `anal` tag. Bang's listing is
+rejected at startup. The built-in watchlist contains 18 studio listings,
+including Bang's `anal`-filtered listing:
 `https://traxxx.me/network/bang/scenes/latest/1?tags=anal`.
 `LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries and replaces
 that built-in list rather than appending to it, which makes a single lane easy
 to isolate during calibration.
 
-**Woodman Casting X** is a traxxx channel lane like the two above, with one
+**Woodman Casting X** is a traxxx channel lane with one
 exclusion: the studio writes `XXXX` as a whole token in the scene title of the
 scenes it marks, and those are dropped before the record is parsed. The marker
 comes from traxxx's title, which is the studio's own title — not from the studio
@@ -424,7 +424,7 @@ required variable: everything has a working default.
 | `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
 | `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
 | `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
-| `LISZT_TRAXXX_WATCHLIST`                        | Vixen and Bang `anal` listings | Comma-separated listing URLs; setting it replaces the built-in list.  |
+| `LISZT_TRAXXX_WATCHLIST`                        | 18 listings, including Bang   | Comma-separated URLs; setting it replaces the built-in list.           |
 | `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
 | `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
 | `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |

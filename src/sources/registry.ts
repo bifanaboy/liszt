@@ -4,9 +4,8 @@
  *
  * The four categories, in full:
  *
- *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, Woodman Casting X
- *                   (minus its XXXX scenes), plus the checked watchlist. No
- *                   auth, and traxxx replaced TPDB entirely.
+ *  1. traxxx.me  - Woodman Casting X (minus its XXXX scenes) plus the checked
+ *                   studio watchlist. No auth; traxxx replaced TPDB entirely.
  *  2. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
  *                   Inertia HTML, its detail pages are paced at 8-9 seconds, and
  *                   its candidates' decisions live in `fc2_candidates` so a sync
@@ -16,28 +15,17 @@
  */
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
-import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 
-export const lancelotStylesEvolution = createTraxxxStudio({
-  id: "lancelot-styles-evolution",
-  name: "Lancelot Styles Evolution",
-  kind: "channel",
-  slug: "lancelotstyles",
-});
-
-export const mamboPerv = createTraxxxStudio({
-  id: "mambo-perv",
-  name: "Mambo Perv",
-  kind: "channel",
-  slug: "mamboperv",
-});
-
-export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze(["tushy"]);
+export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
+  "tushy",
+  "lancelot-styles-evolution",
+  "mambo-perv",
+]);
 
 /**
  * The Asian-language lanes, listed here because the dashboard splits them onto
@@ -73,8 +61,6 @@ export function createSources({
   manyvidsMinIntervalMs = 400,
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
-    lancelotStylesEvolution,
-    mamboPerv,
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
     ),
