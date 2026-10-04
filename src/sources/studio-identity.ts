@@ -161,6 +161,12 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   if (uuid) {
     return { candidates: [uuid], uuid, ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
   }
+  // `site_operation` is deliberately NOT read. TPDB's own implementation of it
+  // is broken: on site 116701 (75 scenes) `site_operation=Network` returns 0 and
+  // `site_operation=Single` returns no usable total, verified 2026-10-04. The
+  // lane already requests the single site its `site_id` names, which is what a
+  // `site_operation=Network` search on the wire actually resolves to. Honouring
+  // the parameter as written would return nothing.
   const siteId = readSiteId(url, raw);
   // A SEARCH address carries the studio in its query string, not its path.
   // `/scenes` is a container view every search shares, so taking the last path
