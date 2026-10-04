@@ -148,7 +148,13 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
     .split("/")
     .map((segment) => segment.trim())
     .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        throw new Error(`Invalid TPDB studio URL ${raw}: malformed path encoding`);
+      }
+    });
   // A UUID is the strongest identity TPDB offers, in the path or the query. It is
   // read FIRST so a `site_id` in the same address cannot quietly override it, and
   // before `site_id` is validated so junk in that parameter cannot abort an

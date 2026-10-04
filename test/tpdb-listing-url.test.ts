@@ -76,6 +76,18 @@ test("a site_id that is not a positive integer is rejected", () => {
   }
 });
 
+test("a site_id above MAX_SAFE_INTEGER is rejected", () => {
+  // Number() silently rounds past MAX_SAFE_INTEGER; the parser must reject it.
+  assert.throws(
+    () => parseTpdbStudioUrl(`https://theporndb.net/scenes?site_id=${Number.MAX_SAFE_INTEGER + 1}`),
+    /site_id/,
+  );
+  assert.throws(
+    () => parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=99999999999999999999"),
+    /site_id/,
+  );
+});
+
 test("a site page address is unchanged and carries no tags", () => {
   const lookup = parseTpdbStudioUrl("https://theporndb.net/sites/brazzers");
   assert.deepEqual(lookup.candidates, ["brazzers"]);
