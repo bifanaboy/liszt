@@ -209,7 +209,7 @@ export function tpdbListingUrlsToStudios(urls: readonly string[]): readonly Tpdb
       studio: studioName,
       aliases,
       tags: tagList.length ? tagList : undefined,
-      siteId: spec.siteId,
+      siteIds: [spec.siteId],
     };
   });
 }

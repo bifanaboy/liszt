@@ -129,7 +129,7 @@ test("a search address's tags reach the declaration, so the lane is tag-scoped",
   // The tag scope is part of the key, so the tagged and untagged lanes for one
   // site are two lanes rather than one lane silently changing scope.
   assert.equal(link.studioId, "tpdb-bang~anal");
-  assert.equal(link.tpdb?.siteId, 988);
+  assert.equal(link.tpdb?.siteIds[0], 988);
 });
 
 test("a Traxxx side still contributes its own tags and lane id", () => {
@@ -181,7 +181,7 @@ test("the tag filter is applied by name, never forwarded to the TPDB API", async
   const source = createTpdbWatchlistSource({
     token: "t",
     studios: [
-      { studioId: "tpdb-bang", studio: "Bang", aliases: ["Bang"], tags: ["Anal"], siteId: 988 },
+      { studioId: "tpdb-bang", studio: "Bang", aliases: ["Bang"], tags: ["Anal"], siteIds: [988] },
     ],
   });
   await source.fetch("2026-09-01", ctx as never);

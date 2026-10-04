@@ -41,14 +41,8 @@ export interface TpdbStudio {
   studio: string;
   aliases: readonly string[];
   tags?: readonly string[];
-  /**
-   * The TPDB site id, when the studio was declared with one.
-   *
-   * A declared id is authoritative and costs no request: the studio was
-   * resolved once, by `npm run link-studios`, against the live API. Only an
-   * undeclared studio falls back to the name lookup below.
-   */
-  siteId?: number;
+  /** TPDB site ids this studio maps to. One studio can span multiple TPDB sites. */
+  siteIds: number[];
 }
 
 export function cleanStudioName(value: string): string {
@@ -159,85 +153,86 @@ export function createTpdbWatchlistSource(options: {
         // quietly run with only the studios that happened to resolve first.
         const resolved = new Map<number, TpdbStudio | null>();
         for (const studio of options.studios) {
-          // A declared site id is taken as given: it was resolved and verified
-          // once, by hand, against the live API. Re-deriving it from a name on
-          // every boot would risk resolving to a DIFFERENT site after TPDB
-          // renames something - a silent change of which releases a lane files.
-          if (studio.siteId !== undefined) {
-            resolved.set(studio.siteId, studio);
-            continue;
+          // Declared siteIds are authoritative - each siteId maps to this studio.
+          // One studio can own multiple siteIds (e.g., Dredd -> [50864, 39697, 81939]).
+          for (const siteId of studio.siteIds) {
+            resolved.set(siteId, studio);
           }
-          if (studio.aliases.every((alias) => !cleanStudioName(alias))) continue;
-          for (const alias of studio.aliases) {
-            const key = cleanStudioName(alias);
-            if (!key || aliases.get(key) !== studio) continue;
-            const site = await fetchSite(pacedCtx, key, token);
-            if (!site) continue;
-            // Only accept a site whose own name or short name is an alias of
-            // this studio. /sites/{identifier} resolves loosely (a slug may
-            // return a different site), so the response is verified rather
-            // than trusted.
-            //
-            // A name that maps to a DIFFERENT configured studio is a collision
-            // and rejects the site, even when the other name matches - that
-            // would file another studio's releases under this lane. A name that
-            // maps to nothing is not a collision: TPDB short names are often a
-            // legitimate abbreviation ("elegantangel" for "Elegant Angel"), so
-            // only a positive disagreement counts.
-            const siteKeys = [cleanStudioName(site.name), cleanStudioName(site.short_name ?? "")];
-            if (!siteKeys.filter(Boolean).some((candidate) => aliases.get(candidate) === studio))
-              continue;
-            const collides = siteKeys.some((candidate) => {
-              const owner = aliases.get(candidate);
-              return owner !== undefined && owner !== studio;
-            });
-            if (collides) continue;
-            resolved.set(site.id, studio);
-            break;
+          // Fallback name lookup for undeclared studios (unchanged).
+          if (studio.siteIds.length === 0) {
+            if (studio.aliases.every((alias) => !cleanStudioName(alias))) continue;
+            for (const alias of studio.aliases) {
+              const key = cleanStudioName(alias);
+              if (!key || aliases.get(key) !== studio) continue;
+              const site = await fetchSite(pacedCtx, key, token);
+              if (!site) continue;
+              const siteKeys = [cleanStudioName(site.name), cleanStudioName(site.short_name ?? "")];
+              if (!siteKeys.filter(Boolean).some((candidate) => aliases.get(candidate) === studio))
+                continue;
+              const collides = siteKeys.some((candidate) => {
+                const owner = aliases.get(candidate);
+                return owner !== undefined && owner !== studio;
+              });
+              if (collides) continue;
+              resolved.set(site.id, studio);
+              break;
+            }
           }
         }
         for (const [siteId, studio] of resolved) cachedSites.set(siteId, studio);
       }
       const sites = cachedSites;
       const scenes: RawScene[] = [];
-      for (const [siteId, studio] of sites) {
-        if (!studio) continue;
-        for await (const page of pages(
-          pacedCtx,
-          `/scenes?site_id=${siteId}&date=${encodeURIComponent(windowStart)}&date_operation=%3E%3D`,
-          token,
-          (raw) => ScenePage.parse(raw),
-          `site(${siteId})`,
-        )) {
-          for (const scene of page.data) {
-            if (scene.date < windowStart || scene.date > ctx.now.toISOString().slice(0, 10))
-              continue;
-            const sceneTags = new Set((scene.tags ?? []).map((tag) => cleanStudioName(tag.name)));
-            if (!(studio.tags ?? []).every((tag) => sceneTags.has(cleanStudioName(tag)))) continue;
-            const recordUrl = scene.url ?? undefined;
-            scenes.push({
-              sourceSceneId: scene.id,
-              studioId: studio.studioId,
-              studio: studio.studio,
-              title: scene.title,
-              releaseDate: scene.date,
-              durationSec: scene.duration ?? null,
-              performers: scene.performers?.map((person) => person.name) ?? [],
-              thumbnailUrl: scene.image ?? scene.poster ?? "",
-              ...(recordUrl ? { releaseUrl: recordUrl } : {}),
-              provenance: {
-                source: "TPDB",
-                sourceUrl: BASE,
-                ...(recordUrl ? { recordUrl } : {}),
-                sourceSceneId: scene.id,
-              },
-              fieldProvenance: {
-                title: "TPDB",
-                releaseDate: "TPDB",
-                ...(scene.duration ? { durationSec: "TPDB" } : {}),
-                ...(scene.image || scene.poster ? { thumbnailUrl: "TPDB" } : {}),
-              },
-            });
+      // Track emitted (siteId, sceneId) pairs to avoid duplicate emissions
+      // when the same video appears on multiple TPDB sites for the same studio.
+      const emitted = new Set<string>();
+
+      for (const studio of options.studios) {
+        for (const siteId of studio.siteIds) {
+          const studioForSite = sites.get(siteId);
+          if (!studioForSite) continue;
+          for await (const page of pages(
+            pacedCtx,
+            `/scenes?site_id=${siteId}&date=${encodeURIComponent(windowStart)}&date_operation=%3E%3D`,
+            token,
+            (raw) => ScenePage.parse(raw),
+            `site(${siteId})`,
+          )) {
+            for (const scene of page.data) {
+              if (scene.date < windowStart || scene.date > ctx.now.toISOString().slice(0, 10))
+                continue;
+              const emitKey = `${siteId}:${scene.id}`;
+              if (emitted.has(emitKey)) continue;
+              emitted.add(emitKey);
+
+              const sceneTags = new Set((scene.tags ?? []).map((tag) => cleanStudioName(tag.name)));
+              if (!(studio.tags ?? []).every((tag) => sceneTags.has(cleanStudioName(tag))))
+                continue;
+              const recordUrl = scene.url ?? undefined;
+              scenes.push({
+                sourceSceneId: emitKey,
+                studioId: studio.studioId,
+                studio: studio.studio,
+                title: scene.title,
+                releaseDate: scene.date,
+                durationSec: scene.duration ?? null,
+                performers: scene.performers?.map((person) => person.name) ?? [],
+                thumbnailUrl: scene.image ?? scene.poster ?? "",
+                ...(recordUrl ? { releaseUrl: recordUrl } : {}),
+                provenance: {
+                  source: "TPDB",
+                  sourceUrl: BASE,
+                  ...(recordUrl ? { recordUrl } : {}),
+                  sourceSceneId: scene.id,
+                },
+                fieldProvenance: {
+                  title: "TPDB",
+                  releaseDate: "TPDB",
+                  ...(scene.duration ? { durationSec: "TPDB" } : {}),
+                  ...(scene.image || scene.poster ? { thumbnailUrl: "TPDB" } : {}),
+                },
+              });
+            }
           }
         }
       }

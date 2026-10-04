@@ -4,7 +4,9 @@ import { createTpdbWatchlistSource, cleanStudioName } from "../src/sources/tpdb-
 import { FetchError } from "../src/core/fetcher.ts";
 import type { SourceContext } from "../src/sources/types.ts";
 
-const studio = [{ studioId: "network-brazzers-anal", studio: "Brazzers", aliases: ["Brazzers"] }];
+const studio = [
+  { studioId: "network-brazzers-anal", studio: "Brazzers", aliases: ["Brazzers"], siteIds: [] },
+];
 const scene = {
   id: "s1",
   title: "A Scene",
@@ -98,7 +100,9 @@ test("a multi-word alias resolves the site TPDB spells with spaces", async () =>
   });
   await createTpdbWatchlistSource({
     token: "token",
-    studios: [{ studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"] }],
+    studios: [
+      { studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"], siteIds: [] },
+    ],
   }).fetch("2026-10-01", ctx);
   assert.equal(new URL(calls[0]!.url).pathname, "/sites/elegant%20angel");
   assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
@@ -123,7 +127,7 @@ test("a studio TPDB does not carry is reported unmatched, and the rest still run
     token: "token",
     studios: [
       ...studio,
-      { studioId: "lane-missing", studio: "Jules Jordan", aliases: ["Jules Jordan"] },
+      { studioId: "lane-missing", studio: "Jules Jordan", aliases: ["Jules Jordan"], siteIds: [] },
     ],
   }).fetch("2026-10-01", ctx);
   assert.equal(result.scenes.length, 1, "the matched studio still contributes");
@@ -168,8 +172,8 @@ test("ambiguous TPDB studio names are excluded", async () => {
   const source = createTpdbWatchlistSource({
     token: "token",
     studios: [
-      { studioId: "lane-a", studio: "Shared Studio", aliases: ["Shared Studio"] },
-      { studioId: "lane-b", studio: "Shared Studio", aliases: ["Shared Studio"] },
+      { studioId: "lane-a", studio: "Shared Studio", aliases: ["Shared Studio"], siteIds: [] },
+      { studioId: "lane-b", studio: "Shared Studio", aliases: ["Shared Studio"], siteIds: [] },
     ],
   });
   await assert.rejects(source.fetch("2026-10-01", ctx), /matched no configured studio names/);
@@ -181,9 +185,9 @@ test("three-way aliases stay ambiguous and an ambiguous full name cannot fall ba
   const source = createTpdbWatchlistSource({
     token: "token",
     studios: [
-      { studioId: "lane-a", studio: "A", aliases: ["Shared Studio", "lane-a"] },
-      { studioId: "lane-b", studio: "B", aliases: ["Shared Studio"] },
-      { studioId: "lane-c", studio: "C", aliases: ["Shared Studio"] },
+      { studioId: "lane-a", studio: "A", aliases: ["Shared Studio", "lane-a"], siteIds: [] },
+      { studioId: "lane-b", studio: "B", aliases: ["Shared Studio"], siteIds: [] },
+      { studioId: "lane-c", studio: "C", aliases: ["Shared Studio"], siteIds: [] },
     ],
   });
   await assert.rejects(source.fetch("2026-10-01", ctx), /matched no configured studio names/);
@@ -231,7 +235,9 @@ test("an unrecognised short name is an abbreviation, not a collision", async () 
   });
   const result = await createTpdbWatchlistSource({
     token: "token",
-    studios: [{ studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"] }],
+    studios: [
+      { studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"], siteIds: [] },
+    ],
   }).fetch("2026-10-01", ctx);
   assert.equal(result.scenes.length, 1);
   assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
@@ -250,7 +256,12 @@ test("a site whose short name belongs to another studio is rejected, not accepte
       token: "token",
       studios: [
         ...studio,
-        { studioId: "lane-other", studio: "Someotherstudio", aliases: ["Someotherstudio"] },
+        {
+          studioId: "lane-other",
+          studio: "Someotherstudio",
+          aliases: ["Someotherstudio"],
+          siteIds: [],
+        },
       ],
     }).fetch("2026-10-01", ctx),
     /matched no configured studio names/,
@@ -293,7 +304,10 @@ test("a failed lookup does not leave a partial site map cached for later polls",
   } as unknown as SourceContext;
   const source = createTpdbWatchlistSource({
     token: "token",
-    studios: [...studio, { studioId: "lane-x", studio: "Exotic", aliases: ["Exotic"] }],
+    studios: [
+      ...studio,
+      { studioId: "lane-x", studio: "Exotic", aliases: ["Exotic"], siteIds: [] },
+    ],
   });
 
   failNext = true;

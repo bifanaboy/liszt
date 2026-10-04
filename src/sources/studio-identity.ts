@@ -476,7 +476,7 @@ export const StudioLinkSchema = z.object({
     .optional(),
   tpdb: z
     .object({
-      siteId: z.number().int().positive(),
+      siteIds: z.array(z.number().int().positive()).min(1),
       uuid: z.string().uuid().optional(),
       name: z.string().min(1),
       shortName: z.string().min(1).optional(),
@@ -507,7 +507,7 @@ export interface StudioLink {
     url: string;
   };
   tpdb?: {
-    siteId: number;
+    siteIds: number[];
     uuid?: string;
     name: string;
     shortName?: string;
@@ -561,7 +561,8 @@ export function auditStudioLinks(links: readonly StudioLink[]): string[] {
   for (const link of links) {
     byKey.set(link.studioId, [...(byKey.get(link.studioId) ?? []), link.studio]);
     if (link.tpdb)
-      bySite.set(link.tpdb.siteId, [...(bySite.get(link.tpdb.siteId) ?? []), link.studioId]);
+      for (const siteId of link.tpdb.siteIds)
+        bySite.set(siteId, [...(bySite.get(siteId) ?? []), link.studioId]);
     for (const alias of studioAliases(link)) {
       byAlias.set(alias, (byAlias.get(alias) ?? new Set()).add(link.studioId));
     }

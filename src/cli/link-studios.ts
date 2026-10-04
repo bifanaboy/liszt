@@ -119,7 +119,7 @@ if (link.traxxx) {
 }
 if (link.tpdb) {
   out(
-    `tpdb         site ${link.tpdb.siteId} "${link.tpdb.name}" via ${resolved?.site?.resolvedBy}`,
+    `tpdb         sites ${link.tpdb.siteIds.join(", ")} "${link.tpdb.name}" via ${resolved?.site?.resolvedBy}`,
   );
   if (link.tpdb.uuid) out(`             uuid ${link.tpdb.uuid}`);
 } else if (resolved) {
