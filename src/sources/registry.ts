@@ -18,7 +18,6 @@
  */
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
-import { createTraxxxStudio } from "./traxxx.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
 import { createBangOriginalsStudio } from "./bang-originals.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
@@ -27,21 +26,7 @@ import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 
-export const lancelotStylesEvolution = createTraxxxStudio({
-  id: "lancelot-styles-evolution",
-  name: "Lancelot Styles Evolution",
-  kind: "channel",
-  slug: "lancelotstyles",
-});
-
-export const mamboPerv = createTraxxxStudio({
-  id: "mambo-perv",
-  name: "Mambo Perv",
-  kind: "channel",
-  slug: "mamboperv",
-});
-
-export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze(["tushy"]);
+export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze(["tushy", "lancelot-styles-evolution", "mambo-perv"]);
 
 /**
  * The Asian-language lanes, listed here because the dashboard splits them onto
@@ -88,8 +73,6 @@ export function createSources({
   ],
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
-    lancelotStylesEvolution,
-    mamboPerv,
     createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
