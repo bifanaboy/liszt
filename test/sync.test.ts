@@ -120,13 +120,18 @@ test("studio metadata merge keeps fresh studio fields and falls back to previous
 test("sync preserves prior studio metadata only for Traxxx records not selected for lookup", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
+  // Each record gets its OWN release URL. A shared one would make these four
+  // distinct records look like one release described four times, which the
+  // cross-lane dedup now (correctly) collapses - a fixture artifact, not a
+  // behaviour this test is about.
   const releaseUrl = "https://www.tushy.com/videos/example";
+  const url = (id: string) => `https://www.tushy.com/videos/${id}`;
   const scenes = [
     raw("direct", { releaseUrl }),
     raw("no-url", { source: "traxxx.me" }),
     raw("unsupported", { source: "traxxx.me", releaseUrl: "https://example.test/scene" }),
-    raw("cooldown", { source: "traxxx.me", releaseUrl }),
-    raw("complete", { source: "traxxx.me", releaseUrl }),
+    raw("cooldown", { source: "traxxx.me", releaseUrl: url("cooldown") }),
+    raw("complete", { source: "traxxx.me", releaseUrl: url("complete") }),
   ];
   const source = adapter("metadata", async () => ({ scenes, verifiedEmpty: false }));
   const studioMetadata = {
