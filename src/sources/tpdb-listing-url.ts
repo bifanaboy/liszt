@@ -13,7 +13,6 @@
  * Unknown parameters are an error (not silently ignored), matching
  * parseTraxxxListingUrl's behaviour.
  */
-import { z } from "zod";
 import type { TpdbStudio } from "./tpdb-watchlist.ts";
 
 const TPDB_LISTING_HOSTS: readonly string[] = Object.freeze(["theporndb.net", "www.theporndb.net"]);

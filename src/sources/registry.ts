@@ -113,7 +113,7 @@ export function createSources({
   // These take precedence over name-derived studios; any Traxxx lane not mentioned
   // keeps the old name lookup, enabling incremental migration.
   const tpdbStudiosFromUrls = (tpdbListingUrls ?? []).flatMap((rawUrl): TpdbStudio[] => {
-    const spec = parseTpdbListingUrl(rawUrl);
+    const _spec = parseTpdbListingUrl(rawUrl);
     const studios = tpdbListingUrlsToStudios([rawUrl]);
     const studio = studios[0];
     if (!studio) return [];
