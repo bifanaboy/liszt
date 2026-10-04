@@ -49,8 +49,15 @@ function tpdbLaneId(resolved: ResolvedTpdbSite, tags: readonly string[]): string
   const base = canonicalStudioId({ tpdb: resolved });
   // Joined with a separator that cannot occur inside a cleaned tag, so "Anal BBC"
   // as ONE tag and Anal+BBC as TWO tags cannot both encode to `anal-bbc` and
-  // overwrite each other under --write.
-  const scope = tags.map((tag) => cleanStudioName(tag).replace(/\s+/g, "-")).filter(Boolean);
+  // overwrite each other under --write. A tag that cleans to nothing is rejected
+  // by the parser, so there is nothing to filter out here: silently dropping one
+  // would narrow the lane with no trace.
+  const scope = tags.map((tag) => cleanStudioName(tag).replace(/\s+/g, "-"));
+  if (scope.some((part) => !part)) {
+    throw new Error(
+      `Invalid TPDB studio URL tags ${JSON.stringify(tags)} cannot be encoded in a studio id`,
+    );
+  }
   return scope.length ? `${base}~${scope.join("~")}` : base;
 }
 

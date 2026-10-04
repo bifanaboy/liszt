@@ -270,6 +270,25 @@ test("distinct tag scopes cannot collide on one lane id", () => {
   assert.notEqual(oneTag.studioId, twoTags.studioId);
 });
 
+test("tags differing only in case fold to one tag before the OR check", () => {
+  // `Anal` and `anal` are ONE tag. Counting raw names rejected a URL whose tags
+  // collapse to a single scope.
+  assert.deepEqual(
+    parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988&tags%5B0%5D=Anal&tags%5B1%5D=anal")
+      .tags,
+    ["Anal"],
+  );
+});
+
+test("a tag with no usable characters is refused rather than silently dropped", () => {
+  // "!!!" cleans to empty. Dropping it would narrow the lane with nothing to show
+  // the operator; encoding it would produce a dangling separator.
+  assert.throws(
+    () => parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988&tags%5B0%5D=%21%21%21"),
+    /tags/,
+  );
+});
+
 test("the CLI passes the exact site id through to the resolver", () => {
   // The CLI rebuilt the lookup from `candidates`/`uuid`/`name` only, dropping
   // `exactSiteId`. Verified live before the fix: `?site_id=988` with a

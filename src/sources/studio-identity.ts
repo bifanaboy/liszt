@@ -237,8 +237,26 @@ function readSearchTags(url: URL, raw: string): string[] {
     // A present-but-empty tag is a malformed address. Dropping it would produce
     // an untagged declaration and the lane would collect the WHOLE site - the one
     // outcome this change exists to prevent.
-    if (!name) throw new Error(`Invalid TPDB studio URL ${raw}: ${key} has no tag name`);
+    if (!name) {
+      throw new Error(
+        `Invalid TPDB studio URL ${raw}: ${key} has no tag name (expected a name like "Anal")`,
+      );
+    }
+    if (!cleanStudioName(name)) {
+      throw new Error(
+        `Invalid TPDB studio URL ${raw}: ${key}=${JSON.stringify(name)} has no letters or digits to match on`,
+      );
+    }
     names.add(name);
+  }
+  // Case-insensitively de-duplicated, then ordered deterministically so the same
+  // address always yields the same declaration. Folding happens BEFORE the
+  // operation check, because "Anal" and "anal" are one tag and must not read as
+  // a multi-tag search.
+  const folded = new Map<string, string>();
+  for (const name of names) {
+    const key = cleanStudioName(name);
+    if (key && !folded.has(key)) folded.set(key, name);
   }
   // The declaration's tag list is an ALL-of match (tpdb-watchlist.ts), so a
   // multi-tag search whose tags are ALTERNATIVES would be quietly narrowed to
@@ -247,18 +265,11 @@ function readSearchTags(url: URL, raw: string): string[] {
   // to guess at - is refused rather than reinterpreted.
   const tagAnd = url.searchParams.get("tag_and");
   const allOf = tagAnd !== null && ["1", "true", "and"].includes(tagAnd.trim().toLowerCase());
-  if (names.size > 1 && !allOf) {
+  if (folded.size > 1 && !allOf) {
     const seen = tagAnd === null ? "no tag_and" : `tag_and=${tagAnd}`;
     throw new Error(
-      `Invalid TPDB studio URL ${raw}: ${seen} with ${names.size} tags cannot be one lane`,
+      `Invalid TPDB studio URL ${raw}: ${seen} with ${folded.size} tags cannot be one lane`,
     );
-  }
-  // Case-insensitively de-duplicated, then ordered deterministically so the same
-  // address always yields the same declaration.
-  const folded = new Map<string, string>();
-  for (const name of names) {
-    const key = cleanStudioName(name);
-    if (key && !folded.has(key)) folded.set(key, name);
   }
   return [...folded.values()].sort((a, b) => cleanStudioName(a).localeCompare(cleanStudioName(b)));
 }
