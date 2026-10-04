@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { auditStudioLinks, StudioLinkSchema } from "./sources/studio-identity.ts";
 import { DEFAULT_FETCH_CONCURRENCY } from "./core/concurrency.ts";
 import { DEFAULT_TIMEOUT_MS } from "./core/fetcher.ts";
@@ -232,6 +233,16 @@ const studioLinksFromEnv = (value: string | undefined): unknown => {
 };
 
 /**
+ * Fallback reader: committed default studio links from repo root. */
+function readDefaultStudioLinks(): unknown {
+  try {
+    const path = join(__dirname, "..", "studio-links.default.json");
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return [];
+  }
+}
+/**
  * Parse configuration from the environment, naming any failing field.
  *
  * There is no credential and no production-only refusal any more. The app has
@@ -256,7 +267,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     traxxxMinIntervalMs: env.LISZT_TRAXXX_MIN_INTERVAL_MS,
     traxxxCacheTtlMs: env.LISZT_TRAXXX_CACHE_TTL_MS,
     traxxxWatchlist: list(env.LISZT_TRAXXX_WATCHLIST),
-    studioLinks: studioLinksFromEnv(env.LISZT_STUDIO_LINKS),
+    studioLinks: studioLinksFromEnv(env.LISZT_STUDIO_LINKS) ?? readDefaultStudioLinks(),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
     fc2ListingMinIntervalMs: env.LISZT_FC2_LISTING_MIN_INTERVAL_MS,
     fc2DetailMinIntervalMs: env.LISZT_FC2_DETAIL_MIN_INTERVAL_MS,

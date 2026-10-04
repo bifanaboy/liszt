@@ -1,9 +1,13 @@
 import { z } from "zod";
+<<<<<<< HEAD
 import { FetchError } from "../core/fetcher.ts";
+=======
+>>>>>>> main
 import type { RawScene, SourceAdapter, SourceContext } from "./types.ts";
 
 const Meta = z.object({
   current_page: z.number().int().positive(),
+<<<<<<< HEAD
   /** TPDB names the final page `last_page`; `last` is not a field it returns. */
   last_page: z.number().int().nonnegative(),
 });
@@ -14,6 +18,20 @@ const Site = z.object({
 });
 const SiteEnvelope = z.object({ data: Site });
 type TpdbSite = z.infer<typeof Site>;
+=======
+  last: z.number().int().nonnegative(),
+});
+const SitePage = z.object({
+  data: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      name: z.string().min(1),
+      short_name: z.string().optional(),
+    }),
+  ),
+  meta: Meta,
+});
+>>>>>>> main
 const ScenePage = z.object({
   data: z.array(
     z.object({
@@ -25,7 +43,10 @@ const ScenePage = z.object({
       image: z.string().url().nullable().optional(),
       poster: z.string().url().nullable().optional(),
       performers: z.array(z.object({ name: z.string().min(1) })).optional(),
+<<<<<<< HEAD
       tags: z.array(z.object({ name: z.string().min(1) })).optional(),
+=======
+>>>>>>> main
       site: z.object({ name: z.string().min(1) }).optional(),
     }),
   ),
@@ -34,15 +55,21 @@ const ScenePage = z.object({
 
 const MAX_PAGES = 1000;
 const BASE = "https://api.theporndb.net";
+<<<<<<< HEAD
 const MIN_INTERVAL_MS = 250;
+=======
+>>>>>>> main
 
 export interface TpdbStudio {
   studioId: string;
   studio: string;
   aliases: readonly string[];
+<<<<<<< HEAD
   tags?: readonly string[];
   /** TPDB site ids this studio maps to. One studio can span multiple TPDB sites. */
   siteIds: number[];
+=======
+>>>>>>> main
 }
 
 export function cleanStudioName(value: string): string {
@@ -55,6 +82,7 @@ export function cleanStudioName(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+<<<<<<< HEAD
 /** A site lookup by identifier, for the names TPDB accepts in place of an id. */
 async function fetchSite(
   ctx: SourceContext,
@@ -76,21 +104,33 @@ async function fetchSite(
 }
 
 function checkedPage<T extends { meta: { current_page: number; last_page: number } }>(
+=======
+function checkedPage<T extends { meta: { current_page: number; last: number } }>(
+>>>>>>> main
   page: T,
   current: number,
   label: string,
 ): T {
   if (
     page.meta.current_page !== current ||
+<<<<<<< HEAD
     page.meta.last_page > MAX_PAGES ||
     (page.meta.last_page < current && !(current === 1 && page.meta.last_page === 0))
+=======
+    page.meta.last > MAX_PAGES ||
+    (page.meta.last < current && !(current === 1 && page.meta.last === 0))
+>>>>>>> main
   ) {
     throw new Error(`TPDB ${label}: inconsistent pagination on page ${current}`);
   }
   return page;
 }
 
+<<<<<<< HEAD
 async function* pages<T extends { meta: { current_page: number; last_page: number } }>(
+=======
+async function* pages<T extends { meta: { current_page: number; last: number } }>(
+>>>>>>> main
   ctx: SourceContext,
   path: string,
   token: string,
@@ -102,10 +142,19 @@ async function* pages<T extends { meta: { current_page: number; last_page: numbe
     const url = new URL(path, BASE);
     url.searchParams.set("per_page", "100");
     url.searchParams.set("page", String(page));
+<<<<<<< HEAD
     const raw = await ctx.fetcher.json(url.href, { headers: { Authorization: `Bearer ${token}` } });
     const data = checkedPage(parse(raw), page, label);
     yield data;
     if (page >= data.meta.last_page) return;
+=======
+    const raw = await ctx.fetcher.json(url.href, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = checkedPage(parse(raw), page, label);
+    yield data;
+    if (page >= data.meta.last) return;
+>>>>>>> main
   }
 }
 
@@ -113,17 +162,29 @@ export function createTpdbWatchlistSource(options: {
   token?: string;
   studios: readonly TpdbStudio[];
 }): SourceAdapter {
+<<<<<<< HEAD
   const cachedSites = new Map<number, TpdbStudio | null>();
+=======
+>>>>>>> main
   const aliases = new Map<string, TpdbStudio | null>();
   for (const studio of options.studios)
     for (const alias of studio.aliases) {
       const key = cleanStudioName(alias);
       if (!key) continue;
       const prior = aliases.get(key);
+<<<<<<< HEAD
       aliases.set(
         key,
         prior === null || (prior && prior.studioId !== studio.studioId) ? null : studio,
       );
+=======
+      // When the prior entry is already null (ambiguity sentinel), keep it null
+      // so that later studios sharing the same cleaned alias also exclude themselves.
+      // Only set null when prior is a studio with a different studioId;
+      // if prior is null, do not overwrite it with a new studio.
+      const newValue = prior ? (prior.studioId !== studio.studioId ? null : prior) : null;
+      aliases.set(key, newValue);
+>>>>>>> main
     }
   return {
     id: "tpdb-watchlist",
@@ -133,6 +194,7 @@ export function createTpdbWatchlistSource(options: {
     async fetch(windowStart, ctx) {
       const token = options.token;
       if (!token) throw new Error("TPDB token missing; set TPDB_API_KEY in the server environment");
+<<<<<<< HEAD
       let lastRequestAt = 0;
       const fetchJson = async <T = unknown>(url: string): Promise<T> => {
         const wait = MIN_INTERVAL_MS - (Date.now() - lastRequestAt);
@@ -258,6 +320,70 @@ export function createTpdbWatchlistSource(options: {
       });
       if (!matched.length) throw new Error("TPDB watchlist matched no configured studio names");
       return { scenes, verifiedEmpty: scenes.length === 0 };
+=======
+      const sites = new Map<number, TpdbStudio>();
+      for await (const page of pages(ctx, "/sites", token, (raw) => SitePage.parse(raw), "sites")) {
+        for (const site of page.data) {
+          const studioByName = aliases.get(cleanStudioName(site.name));
+          // If the alias map returns null (studio name is ambiguous), do not fall
+          // through to the short_name check — an ambiguous name should not admit
+          // any studio via the short_name fallback.
+          let studio: TpdbStudio | undefined = studioByName !== null ? studioByName : undefined;
+          if (!studio && site.short_name) {
+            const studioByShort = aliases.get(cleanStudioName(site.short_name));
+            if (studioByShort !== null) {
+              studio = studioByShort;
+            }
+          }
+          if (studio) sites.set(site.id, studio);
+        }
+      }
+      const scenes: RawScene[] = [];
+      for (const [siteId, studio] of sites) {
+        for await (const page of pages(
+          ctx,
+          `/scenes?site_id=${siteId}`,
+          token,
+          (raw) => ScenePage.parse(raw),
+          `site(${siteId})`,
+        )) {
+          for (const scene of page.data) {
+            if (scene.date < windowStart || scene.date > ctx.now.toISOString().slice(0, 10))
+              continue;
+            const recordUrl = scene.url ?? undefined;
+            scenes.push({
+              sourceSceneId: scene.id,
+              studioId: studio.studioId,
+              studio: studio.studio,
+              title: scene.title,
+              releaseDate: scene.date,
+              durationSec: scene.duration ?? null,
+              performers: scene.performers?.map((person) => person.name) ?? [],
+              thumbnailUrl: scene.image ?? scene.poster ?? "",
+              ...(recordUrl ? { releaseUrl: recordUrl } : {}),
+              provenance: {
+                source: "TPDB",
+                sourceUrl: BASE,
+                ...(recordUrl ? { recordUrl } : {}),
+                sourceSceneId: scene.id,
+              },
+              fieldProvenance: {
+                title: "TPDB",
+                releaseDate: "TPDB",
+                ...(scene.duration ? { durationSec: "TPDB" } : {}),
+                ...(scene.image || scene.poster ? { thumbnailUrl: "TPDB" } : {}),
+              },
+            });
+          }
+        }
+      }
+      ctx.log("TPDB watchlist fetched", { studios: sites.size, scenes: scenes.length });
+      // verifiedEmpty should reflect whether any sites were matched;
+      // if no sites matched (e.g. name drift, no token), report it explicitly
+      // rather than unconditionally claiming success.
+      const verified = sites.size > 0 || scenes.length > 0;
+      return { scenes, verifiedEmpty: verified };
+>>>>>>> main
     },
   };
 }
