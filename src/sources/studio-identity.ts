@@ -81,6 +81,14 @@ export interface TpdbLookup {
    * verify a loose slug match, and to pick out of search results.
    */
   readonly name?: string;
+  /**
+   * Tag names a pasted SEARCH address asked for.
+   *
+   * TPDB's own `tags[...]` filter does not filter - verified 2026-10-04, every
+   * tag value returns the same rows - so these are recorded and applied by the
+   * caller's name match instead, which is the only path that actually works.
+   */
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -123,15 +131,42 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   if (!TPDB_WEB_HOSTS.includes(url.hostname)) {
     throw new Error(`Invalid TPDB studio URL ${raw}: unsupported host ${url.hostname}`);
   }
+  // The tag names a search address asked for. Read before the path is
+  // interpreted, and deliberately NOT forwarded to the API later.
+  const tags = readSearchTags(url);
+  const tagsField = tags.length ? { tags } : {};
+  const nameHint = url.searchParams.get("name") ?? undefined;
+  const uuidParam = url.searchParams.get("uuid") ?? undefined;
+  const siteId = readSiteId(url, raw);
+  if (uuidParam) {
+    if (!z.string().uuid().safeParse(uuidParam).success) {
+      throw new Error(`Invalid TPDB studio URL ${raw}: uuid is not a UUID`);
+    }
+    return {
+      candidates: [uuidParam],
+      uuid: uuidParam,
+      ...tagsField,
+      ...(nameHint ? { name: nameHint } : {}),
+    };
+  }
+  // A SEARCH address carries the studio in its query string, not its path.
+  // `/scenes` is a container view every search shares, so taking the last path
+  // segment as the identifier here named the container - and the lookup then
+  // fell back to a NAME SEARCH that could land on any site with a similar
+  // name. `site_id` is the identity; the id decides, never the slug.
+  if (siteId !== undefined) {
+    const slugHint = url.searchParams.get("site") ?? undefined;
+    const name = nameHint ?? (slugHint ? displayNameFromSlug(slugHint) : undefined);
+    return { candidates: [String(siteId)], ...tagsField, ...(name ? { name } : {}) };
+  }
   const segments = url.pathname
     .split("/")
     .map((segment) => segment.trim())
     .filter(Boolean)
     .map((segment) => decodeURIComponent(segment));
   const uuid = segments.find((segment) => z.string().uuid().safeParse(segment).success);
-  const nameHint = url.searchParams.get("name") ?? undefined;
   if (uuid) {
-    return { candidates: [uuid], uuid, ...(nameHint ? { name: nameHint } : {}) };
+    return { candidates: [uuid], uuid, ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
   }
   // No uuid, so the identifier is the LAST path segment: the resource being
   // named. Earlier segments are containers (`/sites/...`) or sibling views
@@ -142,7 +177,89 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   if (!identifier) {
     throw new Error(`Invalid TPDB studio URL ${raw}: no studio identifier in the path`);
   }
-  return { candidates: [identifier], ...(nameHint ? { name: nameHint } : {}) };
+  // A container view with no site_id names the CONTAINER, not a studio. Accepting
+  // it would send `/sites/scenes` to the API and then let a name search pick a
+  // site, which is the silent wrong-studio path this parser exists to close.
+  if (!uuid && isContainerSegment(last)) {
+    throw new Error(
+      `Invalid TPDB studio URL ${raw}: a ${identifier} search needs a site_id query parameter`,
+    );
+  }
+  return { candidates: [identifier], ...tagsField, ...(nameHint ? { name: nameHint } : {}) };
+}
+
+/**
+ * Path segments that are a view over many studios rather than one studio.
+ *
+ * `/scenes` is the address a person copies after filtering in the browser, so it
+ * is the common case; the rest are listed so a future TPDB view is rejected the
+ * same way instead of being looked up as though it named a studio.
+ */
+const CONTAINER_SEGMENTS: ReadonlySet<string> = new Set([
+  "scenes",
+  "studios",
+  "tags",
+  "studios-scenes",
+  "search",
+  "categories",
+]);
+
+/** Whether a path segment names a container view rather than one studio. */
+function isContainerSegment(segment: string | undefined): boolean {
+  return segment !== undefined && CONTAINER_SEGMENTS.has(cleanStudioName(segment));
+}
+
+/**
+ * Tag names from a pasted search address, keyed `tags[N]=<Name>`.
+ *
+ * The bracket index is read and DISCARDED. It is not a tag id: TPDB tag ids are
+ * sparse and non-contiguous (id 70 and 856 are both unresolvable via
+ * `/tags/{id}` while scene tags carry real ids), and passing a real tag id in
+ * the index position returns nothing at all. Verified against the live API on
+ * 2026-10-04: the index and the value are both ignored by TPDB, so the only
+ * trustworthy reading is the tag NAME.
+ */
+function readSearchTags(url: URL): string[] {
+  const names = new Set<string>();
+  for (const [key, value] of url.searchParams) {
+    if (!/^tags\[\d*\]$/.test(key)) continue;
+    const name = value.trim();
+    if (name) names.add(name);
+  }
+  // Case-insensitively de-duplicated, then ordered deterministically so the same
+  // address always yields the same declaration.
+  const folded = new Map<string, string>();
+  for (const name of names) {
+    const key = cleanStudioName(name);
+    if (key && !folded.has(key)) folded.set(key, name);
+  }
+  return [...folded.values()].sort((a, b) => cleanStudioName(a).localeCompare(cleanStudioName(b)));
+}
+
+/**
+ * The `site_id` of a pasted search address, or undefined when the address is a
+ * site page rather than a search.
+ *
+ * Rejected rather than ignored when present but malformed: an address carrying
+ * `site_id=abc` is a broken declaration, and quietly falling back to a name
+ * search is how the wrong studio gets bound in the first place.
+ */
+function readSiteId(url: URL, raw: string): number | undefined {
+  const value = url.searchParams.get("site_id");
+  if (value === null) return undefined;
+  if (!/^\d+$/.test(value) || Number(value) <= 0) {
+    throw new Error(`Invalid TPDB studio URL ${raw}: site_id must be a positive integer`);
+  }
+  return Number(value);
+}
+
+/** `bangbros` -> `Bangbros`, for the display hint a `site=` slug carries. */
+function displayNameFromSlug(slug: string): string {
+  return slug
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 /**
