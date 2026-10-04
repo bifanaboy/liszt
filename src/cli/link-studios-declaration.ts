@@ -9,6 +9,7 @@
  */
 import {
   canonicalStudioId,
+  cleanStudioName,
   type ResolvedTpdbSite,
   type StudioLink,
   type TpdbLookup,
@@ -23,8 +24,8 @@ export interface DeclarationLane {
 }
 
 export interface DeclarationInput {
-  /** The parsed TPDB side, from `parseTpdbStudioUrl`. */
-  lookup: TpdbLookup;
+  /** The parsed TPDB side. Omitted for a Traxxx-only declaration. */
+  lookup?: TpdbLookup;
   /** What TPDB resolved the lookup to, or undefined when it did not resolve. */
   resolved?: ResolvedTpdbSite;
   /** The parsed Traxxx lane, when a Traxxx address was pasted. */
@@ -33,20 +34,42 @@ export interface DeclarationInput {
   studioName: string;
 }
 
+/**
+ * The studio key for a TPDB-only lane.
+ *
+ * `canonicalStudioId` folds tags into the key for the Traxxx branch only, so on
+ * this side both the tags and the key were invisible to each other: `site_id=988`
+ * and `site_id=988&tags[70]=Anal` both produced `tpdb-bang`. `auditStudioLinks`
+ * then rejected a file holding both as a duplicate, and `link-studios --write`
+ * overwrote one with the other - so the tagged and untagged lanes, which are
+ * genuinely different lanes, could not coexist. The tag scope belongs in the key
+ * here for the same reason it does on the Traxxx side.
+ */
+function tpdbLaneId(resolved: ResolvedTpdbSite, tags: readonly string[]): string {
+  const base = canonicalStudioId({ tpdb: resolved });
+  const scope = tags.map((tag) => cleanStudioName(tag).replace(/\s+/g, "-"));
+  return scope.length ? `${base}-${scope.join("-")}` : base;
+}
+
 export function buildDeclaration(input: DeclarationInput): StudioLink {
   const { lookup, resolved, lane, studioName } = input;
   const traxxx = lane ? { kind: lane.kind, slug: lane.slug, url: lane.url } : undefined;
-  // A Traxxx lane's own tags win: they are what the lane id is built from, and
-  // the two sides describing one studio must not disagree about its scope. The
-  // TPDB search tags apply only when there is no Traxxx side to carry them.
-  const tags = lane?.tags.length ? [...lane.tags] : lookup.tags ? [...lookup.tags] : [];
+  // A Traxxx lane's OWN tag list wins whenever a lane exists - including when it
+  // is empty. A tag list invented from the TPDB side would produce a lane id the
+  // configured lane does not use (`network-bang-Anal` against `network-bang`),
+  // and the studio's releases would file under two different keys. The TPDB
+  // search tags apply only to a TPDB-only declaration.
+  const tags = lane ? [...lane.tags] : lookup?.tags ? [...lookup.tags] : [];
   const tagsField = tags.length ? { tags } : {};
   return {
-    studioId: canonicalStudioId({
-      ...(traxxx ? { traxxx } : {}),
-      ...(tags.length ? { tags } : {}),
-      ...(resolved ? { tpdb: resolved } : {}),
-    }),
+    studioId:
+      !traxxx && resolved
+        ? tpdbLaneId(resolved, tags)
+        : canonicalStudioId({
+            ...(traxxx ? { traxxx } : {}),
+            ...(tags.length ? { tags } : {}),
+            ...(resolved ? { tpdb: resolved } : {}),
+          }),
     studio: studioName,
     ...tagsField,
     ...(traxxx ? { traxxx } : {}),

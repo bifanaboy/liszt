@@ -89,6 +89,14 @@ export interface TpdbLookup {
    * caller's name match instead, which is the only path that actually works.
    */
   readonly tags?: readonly string[];
+  /**
+   * The `site_id` a pasted search address named, trusted as exact.
+   *
+   * Set only for a numeric `site_id`. It makes the lookup authoritative in the
+   * same way a UUID is, which is what stops a stale display slug in the same
+   * address from vetoing the site the id names.
+   */
+  readonly exactSiteId?: number;
 }
 
 /**
@@ -133,7 +141,7 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   }
   // The tag names a search address asked for. Read before the path is
   // interpreted, and deliberately NOT forwarded to the API later.
-  const tags = readSearchTags(url);
+  const tags = readSearchTags(url, raw);
   const tagsField = tags.length ? { tags } : {};
   const nameHint = url.searchParams.get("name") ?? undefined;
   const uuidParam = url.searchParams.get("uuid") ?? undefined;
@@ -157,7 +165,12 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
   if (siteId !== undefined) {
     const slugHint = url.searchParams.get("site") ?? undefined;
     const name = nameHint ?? (slugHint ? displayNameFromSlug(slugHint) : undefined);
-    return { candidates: [String(siteId)], ...tagsField, ...(name ? { name } : {}) };
+    return {
+      candidates: [String(siteId)],
+      exactSiteId: siteId,
+      ...tagsField,
+      ...(name ? { name } : {}),
+    };
   }
   const segments = url.pathname
     .split("/")
@@ -195,14 +208,9 @@ export function parseTpdbStudioUrl(raw: string): TpdbLookup {
  * is the common case; the rest are listed so a future TPDB view is rejected the
  * same way instead of being looked up as though it named a studio.
  */
-const CONTAINER_SEGMENTS: ReadonlySet<string> = new Set([
-  "scenes",
-  "studios",
-  "tags",
-  "studios-scenes",
-  "search",
-  "categories",
-]);
+const CONTAINER_SEGMENTS: ReadonlySet<string> = new Set(
+  ["scenes", "studios", "tags", "studios-scenes", "search", "categories"].map(cleanStudioName),
+);
 
 /** Whether a path segment names a container view rather than one studio. */
 function isContainerSegment(segment: string | undefined): boolean {
@@ -219,12 +227,21 @@ function isContainerSegment(segment: string | undefined): boolean {
  * 2026-10-04: the index and the value are both ignored by TPDB, so the only
  * trustworthy reading is the tag NAME.
  */
-function readSearchTags(url: URL): string[] {
+function readSearchTags(url: URL, raw: string): string[] {
   const names = new Set<string>();
   for (const [key, value] of url.searchParams) {
     if (!/^tags\[\d*\]$/.test(key)) continue;
     const name = value.trim();
     if (name) names.add(name);
+  }
+  // `tag_and=0` means the tags are ALTERNATIVES; the declaration's tag list is an
+  // ALL-of match (tpdb-watchlist.ts), so adopting a multi-tag OR search would
+  // quietly narrow it to the intersection. Refuse rather than change its meaning.
+  const tagAnd = url.searchParams.get("tag_and");
+  if (names.size > 1 && tagAnd !== null && tagAnd !== "1") {
+    throw new Error(
+      `Invalid TPDB studio URL ${raw}: a tag_and=0 search with ${names.size} tags cannot be one lane`,
+    );
   }
   // Case-insensitively de-duplicated, then ordered deterministically so the same
   // address always yields the same declaration.
@@ -247,7 +264,9 @@ function readSearchTags(url: URL): string[] {
 function readSiteId(url: URL, raw: string): number | undefined {
   const value = url.searchParams.get("site_id");
   if (value === null) return undefined;
-  if (!/^\d+$/.test(value) || Number(value) <= 0) {
+  // Number() silently rounds anything past MAX_SAFE_INTEGER, which would turn a
+  // typo into a plausible-looking wrong site id rather than an error.
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) <= 0) {
     throw new Error(`Invalid TPDB studio URL ${raw}: site_id must be a positive integer`);
   }
   return Number(value);
@@ -272,6 +291,11 @@ function displayNameFromSlug(slug: string): string {
  */
 function siteSatisfies(site: z.infer<typeof TpdbSite>, lookup: TpdbLookup): boolean {
   if (lookup.uuid) return site.uuid === lookup.uuid;
+  // A numeric `site_id` is exact by construction, the same authority a UUID has.
+  // It must NOT be gated on a name: the only name available is the display slug
+  // the URL happened to carry, and TPDB renames sites, so a stale or abbreviated
+  // `site=` hint would otherwise veto the exact id the operator pasted.
+  if (lookup.exactSiteId !== undefined) return site.id === lookup.exactSiteId;
   const wanted = cleanStudioName(lookup.name ?? "");
   if (!wanted) return false;
   return studioNameKeys(site).includes(wanted);

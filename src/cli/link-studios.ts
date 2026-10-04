@@ -104,12 +104,10 @@ if (!studio) {
   throw new Error("A studio display name is required: pass --name, or a Traxxx URL to derive one");
 }
 
-if (!lookup) {
-  throw new Error("A ThePornDB URL is required to resolve a studio");
-}
-
+// Either side may be omitted: a Traxxx-only paste is a valid declaration, so a
+// missing TPDB side is not an error here.
 const link: StudioLink = buildDeclaration({
-  lookup,
+  ...(lookup ? { lookup } : {}),
   ...(resolved?.site ? { resolved: resolved.site } : {}),
   ...(lane ? { lane } : {}),
   studioName: studio,

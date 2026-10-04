@@ -113,7 +113,9 @@ test("a search address's tags reach the declaration, so the lane is tag-scoped",
     studioName: "Bang",
   });
   assert.deepEqual(link.tags, ["Anal"]);
-  assert.equal(link.studioId, "tpdb-bang");
+  // The tag scope is part of the key, so the tagged and untagged lanes for one
+  // site are two lanes rather than one lane silently changing scope.
+  assert.equal(link.studioId, "tpdb-bang-anal");
   assert.equal(link.tpdb?.siteId, 988);
 });
 
