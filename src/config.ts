@@ -59,6 +59,8 @@ export const Config = z.object({
    */
   listenAddr: z.string().min(1).default("127.0.0.1"),
   dbPath: z.string().min(1).default("data/liszt.db"),
+  /** Optional TPDB credential. Never included in logs or HTTP responses. */
+  tpdbApiKey: z.string().min(1).optional(),
   windowDays: z.coerce.number().int().positive().default(90),
   pollIntervalMinutes: z.coerce.number().int().positive().default(30),
   /** Run one sync on boot, in the background behind the listening port. */
@@ -192,6 +194,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: env.PORT,
     listenAddr: env.LISZT_LISTEN_ADDR,
     dbPath: env.LISZT_DB_PATH,
+    tpdbApiKey: optionalValue(env.TPDB_API_KEY),
     windowDays: env.LISZT_WINDOW_DAYS,
     pollIntervalMinutes: env.LISZT_POLL_INTERVAL_MINUTES,
     bootSync:

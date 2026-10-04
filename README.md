@@ -18,7 +18,7 @@ completeness claim.
 ```sh
 npm install
 cp .env.example .env       # optional: every value has a default
-npm run dev                # dashboard on http://127.0.0.1:3000, no login
+npm run dev                # dashboard on http://127.0.0.1:3000
 ```
 
 Node 24+. No build step: TypeScript runs through Node's native type stripping.
@@ -32,9 +32,8 @@ Node 24+. No build step: TypeScript runs through Node's native type stripping.
 | `npm run typecheck` / `lint`      | `tsc --noEmit` / `eslint`.                               |
 | `npm run format` / `format:check` | Prettier. See the note below.                            |
 
-There is no password and nothing to configure to start it. See
-[No perimeter](#no-perimeter) for why, and [Deployment](#deployment) for the one
-supported target.
+Set `TPDB_API_KEY` in the server environment to enable TPDB. The catalogue stays
+public; see [No perimeter](#no-perimeter) and [Deployment](#deployment).
 
 Formatting is Prettier at `printWidth: 100`, the column the code was already
 written to, and `format:check` runs in CI. `.prettierignore` holds back what must
@@ -73,6 +72,7 @@ traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
 Bang!       ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
 Maximo      │            per-source       │    guess fallback   ─┘         │
 ManyVids    │
+TPDB        │
 madouqu     │            isolation        │                                  ▼
 fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
                                                    two-strike dead   dashboard + API
@@ -93,7 +93,7 @@ fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   r
 
 ### Sources
 
-Five categories, in `src/sources/registry.ts`.
+Six categories, in `src/sources/registry.ts`.
 
 | Lane                                         | Mechanism                             | Matcher  |
 | -------------------------------------------- | ------------------------------------- | -------- |
@@ -101,10 +101,16 @@ Five categories, in `src/sources/registry.ts`.
 | Bang! Originals                              | listing + per-video JSON-LD           | yes      |
 | Maximo Garcia                                | direct scrape, listing URL configured | yes      |
 | ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
+| TPDB watchlist                               | authenticated paginated API, matched studio names | yes |
 | madouqu (11 categories)                      | WordPress REST + Mandarin classifier  | **none** |
 | fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes      |
 
-**No API keys.** `traxxx.me` replaced TPDB entirely.
+TPDB supplements Traxxx and ManyVids. It lists only studios whose cleaned names
+match an existing watchlist studio. Set the shared `TPDB_API_KEY` environment
+variable to enable this source; the app never returns or logs its value.
+Overlapping listings collapse in the dashboard when their release URLs match,
+or when title, date and duration match and a release URL is unavailable. Missing
+metadata can be filled from the other provider.
 
 Traxxx discovers releases. Before matching, sync reads the exact release page
 for studios covered by a Stash CommunityScrapers scene scraper and prefers
@@ -273,21 +279,18 @@ re-enters resolution. Known-dead URLs are never re-added.
 
 ## No perimeter
 
-**There is none.** Every route is served to anyone who can reach the port,
-including `POST /api/refresh`. That is the deliberate shape of this deployment,
-not an oversight left behind by a removed feature.
+The catalogue remains public: every route is served to anyone who can reach the
+port, including `POST /api/refresh`.
 
 The reasoning, once, so it is not re-litigated: this is a disposable public read
-model. It holds no user data, no accounts, no personal state, no credentials and
-no secrets — the one secret it ever had, a shared login password, is gone along
-with the `sessions` table and the scrypt verifier. A password in front of a
-catalogue of public video links protects the catalogue from nobody: the links are
-already public, and the data behind them is already on the open web.
+model. It holds no user accounts or private catalogue data. The TPDB token is
+read from `TPDB_API_KEY`; the app never returns or logs its value.
 
 What the app _does_ do with that posture:
 
-- **No credentials exist.** Nothing to leak, rotate, or forget. `render.yaml`
-  contains six non-secret values and there is nothing to type into the dashboard.
+- **TPDB is optional.** Without a configured token its source reports that setup is
+  needed and retains any last-good catalogue records. A failed request does not
+  erase stored scenes.
 - **`/health` is answered before anything else**, from a constant
   `{"status":"ok"}` with no store or source state in it. It is Render's deploy
   gate, and a health check that leaked anything would leak it to whoever felt
@@ -313,8 +316,8 @@ What the app _does_ do with that posture:
 | `/api/refresh` | POST       | Start or join one cycle. Returns `202` immediately.                    |
 | `/` + static   | GET        | The dashboard.                                                         |
 
-Nothing is gated, and nothing sets a cookie — the session layer is gone. `/login`
-and `/logout` are not routes: they fall through to the normal unknown-path 404.
+The TPDB token is configured through the server's `TPDB_API_KEY` environment
+variable. It is never included in public responses or logs.
 
 `/api/sources`, not `/api/studios`: "source" is canonical, and one source may
 emit several studio labels. All responses are `no-store`, so no edge caches the
@@ -384,9 +387,9 @@ club-only videos are outside this public source; endpoint changes fail the poll
 and preserve last-good records.
 
 For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
-ManyVids and Traxxx records in the local rolling window. TPDB and StashDB are
-reported as unavailable because this app has no adapters for them. To compare all
-four databases, pass normalized JSON exports:
+ManyVids and Traxxx records in the local rolling window. The coverage command
+does not read TPDB's live source; TPDB and StashDB are marked unavailable unless
+you provide normalized JSON exports. To compare all four databases, pass:
 
 ```sh
 npm run catalogue-coverage -- --tpdb tpdb.json --stashdb stashdb.json --traxxx traxxx.json --manyvids manyvids.json
@@ -411,13 +414,14 @@ provider precedence and does not merge or rewrite stored scenes.
 
 ## Configuration
 
-Full list with defaults in `.env.example`. There is no credential and no
-required variable: everything has a working default.
+Full list with defaults in `.env.example`. `TPDB_API_KEY` is optional; set it in
+the server environment to enable TPDB.
 
 | Variable                                         | Default              | Effect                                                                |
 | ------------------------------------------------ | -------------------- | --------------------------------------------------------------------- |
 | `LISZT_LISTEN_ADDR`                              | `127.0.0.1`          | Loopback by default; `render.yaml` overrides it for Render's proxy.   |
 | `LISZT_DB_PATH`                                  | `data/liszt.db`      | SQLite file.                                                          |
+| `TPDB_API_KEY`                                   | unset                | Shared TPDB API token; enables the TPDB watchlist.                     |
 | `PORT`                                           | `3000`               |                                                                       |
 | `LISZT_WINDOW_DAYS`                              | `90`                 | Rolling window.                                                       |
 | `LISZT_POLL_INTERVAL_MINUTES`                    | `30`                 | Poll cadence.                                                         |

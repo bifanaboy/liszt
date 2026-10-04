@@ -101,6 +101,11 @@ test("configuration replaces the default watchlist and empty input keeps the def
   ]);
 });
 
+test("TPDB API key is read from its environment variable", () => {
+  assert.equal(loadConfig({}).tpdbApiKey, undefined);
+  assert.equal(loadConfig({ TPDB_API_KEY: "  token-value  " }).tpdbApiKey, "token-value");
+});
+
 test("the registry replaces the retired Tushy lane with watchlist lanes", () => {
   const ids = createSources({
     madouquApiBase: "https://example.test",

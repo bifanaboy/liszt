@@ -4,8 +4,7 @@
  *
  * The boot order matters and is deliberate:
  *
- *   1. Parse configuration. There is no credential to check and nothing that
- *      can refuse to start for a missing secret - the app has no perimeter.
+ *   1. Parse configuration. TPDB remains optional until `TPDB_API_KEY` is set.
  *   2. Open and migrate the store (WAL + busy timeout) before anything reads it.
  *   3. Build the ladder's lookups once: the pool index handle and the optional
  *      lazily-loaded sxyprn client.
@@ -68,6 +67,7 @@ async function main(): Promise<void> {
     manyvidsStoreIds: config.manyvidsStoreIds,
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
     store,
+    tpdbApiKey: config.tpdbApiKey,
     ...(config.maximoListingUrl ? { maximoListingUrl: config.maximoListingUrl } : {}),
   });
 
@@ -187,10 +187,6 @@ async function main(): Promise<void> {
   log.info("listening", {
     port: config.port,
     host: config.listenAddr,
-    // Worth saying once at boot rather than on every request: this process has
-    // no auth, no sessions and no secrets. Anyone who can reach the port can
-    // read the catalogue and trigger a refresh.
-    perimeter: "none",
   });
 
   const scheduler = createScheduler({
