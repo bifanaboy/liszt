@@ -182,13 +182,23 @@ export function createTpdbWatchlistSource(options: {
         for (const [siteId, studio] of resolved) cachedSites.set(siteId, studio);
       }
       const sites = cachedSites;
+      // Build a map of studio -> its resolved siteIds (works for both declared and fallback)
+      const studioSiteIds = new Map<TpdbStudio, number[]>();
+      for (const [siteId, studio] of sites) {
+        if (studio) {
+          const arr = studioSiteIds.get(studio) ?? [];
+          arr.push(siteId);
+          studioSiteIds.set(studio, arr);
+        }
+      }
       const scenes: RawScene[] = [];
       // Track emitted (siteId, sceneId) pairs to avoid duplicate emissions
       // when the same video appears on multiple TPDB sites for the same studio.
       const emitted = new Set<string>();
 
       for (const studio of options.studios) {
-        for (const siteId of studio.siteIds) {
+        const siteIds = studioSiteIds.get(studio) ?? [];
+        for (const siteId of siteIds) {
           const studioForSite = sites.get(siteId);
           if (!studioForSite) continue;
           for await (const page of pages(
