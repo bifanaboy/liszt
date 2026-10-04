@@ -199,7 +199,7 @@ test("tagged lanes retain only TPDB scenes carrying every requested tag", async 
   const untaggedScene = { ...scene, id: "s2", tags: [{ name: "Anal" }] };
   const result = await createTpdbWatchlistSource({
     token: "token",
-    studios: [{ ...studio[0]!, tags: ["anal", "creampie"] }],
+    studios: [{ ...studio[0]!, tags: ["anal", "creampie"], siteIds: [] }],
   }).fetch("2026-10-01", context({ site, scenes: [taggedScene, untaggedScene] }).ctx);
   assert.deepEqual(
     result.scenes.map((entry) => entry.sourceSceneId),
