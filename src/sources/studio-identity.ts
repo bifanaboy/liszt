@@ -234,7 +234,11 @@ function readSearchTags(url: URL, raw: string): string[] {
   for (const [key, value] of url.searchParams) {
     if (!/^tags\[\d*\]$/.test(key)) continue;
     const name = value.trim();
-    if (name) names.add(name);
+    // A present-but-empty tag is a malformed address. Dropping it would produce
+    // an untagged declaration and the lane would collect the WHOLE site - the one
+    // outcome this change exists to prevent.
+    if (!name) throw new Error(`Invalid TPDB studio URL ${raw}: ${key} has no tag name`);
+    names.add(name);
   }
   // The declaration's tag list is an ALL-of match (tpdb-watchlist.ts), so a
   // multi-tag search whose tags are ALTERNATIVES would be quietly narrowed to
@@ -374,6 +378,14 @@ export async function resolveTpdbSite(
       outcome: "resolved",
       candidates: [],
     };
+  }
+
+  // An exact `site_id` that did not resolve is TERMINAL. Falling through to the
+  // name search below would let a site that merely shares the name be written as
+  // the declaration - a different numeric id than the one the operator pasted,
+  // reported as resolved. A stale or removed id must report unresolved instead.
+  if (lookup.exactSiteId !== undefined) {
+    return { site: undefined, outcome: "absent", candidates: [] };
   }
 
   // Nothing verified directly. Ask TPDB what it does have, so the report can

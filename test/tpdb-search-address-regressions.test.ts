@@ -29,11 +29,25 @@ const brazzers = {
   network_id: 1298,
 };
 
+/**
+ * A fetcher over a site table. The NAME SEARCH endpoint answers from the same
+ * table, so a test can model the real hazard: an exact id that 404s while a
+ * name search would happily return some other site.
+ */
 function fakeFetcher(sites: Record<string, unknown>): Fetcher {
   return {
     json: async (url: string) => {
       const parsed = new URL(url);
-      if (parsed.pathname === "/sites") return { data: [], meta: { total: 0 } };
+      if (parsed.pathname === "/sites") {
+        const term = (parsed.searchParams.get("q") ?? "").toLowerCase();
+        const hits = Object.values(sites).filter((site): boolean => {
+          const record = site as { name?: string; short_name?: string };
+          return [record.name ?? "", record.short_name ?? ""].some(
+            (value) => value.toLowerCase() === term,
+          );
+        });
+        return { data: hits, meta: { total: hits.length } };
+      }
       const identifier = decodeURIComponent(parsed.pathname.replace("/sites/", ""));
       const site = sites[identifier];
       if (site === undefined) throw new FetchError(`GET ${url} -> 404`, "definitive", 404);
@@ -162,7 +176,7 @@ test("a TPDB-only lane's id distinguishes its tag scope", () => {
   });
   assert.notEqual(untagged.studioId, tagged.studioId);
   assert.equal(untagged.studioId, "tpdb-bang");
-  assert.equal(tagged.studioId, "tpdb-bang-anal");
+  assert.equal(tagged.studioId, "tpdb-bang~anal");
 });
 
 test("a Traxxx-only paste still builds a declaration", () => {
@@ -181,6 +195,79 @@ test("a Traxxx-only paste still builds a declaration", () => {
   assert.equal(link.studioId, "network-brazzers-anal");
   assert.equal(link.tpdb, undefined);
   assert.deepEqual(link.tags, ["anal"]);
+});
+
+test("an empty tag value is an error, not a silently wider lane", () => {
+  // `?site_id=988&tags[70]=` previously dropped the tag, so the declaration came
+  // out unfiltered and the lane collected the WHOLE site - the exact failure
+  // this whole change exists to prevent, reached by a typo.
+  assert.throws(
+    () => parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988&tags%5B70%5D="),
+    /tags/,
+  );
+  assert.throws(
+    () => parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988&tags%5B70%5D=%20"),
+    /tags/,
+  );
+  // A URL with no tag parameters at all still means the whole site.
+  assert.equal(parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988").tags, undefined);
+});
+
+test("a dead site_id is never rebound to a different site through the name search", async () => {
+  // The id was removed or is stale, and a DIFFERENT site happens to match the
+  // name. The old path took that search hit and wrote it as the declaration - a
+  // different numeric id than the operator pasted. The name search must not run
+  // at all once an exact id has been tried and missed.
+  const lookup = parseTpdbStudioUrl("https://theporndb.net/scenes?site=brazzers&site_id=999999");
+  // The id 404s, but a name search for "brazzers" WOULD find site 92.
+  const fetcher = fakeFetcher({ 92: brazzers });
+  const result = await resolveTpdbSite(fetcher, "token", lookup);
+  assert.equal(result.site, undefined, "a dead id was rebound to another site");
+});
+
+test("a live site_id is not re-checked against a name, only against its id", async () => {
+  // The success branch must honour exactSiteId, so a name search can never
+  // substitute a different site for the one the URL named.
+  const lookup = parseTpdbStudioUrl("https://theporndb.net/scenes?site_id=988");
+  const wrongId = fakeFetcher({ 988: { ...bangSite, id: 4242 } });
+  const result = await resolveTpdbSite(wrongId, "token", lookup);
+  assert.equal(result.site, undefined);
+});
+
+test("distinct tag scopes cannot collide on one lane id", () => {
+  // "Anal BBC" as one tag and Anal+BBC as two tags both cleaned to "anal-bbc",
+  // so --write silently overwrote one lane with a different scope.
+  const oneTag = buildDeclaration({
+    lookup: parseTpdbStudioUrl(
+      "https://theporndb.net/scenes?site_id=988&tag_and=1&tags%5B0%5D=Anal%20BBC",
+    ),
+    resolved: {
+      siteId: 988,
+      uuid: undefined,
+      name: "BANG!",
+      shortName: "bang",
+      url: undefined,
+      networkId: undefined,
+      resolvedBy: "id",
+    },
+    studioName: "Bang",
+  });
+  const twoTags = buildDeclaration({
+    lookup: parseTpdbStudioUrl(
+      "https://theporndb.net/scenes?site_id=988&tag_and=1&tags%5B0%5D=Anal&tags%5B1%5D=BBC",
+    ),
+    resolved: {
+      siteId: 988,
+      uuid: undefined,
+      name: "BANG!",
+      shortName: "bang",
+      url: undefined,
+      networkId: undefined,
+      resolvedBy: "id",
+    },
+    studioName: "Bang",
+  });
+  assert.notEqual(oneTag.studioId, twoTags.studioId);
 });
 
 test("the CLI passes the exact site id through to the resolver", () => {

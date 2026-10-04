@@ -47,8 +47,11 @@ export interface DeclarationInput {
  */
 function tpdbLaneId(resolved: ResolvedTpdbSite, tags: readonly string[]): string {
   const base = canonicalStudioId({ tpdb: resolved });
-  const scope = tags.map((tag) => cleanStudioName(tag).replace(/\s+/g, "-"));
-  return scope.length ? `${base}-${scope.join("-")}` : base;
+  // Joined with a separator that cannot occur inside a cleaned tag, so "Anal BBC"
+  // as ONE tag and Anal+BBC as TWO tags cannot both encode to `anal-bbc` and
+  // overwrite each other under --write.
+  const scope = tags.map((tag) => cleanStudioName(tag).replace(/\s+/g, "-")).filter(Boolean);
+  return scope.length ? `${base}~${scope.join("~")}` : base;
 }
 
 /**
