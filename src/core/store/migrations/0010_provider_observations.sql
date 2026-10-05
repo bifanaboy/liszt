@@ -21,7 +21,7 @@ SELECT
   label_id,
   id,
   label,
-  json_object(
+  json_patch(json_object(
     'sourceSceneId', COALESCE(json_extract(provenance, '$[0].sourceSceneId'), id),
     'title', title,
     'releaseDate', release_date,
@@ -32,8 +32,10 @@ SELECT
     'studioId', label_id,
     'studio', label,
     'source', source,
+    'studioCode', studio_code,
+    'metadataPoor', json(CASE WHEN metadata_poor THEN 'true' ELSE 'false' END),
     'tags', json(tags),
     'fieldProvenance', json(field_provenance)
-  ),
+  ), COALESCE(storefront, '{}')),
   COALESCE(json_extract(provenance, '$[0].fetchedAt'), CURRENT_TIMESTAMP)
 FROM scenes;

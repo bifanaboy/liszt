@@ -99,37 +99,48 @@ function seconds(duration: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-function record(html: string, url: string, today: string): RawScene | null {
+function record(
+  html: string,
+  url: string,
+  today: string,
+): { releaseDate: string; scene: RawScene | null } {
   const video = Video.safeParse(find(blocks(html), "VideoObject"));
   if (!video.success) throw new Error(`Bang detail page has invalid VideoObject: ${url}`);
-  if (video.data.productionCompany.name.trim().toLowerCase() !== "bang! originals") return null;
   const date = video.data.datePublished.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Bang has invalid release date: ${url}`);
-  if (date > today) return null;
+  if (
+    video.data.productionCompany.name.trim().toLowerCase() !== "bang! originals" ||
+    date > today
+  ) {
+    return { releaseDate: date, scene: null };
+  }
   const path = new URL(url).pathname.split("/").filter(Boolean);
   const identifier = path[1];
   if (!identifier) throw new Error(`Bang detail URL has no video identifier: ${url}`);
   return {
-    sourceSceneId: identifier,
-    title: video.data.name,
     releaseDate: date,
-    performers: [],
-    durationSec: seconds(video.data.duration),
-    thumbnailUrl: video.data.thumbnailUrl,
-    releaseUrl: url,
-    studioId: "bang-originals",
-    studio: "Bang! Originals",
-    provenance: {
-      source: "Bang! Originals",
-      sourceUrl: "https://www.bang.com/videos?by=date.desc",
-      recordUrl: url,
+    scene: {
       sourceSceneId: identifier,
-    },
-    fieldProvenance: {
-      title: "Bang! Originals",
-      releaseDate: "Bang! Originals",
-      durationSec: "Bang! Originals",
-      thumbnailUrl: "Bang! Originals",
+      title: video.data.name,
+      releaseDate: date,
+      performers: [],
+      durationSec: seconds(video.data.duration),
+      thumbnailUrl: video.data.thumbnailUrl,
+      releaseUrl: url,
+      studioId: "bang-originals",
+      studio: "Bang! Originals",
+      provenance: {
+        source: "Bang! Originals",
+        sourceUrl: "https://www.bang.com/videos?by=date.desc",
+        recordUrl: url,
+        sourceSceneId: identifier,
+      },
+      fieldProvenance: {
+        title: "Bang! Originals",
+        releaseDate: "Bang! Originals",
+        durationSec: "Bang! Originals",
+        thumbnailUrl: "Bang! Originals",
+      },
     },
   };
 }
@@ -168,14 +179,18 @@ export function createBangOriginalsStudio(listingUrl?: string): SourceAdapter {
           record(await ctx.fetcher.text(url), url, today),
         );
         scenes.push(
-          ...found.filter((scene): scene is RawScene =>
-            Boolean(scene && scene.releaseDate >= windowStart && scene.releaseDate <= today),
-          ),
+          ...found
+            .map((item) => item.scene)
+            .filter((scene): scene is RawScene =>
+              Boolean(scene && scene.releaseDate >= windowStart && scene.releaseDate <= today),
+            ),
         );
-        const dates = found
-          .map((scene) => scene?.releaseDate)
-          .filter((date): date is string => Boolean(date));
-        if (dates.length && dates.every((date) => date < windowStart)) break;
+        if (
+          found.length === urls.length &&
+          found.length &&
+          found.every((item) => item.releaseDate < windowStart)
+        )
+          break;
         current = nextPage(html, current);
       }
       return { scenes, verifiedEmpty: scenes.length === 0 };

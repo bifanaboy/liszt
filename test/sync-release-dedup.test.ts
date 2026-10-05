@@ -58,7 +58,7 @@ test("one release described by two lanes is stored once", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
   try {
-    await buildSync(store, [
+    const sync = buildSync(store, [
       adapter("channel-darkkotv-anal", () => [
         raw("1", {
           studioId: "channel-darkkotv-anal",
@@ -75,13 +75,21 @@ test("one release described by two lanes is stored once", async () => {
           fieldProvenance: { thumbnailUrl: "TPDB" },
         }),
       ]),
-    ])("first");
+    ]);
+    await sync("first");
     const stored = store.listAll();
     assert.equal(stored.length, 1, "the release is stored once");
     assert.equal(store.listProviderObservations(stored[0]!.id).length, 2);
     assert.equal(stored[0]?.thumbnailUrl, "https://img.test/scene.jpg");
     assert.equal(stored[0]?.fieldProvenance.thumbnailUrl, "tpdb-watchlist");
     assert.equal(stored[0]?.provenance.length, 2);
+    assert.equal(stored[0]?.sourceId, "channel-darkkotv-anal");
+    await sync("second");
+    const refreshed = store.listAll();
+    assert.equal(refreshed.length, 1);
+    assert.equal(refreshed[0]?.id, stored[0]?.id);
+    assert.equal(refreshed[0]?.sourceId, stored[0]?.sourceId);
+    assert.equal(refreshed[0]?.source, stored[0]?.source);
   } finally {
     store.close();
   }

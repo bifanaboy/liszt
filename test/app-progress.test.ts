@@ -254,7 +254,7 @@ test("the Asian page shows only the Asian lanes, and its figures are its own", a
   assert.match(app.element("#list").innerHTML, /A release/);
 });
 
-test("review tooltip explains missing studio identity without claiming a duration conflict", async () => {
+test("review disclosure explains missing studio identity without claiming a duration conflict", async () => {
   const app = await dashboard(async () =>
     response({
       ...catalogue,
@@ -270,12 +270,15 @@ test("review tooltip explains missing studio identity without claiming a duratio
   );
 
   const html = app.element("#list").innerHTML;
-  assert.match(html, /REVIEW/);
+  assert.match(
+    html,
+    /<details class="review-reasons"><summary class="review-tag">REVIEW<\/summary><p>Studio identity is missing/,
+  );
   assert.match(html, /Studio identity is missing/);
   assert.doesNotMatch(html, /Provider durations disagree/);
 });
 
-test("review tooltip describes duration disagreement and incomplete metadata accurately", async () => {
+test("review disclosure describes duration disagreement and incomplete metadata accurately", async () => {
   const app = await dashboard(async () =>
     response({
       ...catalogue,
@@ -287,8 +290,8 @@ test("review tooltip describes duration disagreement and incomplete metadata acc
   );
 
   const html = app.element("#list").innerHTML;
-  assert.match(html, /Provider durations disagree/);
-  assert.match(html, /Required release metadata is incomplete/);
+  assert.match(html, /<\/summary><p>Provider durations disagree/);
+  assert.match(html, /<\/summary><p>Required release metadata is incomplete/);
 });
 
 test("a #asian link opens the Asian page before the catalogue arrives", async () => {

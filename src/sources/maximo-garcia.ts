@@ -19,14 +19,23 @@ export function createMaximoGarciaStudio(): SourceAdapter {
     async fetch(windowStart: string, ctx: SourceContext) {
       const fansly = createFanslySource({ usernames: ["maximo_garcia"] });
       const pulled = await fansly.fetch(windowStart, ctx);
+      const excludedSceneIds = [
+        ...new Set([
+          ...(pulled.excludedSceneIds ?? []),
+          ...pulled.scenes
+            .filter((scene) => isExcludedMaximoTitle(scene.title))
+            .map((scene) => scene.sourceSceneId),
+        ]),
+      ];
       // Keep the studio label while preserving Fansly provenance.
       const scenes: RawScene[] = pulled.scenes
         .filter((scene) => !isExcludedMaximoTitle(scene.title))
         .map((scene) => ({ ...scene, studioId: "maximo-garcia", studio: "Maximo Garcia" }));
       return {
         scenes,
-        verifiedEmpty: scenes.length === 0 ? pulled.verifiedEmpty : false,
-        ...(pulled.excludedSceneIds ? { excludedSceneIds: pulled.excludedSceneIds } : {}),
+        verifiedEmpty:
+          scenes.length === 0 ? pulled.verifiedEmpty || excludedSceneIds.length > 0 : false,
+        ...(excludedSceneIds.length ? { excludedSceneIds } : {}),
       };
     },
   };

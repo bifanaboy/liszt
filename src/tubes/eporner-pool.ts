@@ -822,10 +822,15 @@ export async function gatherPoolSurvivors(
   // working set is never examined again. That working set is where the rows
   // still missing an upload date live, so the starvation was permanent: a valid
   // candidate could never be hydrated, however many runs went by.
-  const band =
-    !scene.durationRange &&
-    typeof scene.durationSec === "number" &&
-    Number.isFinite(scene.durationSec)
+  // The midpoint and half-width express the inclusive range using the same
+  // SQL band as a single duration, including the gate's tolerance at each end.
+  const band = scene.durationRange
+    ? {
+        durationSec: (scene.durationRange.minSec + scene.durationRange.maxSec) / 2,
+        toleranceSec:
+          (scene.durationRange.maxSec - scene.durationRange.minSec) / 2 + durationToleranceSec,
+      }
+    : typeof scene.durationSec === "number" && Number.isFinite(scene.durationSec)
       ? { durationSec: scene.durationSec, toleranceSec: durationToleranceSec }
       : undefined;
   for (const uploader of uploaders) {

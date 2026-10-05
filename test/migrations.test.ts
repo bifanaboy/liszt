@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import { Scene } from "../src/core/schema.ts";
+import { createSync } from "../src/pipeline/sync.ts";
+import { NullLogger } from "../src/core/logger.ts";
+import { fixedClock } from "../src/sources/types.ts";
 import type { ProviderObservation } from "../src/sources/types.ts";
 
 test("fresh database applies both updates numbered 4 and can reopen", () => {
@@ -55,7 +58,7 @@ for (const existing of ["pool", "runs"]) {
   });
 }
 
-test("observation migration preserves release IDs, playback history, and last-good records", () => {
+test("observation migration preserves release IDs, playback history, and last-good records", async () => {
   const dir = mkdtempSync(join(tmpdir(), "liszt-observation-migration-"));
   const path = join(dir, "old.db");
   const db = new DatabaseSync(path);
@@ -84,6 +87,9 @@ test("observation migration preserves release IDs, playback history, and last-go
       labelId: "bang-originals",
       label: "Bang! Originals",
       title: "Existing release",
+      studioCode: "original-123",
+      storeId: "12345",
+      metadataPoor: true,
       releaseDate: "2026-10-02",
       durationSec: 1200,
       performers: ["Alex"],
@@ -137,6 +143,45 @@ test("observation migration preserves release IDs, playback history, and last-go
     assert.equal(observation?.providerId, "bang-originals");
     assert.equal(observation?.recordId, "scene-1");
     assert.equal(observation?.sceneId, id);
+    assert.equal(observation?.record.studioCode, "original-123");
+    assert.equal(observation?.record.storeId, "12345");
+    assert.equal(observation?.record.metadataPoor, true);
+    for (const field of ["launchDate", "previewUrl", "price"]) {
+      assert.equal(Object.hasOwn(observation!.record, field), false);
+    }
+    const sync = createSync({
+      store: upgraded,
+      sources: [
+        {
+          id: "bang-originals",
+          name: "Bang! Originals",
+          authority: { name: "Bang! Originals", url: "https://bang.test", role: "test" },
+          matcher: null,
+          fetch: async () => ({ scenes: [], verifiedEmpty: true }),
+        },
+      ],
+      retiredSourceIds: [],
+      fetcher: {
+        fetch: async () => {
+          throw new Error("unexpected fetch");
+        },
+        text: async () => {
+          throw new Error("unexpected text fetch");
+        },
+        json: async () => {
+          throw new Error("unexpected JSON fetch");
+        },
+      },
+      clock: fixedClock("2026-10-04T00:00:00.000Z"),
+      log: new NullLogger(),
+      windowDays: 90,
+      fetchConcurrency: 1,
+      lookups: { poolLookup: null, sxyprnLookup: null },
+      resolveEnabled: false,
+    });
+    await sync("source omitted migrated release");
+    assert.equal(upgraded.getScene(id)?.studioCode, "original-123");
+    assert.equal(upgraded.getScene(id)?.storeId, "12345");
     const updated: ProviderObservation = {
       providerId: "bang-originals",
       recordId: "scene-1",

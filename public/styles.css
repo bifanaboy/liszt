@@ -30,3 +30,5 @@
    and needs the same scroll offset `#catalogue` already has. */
 .page-anchor{display:block;height:0}
 #asian{scroll-margin-top:16px}
+
+.release-meta:has(.review-reasons[open]){flex-wrap:wrap}.review-reasons[open]{order:1;flex-basis:100%}.review-reasons summary{cursor:pointer;width:max-content}.review-reasons p{color:var(--text);font:12px/1.5 Manrope,sans-serif;text-transform:none;max-width:36em}

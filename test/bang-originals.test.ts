@@ -129,3 +129,39 @@ test("Bang stops after a page whose releases all predate the requested window", 
   assert.ok(!testctx.calls.includes(third));
   assert.equal(testctx.calls.length, 4);
 });
+
+for (const otherDate of ["2026-10-05", "2026-10-06"]) {
+  test(`Bang continues past old Originals when another fetched video is dated ${otherDate}`, async () => {
+    const base = "https://www.bang.com/videos?by=date.desc";
+    const next = `${base}&page=2`;
+    const old = "https://www.bang.com/video/old/scene";
+    const other = "https://www.bang.com/video/other/scene";
+    const current = "https://www.bang.com/video/current/scene";
+    const fixture = context({
+      [base]: listing([old, other], '<a href="/videos?by=date.desc&page=2">Next</a>'),
+      [old]: detail("Bang! Originals", "2026-09-30"),
+      [other]: detail(otherDate === "2026-10-06" ? "Bang! Originals" : "Other Studio", otherDate),
+      [next]: listing([current]),
+      [current]: detail(),
+    });
+    const result = await createBangOriginalsStudio(base).fetch("2026-10-01", fixture.ctx);
+    assert.deepEqual(
+      result.scenes.map((scene) => scene.sourceSceneId),
+      ["current"],
+    );
+    assert.ok(fixture.calls.includes(next));
+  });
+}
+
+test("Bang stops when all fetched videos are old even if none are Originals", async () => {
+  const base = "https://www.bang.com/videos?by=date.desc";
+  const old = "https://www.bang.com/video/old/scene";
+  const fixture = context({
+    [base]: listing([old], '<a href="/videos?by=date.desc&page=2">Next</a>'),
+    [old]: detail("Other Studio", "2026-09-30"),
+  });
+  const result = await createBangOriginalsStudio(base).fetch("2026-10-01", fixture.ctx);
+  assert.deepEqual(result.scenes, []);
+  assert.equal(result.verifiedEmpty, true);
+  assert.deepEqual(fixture.calls, [base, old]);
+});

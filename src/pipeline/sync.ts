@@ -712,6 +712,10 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
                 lane.checkedAt.get(record),
               );
               scene.id = previous?.id ?? scene.id;
+              if (previous && previous.sourceId !== lane.adapter.id) {
+                scene.sourceId = previous.sourceId;
+                scene.source = previous.source;
+              }
               const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
               const unique = new Map(
                 provenance.map((item) => [

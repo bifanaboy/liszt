@@ -1145,80 +1145,87 @@ test("a valid late candidate is linked by a later run on the same saved state", 
   }
 });
 
-test("dated rows outside the duration band no longer starve the undated working set", async () => {
-  // More dated rows in the window than the scan examines per account. They all
-  // fail the duration half of the gate, which costs nothing to reject - but they
-  // do not rotate, so before the band was pushed into SQL they took the whole
-  // scan budget on every run and the undated rows behind them were never read
-  // at all. A valid candidate could not be hydrated in any run, ever.
-  const store = new SqliteStore(":memory:");
-  store.migrate();
-  const scene = makeMatchScene({
-    id: "test:band-starvation",
-    title: "Marfe takes it deep",
-    performers: ["Marfe"],
-    releaseDate: "2026-03-04",
-    durationSec: 2138,
-  });
-  const requested: string[] = [];
-  const fetcher: Fetcher = {
-    fetch: async () => new Response(""),
-    text: async () => "",
-    json: async <T>(url: string): Promise<T> => {
-      const id = new URL(url).searchParams.get("id")!;
-      requested.push(id);
-      return [
-        {
-          id,
-          title: "Marfe compilation",
-          length_sec: 2138,
-          added: "2026-03-05 12:00:00",
-          views: 5,
-        },
-      ] as unknown as T;
-    },
-  };
-  try {
-    for (let index = 0; index < 800; index += 1) {
-      store.upsertPoolVideo({
-        id: `dated${index}`,
-        uploader: "Vovick17",
-        title: `Unrelated dated ${index}`,
-        added: "2026-03-05T12:00:00.000Z",
-        durationSec: 600,
-        hydratedAt: NOW.toISOString(),
-        views: 10,
-      });
-    }
-    store.upsertPoolVideo({
-      id: "undatedvalid",
-      uploader: "Vovick17",
-      title: "Marfe compilation",
-      added: null,
-      durationSec: 2138,
-      hydratedAt: null,
-      views: null,
+for (const durationRange of [undefined, { minSec: 2137, maxSec: 2140 }]) {
+  test(`dated rows outside the duration ${durationRange ? "range" : "band"} do not starve undated rows`, async () => {
+    // More dated rows in the window than the scan examines per account. They all
+    // fail the duration half of the gate, which costs nothing to reject - but they
+    // do not rotate, so before the band was pushed into SQL they took the whole
+    // scan budget on every run and the undated rows behind them were never read
+    // at all. A valid candidate could not be hydrated in any run, ever.
+    const store = new SqliteStore(":memory:");
+    store.migrate();
+    const scene = makeMatchScene({
+      id: "test:band-starvation",
+      title: "Marfe takes it deep",
+      performers: ["Marfe"],
+      releaseDate: "2026-03-04",
+      durationSec: durationRange ? null : 2138,
+      ...(durationRange ? { durationRange } : {}),
     });
+    const requested: string[] = [];
+    const fetcher: Fetcher = {
+      fetch: async () => new Response(""),
+      text: async () => "",
+      json: async <T>(url: string): Promise<T> => {
+        const id = new URL(url).searchParams.get("id")!;
+        requested.push(id);
+        return [
+          {
+            id,
+            title: "Marfe compilation",
+            length_sec: 2138,
+            added: "2026-03-05 12:00:00",
+            views: 5,
+          },
+        ] as unknown as T;
+      },
+    };
+    try {
+      for (let index = 0; index < 800; index += 1) {
+        store.upsertPoolVideo({
+          id: `dated${index}`,
+          uploader: "Vovick17",
+          title: `Unrelated dated ${index}`,
+          added: "2026-03-05T12:00:00.000Z",
+          durationSec: 600,
+          hydratedAt: NOW.toISOString(),
+          views: 10,
+        });
+      }
+      store.upsertPoolVideo({
+        id: "undatedvalid",
+        uploader: "Vovick17",
+        title: "Marfe compilation",
+        added: null,
+        durationSec: 2138,
+        hydratedAt: null,
+        views: null,
+      });
 
-    const match = await createPoolLookup({
-      store,
-      fetcher,
-      uploaders: ["Vovick17"],
-      durationToleranceSec: 1,
-      dateWindowDays: 7,
-      log: () => {},
-    })(scene, NOW);
-    assert.equal(match?.videoId, "undatedvalid", "the working set was reachable, not crowded out");
-    assert.deepEqual(
-      requested,
-      ["undatedvalid"],
-      "one request, and not one per rejected dated row",
-    );
-    assert.equal(match?.candidatesConsidered, 1, "the rejected rows never entered the scan");
-  } finally {
-    store.close();
-  }
-});
+      const match = await createPoolLookup({
+        store,
+        fetcher,
+        uploaders: ["Vovick17"],
+        durationToleranceSec: 1,
+        dateWindowDays: 7,
+        log: () => {},
+      })(scene, NOW);
+      assert.equal(
+        match?.videoId,
+        "undatedvalid",
+        "the working set was reachable, not crowded out",
+      );
+      assert.deepEqual(
+        requested,
+        ["undatedvalid"],
+        "one request, and not one per rejected dated row",
+      );
+      assert.equal(match?.candidatesConsidered, 1, "the rejected rows never entered the scan");
+    } finally {
+      store.close();
+    }
+  });
+}
 
 test("hydration attempts rotate after failures within a run with a fixed time", async () => {
   const store = new SqliteStore(":memory:");
@@ -1439,3 +1446,45 @@ for (const durationSec of [600, 2138]) {
     }
   });
 }
+
+test("duration range SQL keeps dated boundary values and missing durations", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    const durations = [599, 600, 601, 604, 605, 606, null];
+    for (const [index, durationSec] of durations.entries()) {
+      store.upsertPoolVideo({
+        id: `boundary${index}`,
+        uploader: "Vovick17",
+        title: "Test release",
+        added: "2026-03-05T12:00:00.000Z",
+        durationSec,
+        hydratedAt: null,
+        views: null,
+      });
+    }
+    const gathered = await gatherPoolSurvivors(
+      makeMatchScene({
+        id: "test:duration-boundaries",
+        releaseDate: "2026-03-04",
+        durationSec: null,
+        durationRange: { minSec: 601, maxSec: 604 },
+      }),
+      {
+        store,
+        fetcher: textFetcher({}),
+        uploaders: ["Vovick17"],
+        durationToleranceSec: 1,
+        dateWindowDays: 7,
+        maxHydrations: 0,
+        log() {},
+      },
+      NOW,
+    );
+    assert.equal(gathered.considered, 5);
+    assert.equal(gathered.durationPassed, 5);
+    assert.deepEqual(gathered.survivorDurations, [600, 601, 604, 605]);
+  } finally {
+    store.close();
+  }
+});
