@@ -53,7 +53,11 @@ export interface RegistryOptions {
   fc2?: Fc2StudioOptions;
   manyvidsStoreIds?: readonly string[];
   manyvidsMinIntervalMs?: number;
-  /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
+  /** Configured listing URL for Bang! Originals (single URL composite feed). */
+  bangListingUrl?: string | undefined;
+  /** Hosts the Bang! Originals feed may reference. */
+  bangAllowedHosts?: readonly string[];
+  /** Configured listing URL / settings for Maximo Garcia composite (Fansly + TPDB 7875). */
   maximoListingUrl?: string | undefined;
   /** Hosts the Maximo listing and its video pages may live on. */
   maximoAllowedHosts?: readonly string[];
@@ -68,6 +72,13 @@ export function createSources({
   traxxxWatchlist,
   store,
   fc2 = {},
+  bangListingUrl,
+  bangAllowedHosts = [
+    "sexlikereal.com",
+    "www.sexlikereal.com",
+    "analvids.com",
+    "www.analvids.com",
+  ],
   maximoListingUrl,
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
@@ -80,11 +91,11 @@ export function createSources({
   tpdbApiKey,
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
-    createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
+    createMaximoGarciaStudio(),
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
     ),
-    createBangOriginalsStudio(),
+    createBangOriginalsStudio(bangListingUrl, bangAllowedHosts),
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
