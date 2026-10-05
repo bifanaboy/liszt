@@ -111,6 +111,9 @@ matching is enabled for such ranges; no arbitrary cutoff is specified here.
   shapes, the unused-variable lint failures, and the formatting failures.
 - Replace ambiguous names in changed ingestion and merge code with one-word
   descriptive names.
+- Trim historical narration from source comments touched by the repair after
+  behavior is covered by tests. Keep comments that explain current contracts,
+  safety boundaries, or non-obvious decisions.
 - Update the README to explain supported setup and the shared architecture
   without repeating agent-only rules or extensive implementation history.
   Review completed planning/scratch documents for archival or removal; retain
