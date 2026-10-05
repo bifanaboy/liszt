@@ -581,7 +581,18 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
                 } as Scene["provenance"][number]);
               }
               scene.provenance = [...unique.values()];
-              store.upsertScene(scene);
+              store.transaction(() => {
+                store.upsertScene(scene);
+                store.upsertProviderObservation({
+                  providerId: lane.adapter.id,
+                  recordId: raw.sourceSceneId,
+                  sceneId: scene.id,
+                  studioId: raw.studioId ?? scene.labelId,
+                  studio: raw.studio ?? scene.label,
+                  record: raw,
+                  fetchedAt: now.toISOString(),
+                });
+              });
               count += 1;
             } catch (error) {
               log.warn("sync: skipped an invalid record", {

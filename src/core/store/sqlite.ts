@@ -21,6 +21,7 @@ import {
   type RunOutcome,
 } from "../schema.ts";
 import { toIsoUtc } from "../matching.ts";
+import type { ProviderObservation, RawScene } from "../../sources/types.ts";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
 
@@ -277,6 +278,94 @@ export class SqliteStore {
       ON CONFLICT (source_id) DO UPDATE SET snapshot = excluded.snapshot`,
       )
       .run(sourceId, snapshot);
+  }
+
+  /** Save the latest provider-native record without erasing omitted last-good fields. */
+  upsertProviderObservation(observation: ProviderObservation): void {
+    this.transaction(() => {
+      const prior = this.db
+        .prepare(
+          `SELECT record_json FROM provider_observations
+         WHERE provider_id = ? AND studio_id = ? AND record_id = ?`,
+        )
+        .get(observation.providerId, observation.studioId, observation.recordId) as
+        { record_json: string } | undefined;
+      const record: RawScene = prior
+        ? { ...(JSON.parse(prior.record_json) as RawScene), ...observation.record }
+        : { ...observation.record };
+      if (prior) {
+        const previous = JSON.parse(prior.record_json) as RawScene;
+        for (const field of [
+          "performers",
+          "durationSec",
+          "thumbnailUrl",
+          "releaseUrl",
+          "tags",
+          "storeId",
+          "launchDate",
+          "previewUrl",
+          "price",
+          "studioCode",
+        ] as const) {
+          const value = observation.record[field];
+          const blank =
+            value === undefined ||
+            value === null ||
+            value === "" ||
+            (Array.isArray(value) && value.length === 0);
+          if (blank && previous[field] !== undefined && previous[field] !== null) {
+            Object.assign(record, { [field]: previous[field] });
+          }
+        }
+        record.fieldProvenance = {
+          ...previous.fieldProvenance,
+          ...observation.record.fieldProvenance,
+        };
+      }
+      this.db
+        .prepare(
+          `INSERT INTO provider_observations
+          (provider_id, record_id, studio_id, scene_id, studio, record_json, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (provider_id, studio_id, record_id) DO UPDATE SET
+          scene_id = excluded.scene_id,
+          studio = excluded.studio,
+          record_json = excluded.record_json,
+          fetched_at = excluded.fetched_at`,
+        )
+        .run(
+          observation.providerId,
+          observation.recordId,
+          observation.studioId,
+          observation.sceneId,
+          observation.studio,
+          JSON.stringify(record),
+          observation.fetchedAt,
+        );
+    });
+  }
+
+  /** Current observations, optionally restricted to one canonical release. */
+  listProviderObservations(sceneId?: string): ProviderObservation[] {
+    const rows = sceneId
+      ? this.db
+          .prepare(
+            `SELECT * FROM provider_observations WHERE scene_id = ?
+             ORDER BY provider_id, studio_id, record_id`,
+          )
+          .all(sceneId)
+      : this.db
+          .prepare(`SELECT * FROM provider_observations ORDER BY provider_id, studio_id, record_id`)
+          .all();
+    return (rows as Record<string, unknown>[]).map((row) => ({
+      providerId: String(row.provider_id),
+      recordId: String(row.record_id),
+      studioId: String(row.studio_id),
+      sceneId: String(row.scene_id),
+      studio: String(row.studio),
+      record: JSON.parse(String(row.record_json)) as RawScene,
+      fetchedAt: String(row.fetched_at),
+    }));
   }
 
   /** Validate and save a scene, atomically replacing its stored fields and links. */

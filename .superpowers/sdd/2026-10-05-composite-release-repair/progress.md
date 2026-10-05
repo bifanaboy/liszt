@@ -42,3 +42,22 @@ Mode: Native sequential execution in `/workspace/liszt-repair`.
 - Task 6: pending
 - Task 7: pending
 - Task 8: pending
+
+### Task 3: Persist provider observations and canonical releases
+- Observation schema and deterministic per-field merger added.
+- Migration 0010 adds provider/native record observations and backfills current scenes from existing provenance.
+- Store upsert preserves previously known non-empty fields when a later successful provider response omits them; read and upsert methods added.
+- Sync stores observations in the same transaction as provider scene writes; failed sources leave their prior observations untouched.
+- Migration regression proves scene IDs, live links, dead-link history, resolver watermark/verdict, and an observation survive upgrade.
+- Focused merge/migration/sync tests pass (47/47). Typecheck, lint, format pass.
+- Full suite's three remaining read-model failures are assigned to Task 4. One ManyVids spacing test was timing-sensitive on the first full run; Task 8 will rerun it.
+
+## Task progress
+- Task 1: completed
+- Task 2: completed
+- Task 3: completed (focused checks pass; full suite has known Task 4 failures)
+- Task 4: pending
+- Task 5: pending
+- Task 6: pending
+- Task 7: pending
+- Task 8: pending

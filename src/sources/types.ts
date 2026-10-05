@@ -38,6 +38,36 @@ export interface RawScene {
   studio?: string;
 }
 
+/** A provider-native record together with its current canonical association. */
+export interface ProviderObservation {
+  providerId: string;
+  recordId: string;
+  sceneId: string;
+  studioId: string;
+  studio: string;
+  record: RawScene;
+  fetchedAt: string;
+}
+
+export type MergeField =
+  | "title"
+  | "releaseDate"
+  | "performers"
+  | "durationSec"
+  | "thumbnailUrl"
+  | "releaseUrl"
+  | "tags"
+  | "storeId"
+  | "launchDate"
+  | "previewUrl"
+  | "price"
+  | "studioCode";
+
+/** Higher entries win field conflicts; remaining ties sort by provider ID. */
+export interface MergePolicy {
+  priority?: Partial<Record<MergeField, readonly string[]>>;
+}
+
 export interface FetchOptions {
   timeoutMs?: number;
   signal?: AbortSignal;

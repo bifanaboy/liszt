@@ -733,12 +733,25 @@ test("a failed poll keeps the source's last-good in-window rows", async () => {
 
   await sync("first");
   assert.equal(store.listWindow(FROM, "2026-03-10").length, 2);
+  const prior = store
+    .listProviderObservations()
+    .map((item) => item.recordId)
+    .sort();
+  assert.deepEqual(prior, ["1", "2"]);
 
   healthy = false;
   const second = await sync("second");
   assert.equal(second.outcomes[0]?.ok, false);
   // Retention: the records a temporarily-failing upstream omitted survive.
   assert.equal(store.listWindow(FROM, "2026-03-10").length, 2);
+  assert.deepEqual(
+    store
+      .listProviderObservations()
+      .map((item) => item.recordId)
+      .sort(),
+    prior,
+    "a failed poll leaves provider observations untouched",
+  );
   store.close();
 });
 
