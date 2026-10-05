@@ -115,7 +115,9 @@ function render() {
     const outbound = links.map((item) => {
       const index = (sourceIndexes.get(item.source) || 0) + 1;
       sourceIndexes.set(item.source, index);
-      const label = sourceTotals.get(item.source) > 1 ? `${item.source} ${index}` : item.source;
+      const label = Number.isInteger(item.part) && item.part > 0
+        ? `${item.source} · Part ${item.part}`
+        : (sourceTotals.get(item.source) > 1 ? `${item.source} ${index}` : item.source);
       return `<a class="source-link source-link--${esc(item.source)}" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener noreferrer" title="Open on ${esc(item.source)}">${esc(label)} <span>↗</span></a>`;
     }).join("");
     const releaseUrl = safeUrl(scene.releaseUrl);

@@ -144,6 +144,7 @@ function linkRowToScene(row: SceneRow, linkRows: Record<string, unknown>[]): Sce
           url: link.url,
           verifiedAt: link.verified_at,
           verifyFailures: Number(link.verify_failures ?? 0),
+          ...(link.part == null ? {} : { part: Number(link.part) }),
         },
         `store.link(${row.id})`,
       ),
@@ -509,8 +510,8 @@ export class SqliteStore {
       // handed over a stale set could resurrect a struck URL.
       this.db.prepare("DELETE FROM scene_links WHERE scene_id = ?").run(parsed.id);
       const insert = this.db.prepare(
-        `INSERT INTO scene_links (scene_id, kind, source, url, verified_at, verify_failures, dead_at, dead_reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scene_links (scene_id, kind, source, url, verified_at, verify_failures, dead_at, dead_reason, part)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const link of parsed.videoUrls) {
         insert.run(
@@ -522,10 +523,21 @@ export class SqliteStore {
           link.verifyFailures,
           null,
           null,
+          link.part ?? null,
         );
       }
       for (const link of parsed.deadVideoUrls) {
-        insert.run(parsed.id, "dead", link.source, link.url, null, 0, link.deadAt, link.deadReason);
+        insert.run(
+          parsed.id,
+          "dead",
+          link.source,
+          link.url,
+          null,
+          0,
+          link.deadAt,
+          link.deadReason,
+          null,
+        );
       }
     });
   }

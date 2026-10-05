@@ -129,6 +129,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
         windowListeners.set(name, handler);
       },
       location: place,
+      URL,
       Option: Element,
       fetch,
       renderSourceHealthSummary: () => "",
@@ -193,6 +194,62 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
 }
 
 const response = (body: unknown) => ({ ok: true, json: async () => body });
+
+test("verified FC2 parts display their saved numbers instead of link order", async () => {
+  const app = await dashboard(
+    async () =>
+      response({
+        ...catalogue,
+        asianSourceIds: ["fc2cmadb"],
+        scenes: [
+          {
+            id: "fc2cmadb:4979341",
+            sourceId: "fc2cmadb",
+            labelId: "fc2cmadb",
+            label: "FC2",
+            title: "FC2 example",
+            releaseDate: "2026-10-02",
+            performers: [],
+            videoUrls: [
+              { source: "eporner", url: "https://www.eporner.com/video-two/", part: 2 },
+              { source: "eporner", url: "https://www.eporner.com/video-one/", part: 1 },
+            ],
+          },
+        ],
+      }),
+    "#asian",
+  );
+  const html = app.element("#list").innerHTML;
+  assert.match(html, /href="https:\/\/www\.eporner\.com\/video-two\/"[^>]*>eporner · Part 2 /);
+  assert.match(html, /href="https:\/\/www\.eporner\.com\/video-one\/"[^>]*>eporner · Part 1 /);
+});
+
+test("unverified uploads retain ordinary link labels without invented parts", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      scenes: [
+        {
+          id: "test:1",
+          sourceId: "test",
+          labelId: "test",
+          label: "Test",
+          title: "Example",
+          releaseDate: "2026-10-02",
+          performers: [],
+          videoUrls: [
+            { source: "eporner", url: "https://www.eporner.com/video-one/" },
+            { source: "eporner", url: "https://www.eporner.com/video-two/" },
+          ],
+        },
+      ],
+    }),
+  );
+  const html = app.element("#list").innerHTML;
+  assert.match(html, />eporner 1 /);
+  assert.match(html, />eporner 2 /);
+  assert.doesNotMatch(html, /Part/);
+});
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 const release = {
