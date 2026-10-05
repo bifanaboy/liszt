@@ -26,6 +26,7 @@ import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
 import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
+import type { StudioLink } from "./studio-identity.ts";
 
 export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
   "tushy",
@@ -57,13 +58,10 @@ export interface RegistryOptions {
   bangListingUrl?: string | undefined;
   /** Hosts the Bang! Originals feed may reference. */
   bangAllowedHosts?: readonly string[];
-  /** Configured listing URL / settings for Maximo Garcia composite (Fansly + TPDB 7875). */
-  maximoListingUrl?: string | undefined;
-  /** Hosts the Maximo listing and its video pages may live on. */
-  maximoAllowedHosts?: readonly string[];
   /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
    * failing every cycle, following the SETUP REQUIRED pattern. */
   tpdbApiKey?: string;
+  studioLinks?: readonly StudioLink[];
 }
 
 /** The complete set of adapters run by the sync, in a stable order. */
@@ -73,22 +71,11 @@ export function createSources({
   store,
   fc2 = {},
   bangListingUrl,
-  bangAllowedHosts = [
-    "sexlikereal.com",
-    "www.sexlikereal.com",
-    "analvids.com",
-    "www.analvids.com",
-  ],
-  maximoListingUrl,
+  bangAllowedHosts = ["sexlikereal.com", "www.sexlikereal.com", "analvids.com", "www.analvids.com"],
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
-  maximoAllowedHosts = [
-    "sexlikereal.com",
-    "www.sexlikereal.com",
-    "analvids.com",
-    "www.analvids.com",
-  ],
   tpdbApiKey,
+  studioLinks = [],
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
     createMaximoGarciaStudio(),
@@ -130,7 +117,20 @@ export function createSources({
       })),
     );
   }
+  tpdbStudios.push(
+    ...studioLinks
+      .filter((link) => link.tpdb)
+      .map((link) => ({
+        studioId: link.studioId,
+        studio: link.studio,
+        aliases: [link.studio, ...(link.aliases ?? []), link.tpdb!.name],
+        siteIds: link.tpdb!.siteIds,
+        ...(link.tags?.length ? { tags: link.tags } : {}),
+      })),
+  );
 
-  sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios: tpdbStudios }));
+  if (tpdbApiKey) {
+    sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios: tpdbStudios }));
+  }
   return sources;
 }

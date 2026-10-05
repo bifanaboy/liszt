@@ -686,8 +686,8 @@ test("explicit retirement prunes only named source ids and keeps a failing activ
   await sync("outage");
 
   assert.equal(store.getScene("tushy:old"), null);
-  assert.ok(RETIRED_SOURCE_IDS.includes("bang-originals"));
-  assert.ok(RETIRED_SOURCE_IDS.includes("maximo-garcia"));
+  assert.equal(RETIRED_SOURCE_IDS.includes("bang-originals"), false);
+  assert.equal(RETIRED_SOURCE_IDS.includes("maximo-garcia"), false);
   assert.ok(store.getScene("active:current"));
   assert.deepEqual(
     store.listSources().map((status) => status.sourceId),

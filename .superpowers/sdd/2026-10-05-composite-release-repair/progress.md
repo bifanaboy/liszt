@@ -26,3 +26,19 @@ Mode: Native sequential execution in `/workspace/liszt-repair`.
 - Task 6: pending
 - Task 7: pending
 - Task 8: pending
+
+### Task 2: Restore configuration wiring and baseline checks
+- Completed. See `task-2.md` for exact changes and verification.
+- Ruling: default studio links are resolved relative to `src/config.ts` via `import.meta.url`; the previous `__dirname` path resolved above the repo root under Node native type stripping and silently fell back to no links.
+- Ruling: TPDB `meta.last_page` is the pagination field used by the real Laravel-style API contract and repository fixtures; old `meta.last` parsing made all catalogue scans fail at runtime.
+- Open: full suite has 3 known read-model failures, which are direct scope for Task 4's one identity/merge path.
+
+## Task progress
+- Task 1: completed
+- Task 2: completed (typecheck/lint/format pass; focused tests pass; known Task 4 full-suite failures logged)
+- Task 3: pending
+- Task 4: pending
+- Task 5: pending
+- Task 6: pending
+- Task 7: pending
+- Task 8: pending

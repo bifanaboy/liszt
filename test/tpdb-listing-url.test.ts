@@ -169,7 +169,11 @@ test("the tag filter is applied by name, never forwarded to the TPDB API", async
     fetcher: {
       json: async (url: string) => {
         requested.push(url);
-        return { data: [], meta: { current_page: 1, last_page: 1 } };
+        const sitePage = new URL(url).pathname === "/sites";
+        return {
+          data: sitePage ? [{ id: 988, name: "BANG!", short_name: "bang" }] : [],
+          meta: { current_page: 1, last_page: 1 },
+        };
       },
     },
     log: () => {},
@@ -186,7 +190,9 @@ test("the tag filter is applied by name, never forwarded to the TPDB API", async
   });
   await source.fetch("2026-09-01", ctx as never);
   assert.ok(requested.length > 0, "the lane issued no request");
-  for (const url of requested) {
+  const listings = requested.filter((url) => new URL(url).pathname === "/scenes");
+  assert.equal(listings.length, 1);
+  for (const url of listings) {
     assert.match(url, /site_id=988/);
     assert.doesNotMatch(url, /tags/i);
   }

@@ -6,7 +6,6 @@
  */
 import { z } from "zod";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { auditStudioLinks, StudioLinkSchema } from "./sources/studio-identity.ts";
 import { DEFAULT_FETCH_CONCURRENCY } from "./core/concurrency.ts";
 import { DEFAULT_TIMEOUT_MS } from "./core/fetcher.ts";
@@ -236,7 +235,7 @@ const studioLinksFromEnv = (value: string | undefined): unknown => {
  * Fallback reader: committed default studio links from repo root. */
 function readDefaultStudioLinks(): unknown {
   try {
-    const path = join(__dirname, "..", "studio-links.default.json");
+    const path = new URL("../studio-links.default.json", import.meta.url);
     return JSON.parse(readFileSync(path, "utf8"));
   } catch {
     return [];

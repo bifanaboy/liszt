@@ -3,7 +3,7 @@ import type { RawScene, SourceAdapter, SourceContext } from "./types.ts";
 
 const Meta = z.object({
   current_page: z.number().int().positive(),
-  last: z.number().int().nonnegative(),
+  last_page: z.number().int().nonnegative(),
 });
 const SitePage = z.object({
   data: z.array(
@@ -26,6 +26,7 @@ const ScenePage = z.object({
       image: z.string().url().nullable().optional(),
       poster: z.string().url().nullable().optional(),
       performers: z.array(z.object({ name: z.string().min(1) })).optional(),
+      tags: z.array(z.object({ name: z.string().min(1) })).optional(),
       site: z.object({ name: z.string().min(1) }).optional(),
     }),
   ),
@@ -39,6 +40,8 @@ export interface TpdbStudio {
   studioId: string;
   studio: string;
   aliases: readonly string[];
+  siteIds?: readonly number[];
+  tags?: readonly string[];
 }
 
 export function cleanStudioName(value: string): string {
@@ -51,22 +54,22 @@ export function cleanStudioName(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-function checkedPage<T extends { meta: { current_page: number; last: number } }>(
+function checkedPage<T extends { meta: { current_page: number; last_page: number } }>(
   page: T,
   current: number,
   label: string,
 ): T {
   if (
     page.meta.current_page !== current ||
-    page.meta.last > MAX_PAGES ||
-    (page.meta.last < current && !(current === 1 && page.meta.last === 0))
+    page.meta.last_page > MAX_PAGES ||
+    (page.meta.last_page < current && !(current === 1 && page.meta.last_page === 0))
   ) {
     throw new Error(`TPDB ${label}: inconsistent pagination on page ${current}`);
   }
   return page;
 }
 
-async function* pages<T extends { meta: { current_page: number; last: number } }>(
+async function* pages<T extends { meta: { current_page: number; last_page: number } }>(
   ctx: SourceContext,
   path: string,
   token: string,
@@ -83,7 +86,7 @@ async function* pages<T extends { meta: { current_page: number; last: number } }
     });
     const data = checkedPage(parse(raw), page, label);
     yield data;
-    if (page >= data.meta.last) return;
+    if (page >= data.meta.last_page) return;
   }
 }
 
@@ -101,8 +104,11 @@ export function createTpdbWatchlistSource(options: {
       // so that later studios sharing the same cleaned alias also exclude themselves.
       // Only set null when prior is a studio with a different studioId;
       // if prior is null, do not overwrite it with a new studio.
-      const newValue = prior ? (prior.studioId !== studio.studioId ? null : prior) : null;
-      aliases.set(key, newValue);
+      if (!aliases.has(key)) {
+        aliases.set(key, studio);
+      } else if (prior && prior.studioId !== studio.studioId) {
+        aliases.set(key, null);
+      }
     }
   return {
     id: "tpdb-watchlist",
@@ -115,16 +121,21 @@ export function createTpdbWatchlistSource(options: {
       const sites = new Map<number, TpdbStudio>();
       for await (const page of pages(ctx, "/sites", token, (raw) => SitePage.parse(raw), "sites")) {
         for (const site of page.data) {
+          const configured = options.studios.find((studio) => studio.siteIds?.includes(site.id));
           const studioByName = aliases.get(cleanStudioName(site.name));
-          // If the alias map returns null (studio name is ambiguous), do not fall
-          // through to the short_name check — an ambiguous name should not admit
-          // any studio via the short_name fallback.
-          let studio: TpdbStudio | undefined = studioByName !== null ? studioByName : undefined;
+          if (!configured && studioByName === null) continue;
+          let studio: TpdbStudio | undefined = configured ?? (studioByName || undefined);
           if (!studio && site.short_name) {
             const studioByShort = aliases.get(cleanStudioName(site.short_name));
-            if (studioByShort !== null) {
-              studio = studioByShort;
-            }
+            if (studioByShort === null) continue;
+            studio = studioByShort;
+          } else if (!configured && studio && site.short_name) {
+            const studioByShort = aliases.get(cleanStudioName(site.short_name));
+            if (
+              studioByShort === null ||
+              (studioByShort && studioByShort.studioId !== studio.studioId)
+            )
+              continue;
           }
           if (studio) sites.set(site.id, studio);
         }
@@ -141,6 +152,14 @@ export function createTpdbWatchlistSource(options: {
           for (const scene of page.data) {
             if (scene.date < windowStart || scene.date > ctx.now.toISOString().slice(0, 10))
               continue;
+            if (
+              studio.tags?.length &&
+              !studio.tags.every((tag) =>
+                scene.tags?.some((item) => cleanStudioName(item.name) === cleanStudioName(tag)),
+              )
+            ) {
+              continue;
+            }
             const recordUrl = scene.url ?? undefined;
             scenes.push({
               sourceSceneId: scene.id,

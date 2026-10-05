@@ -2,15 +2,7 @@
 import { createFanslySource } from "./fansly.ts";
 import type { SourceAdapter, SourceContext, RawScene } from "./types.js";
 
-export function createMaximoGarciaStudio(
-  _listingUrl?: string,
-  _allowedHosts: readonly string[] = [
-    "sexlikereal.com",
-    "www.sexlikereal.com",
-    "analvids.com",
-    "www.analvids.com",
-  ],
-): SourceAdapter {
+export function createMaximoGarciaStudio(): SourceAdapter {
   return {
     id: "maximo-garcia",
     name: "Maximo Garcia",

@@ -30,7 +30,15 @@ test("declared studios are read from a file path or from inline JSON", () => {
   assert.deepEqual(loadConfig({ LISZT_STUDIO_LINKS: JSON.stringify([brazzers]) }).studioLinks, [
     brazzers,
   ]);
-  assert.deepEqual(loadConfig({}).studioLinks, [], "undeclared studios are not an error");
+  assert.deepEqual(loadConfig({ LISZT_STUDIO_LINKS: "[]" }).studioLinks, []);
+});
+
+test("default studio links register every Dredd TPDB site under one alias", () => {
+  const dredd = loadConfig({}).studioLinks.find((link) => link.studioId === "dredd");
+  assert.ok(dredd);
+  assert.equal(dredd.studio, "Dredd");
+  assert.ok(dredd.aliases?.includes("DreddXXX"));
+  assert.deepEqual(dredd.tpdb?.siteIds, [50864, 39697, 81939]);
 });
 
 test("a broken studio declaration is a named configuration error, not a silent drop", () => {
