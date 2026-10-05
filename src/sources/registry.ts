@@ -80,7 +80,7 @@ export function createSources({
   tpdbApiKey,
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
-    createMaximoGarciaStudio(maximoListingUrl, maximoAllowedHosts),
+    createMaximoGarciaStudio(),
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
     ),
