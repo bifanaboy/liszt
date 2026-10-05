@@ -368,6 +368,59 @@ export class SqliteStore {
     }));
   }
 
+  /** Drop only one provider's positively excluded native records. */
+  removeProviderRecords(providerId: string, recordIds: readonly string[]): string[] {
+    if (!recordIds.length) return [];
+    return this.transaction(() => {
+      const found = this.db
+        .prepare(
+          `SELECT scene_id FROM provider_observations
+           WHERE provider_id = ? AND record_id IN (${recordIds.map(() => "?").join(",")})`,
+        )
+        .all(providerId, ...recordIds) as { scene_id: string }[];
+      const sceneIds = new Set(found.map((row) => row.scene_id));
+
+      const scenes = this.db
+        .prepare("SELECT id FROM scenes WHERE source_id = ?")
+        .all(providerId) as { id: string }[];
+      for (const scene of scenes) {
+        if (recordIds.some((recordId) => scene.id.endsWith(`:${recordId}`))) {
+          sceneIds.add(scene.id);
+        }
+      }
+
+      this.db
+        .prepare(
+          `DELETE FROM provider_observations
+           WHERE provider_id = ? AND record_id IN (${recordIds.map(() => "?").join(",")})`,
+        )
+        .run(providerId, ...recordIds);
+      for (const sceneId of sceneIds) {
+        const retained = this.db
+          .prepare("SELECT 1 FROM provider_observations WHERE scene_id = ? LIMIT 1")
+          .get(sceneId);
+        if (!retained) this.deleteScene(sceneId);
+      }
+      return [...sceneIds];
+    });
+  }
+
+  /** Move every retained observation onto its merged canonical release. */
+  reassignProviderObservations(sceneIds: readonly string[], canonicalId: string): void {
+    for (const sceneId of new Set(sceneIds)) {
+      if (sceneId !== canonicalId) {
+        this.db
+          .prepare("UPDATE provider_observations SET scene_id = ? WHERE scene_id = ?")
+          .run(canonicalId, sceneId);
+      }
+    }
+  }
+
+  /** Delete a duplicate scene after its observations and links have been carried forward. */
+  deleteScene(sceneId: string): void {
+    this.db.prepare("DELETE FROM scenes WHERE id = ?").run(sceneId);
+  }
+
   /** Validate and save a scene, atomically replacing its stored fields and links. */
   upsertScene(scene: Scene): void {
     // Validate at the boundary before writing, so a malformed record names the

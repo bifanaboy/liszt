@@ -39,11 +39,19 @@ export function releaseIdentity(raw: Pick<RawScene, "releaseUrl">): string | und
   if (!url) return undefined;
   try {
     const parsed = new URL(url);
-    // http vs https, a trailing slash, and an empty fragment are all the same
-    // page. Host case is not: keep the path and query, which are what identify
-    // the release, and normalise only what cannot change the page.
+    // Scheme, host case, a trailing slash, and a fragment do not distinguish
+    // these provider page URLs. The issue #130 sample proves a dropped
+    // apostrophe is also spelling variation inside one same-host scene slug.
     parsed.hash = "";
-    const path = parsed.pathname.replace(/\/+$/, "");
+    const segments = parsed.pathname.replace(/\/+$/, "").split("/");
+    const numberIndex = segments.findIndex(
+      (segment, index) => index < segments.length - 1 && /^\d+$/.test(segment),
+    );
+    if (numberIndex >= 0) {
+      const slug = segments[numberIndex + 1]!;
+      segments[numberIndex + 1] = slug.replace(/[^a-z0-9]/gi, "");
+    }
+    const path = segments.join("/");
     return `${parsed.host.toLowerCase()}${path}${parsed.search}`.toLowerCase();
   } catch {
     // Not a parseable URL. Use it verbatim rather than dropping the record:

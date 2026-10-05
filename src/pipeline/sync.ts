@@ -32,6 +32,9 @@ import type {
   SourceContext,
   SourceLabel,
   SourceResult,
+  MergeField,
+  MergePolicy,
+  ProviderObservation,
 } from "../sources/types.ts";
 import {
   resolveLinks,
@@ -44,6 +47,7 @@ import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
 import type { PoolMatch } from "../tubes/eporner-pool.ts";
 import { releaseIdentity } from "./release-identity.ts";
+import { mergeRelease } from "./release-merge.ts";
 import type { MatchScene } from "../tubes/types.ts";
 import { getStudioMetadataProfile, scrapeReleaseMetadata } from "../sources/studio-metadata.ts";
 import type { Fc2LookupResult } from "../tubes/fc2-eporner.ts";
@@ -212,6 +216,132 @@ export function normaliseScene(
   if (raw.releaseUrl) candidate.releaseUrl = raw.releaseUrl;
   if (raw.studioCode) candidate.studioCode = raw.studioCode;
   return parseAtBoundary(Scene, candidate, `sync.scene(${id})`);
+}
+
+const MERGE_FIELDS: readonly MergeField[] = [
+  "title",
+  "releaseDate",
+  "performers",
+  "durationSec",
+  "thumbnailUrl",
+  "releaseUrl",
+  "tags",
+  "storeId",
+  "launchDate",
+  "previewUrl",
+  "price",
+  "studioCode",
+];
+
+function sourcePolicy(sources: readonly SourceAdapter[]): MergePolicy {
+  const priority: Partial<Record<MergeField, readonly string[]>> = {};
+  for (const field of MERGE_FIELDS) priority[field] = sources.map((source) => source.id);
+  return { priority };
+}
+
+function mergeHistory(scene: Scene, prior: readonly Scene[]): void {
+  const dead = new Map<string, Scene["deadVideoUrls"][number]>();
+  const live = new Map<string, Scene["videoUrls"][number]>();
+  for (const record of prior) {
+    for (const link of record.deadVideoUrls) dead.set(link.url, link);
+    for (const link of record.videoUrls) live.set(link.url, link);
+  }
+  scene.deadVideoUrls = [...dead.values()];
+  scene.videoUrls = [...live.values()].filter((link) => !dead.has(link.url));
+  scene.videoCheckedAt =
+    prior
+      .map((record) => record.videoCheckedAt)
+      .filter((value): value is string => value !== null)
+      .sort()[0] ?? null;
+  scene.videoMatching = scene.videoUrls.length
+    ? (prior.find((record) => record.videoMatching)?.videoMatching ?? null)
+    : null;
+}
+
+/** Persist one row for every verified release identity across provider observations. */
+export function reconcileReleases(
+  store: SqliteStore,
+  sources: readonly SourceAdapter[],
+  from: string,
+  to: string,
+  now: Date,
+): void {
+  const current = store.listWindow(from, to);
+  const known = new Map(current.map((scene) => [scene.id, scene]));
+  const observations = store
+    .listProviderObservations()
+    .filter((observation) => known.has(observation.sceneId));
+  const groups = new Map<string, ProviderObservation[]>();
+  for (const observation of observations) {
+    const identity = releaseIdentity(observation.record);
+    const key = identity
+      ? JSON.stringify([observation.studioId, identity])
+      : JSON.stringify([observation.providerId, observation.studioId, observation.recordId]);
+    const group = groups.get(key) ?? [];
+    group.push(observation);
+    groups.set(key, group);
+  }
+
+  const policy = sourcePolicy(sources);
+  const rank = new Map(sources.map((source, index) => [source.id, index]));
+  for (const group of groups.values()) {
+    const sceneIds = [...new Set(group.map((observation) => observation.sceneId))];
+    const prior = sceneIds
+      .map((id) => known.get(id))
+      .filter((scene): scene is Scene => Boolean(scene));
+    if (!prior.length) continue;
+    prior.sort(
+      (first, second) =>
+        second.videoUrls.length - first.videoUrls.length ||
+        (rank.get(first.sourceId) ?? Number.MAX_SAFE_INTEGER) -
+          (rank.get(second.sourceId) ?? Number.MAX_SAFE_INTEGER) ||
+        first.id.localeCompare(second.id),
+    );
+    const keeper = prior[0]!;
+    const first = [...group].sort(
+      (left, right) =>
+        (rank.get(left.providerId) ?? Number.MAX_SAFE_INTEGER) -
+          (rank.get(right.providerId) ?? Number.MAX_SAFE_INTEGER) ||
+        left.providerId.localeCompare(right.providerId) ||
+        left.recordId.localeCompare(right.recordId),
+    )[0]!;
+    const source = sources.find((candidate) => candidate.id === keeper.sourceId) ??
+      sources.find((candidate) => candidate.id === first.providerId) ?? {
+        id: keeper.sourceId,
+        name: keeper.source,
+        authority: { name: keeper.source, url: "", role: "Provider observation" },
+        matcher: null,
+        fetch: async () => ({ scenes: [], verifiedEmpty: true }),
+      };
+    const raw = mergeRelease(group, policy);
+    const merged = normaliseScene(source, raw, now, keeper);
+    merged.id = keeper.id;
+    merged.sourceId = keeper.sourceId;
+    merged.source = keeper.source;
+    merged.provenance = group.map((observation) => ({
+      source: observation.providerId,
+      fetchedAt: observation.fetchedAt,
+      sourceSceneId: observation.recordId,
+      ...(observation.record.provenance?.sourceUrl
+        ? { sourceUrl: observation.record.provenance.sourceUrl }
+        : {}),
+      ...((observation.record.provenance?.recordUrl ?? observation.record.releaseUrl)
+        ? { recordUrl: observation.record.provenance?.recordUrl ?? observation.record.releaseUrl }
+        : {}),
+      ...(observation.record.provenance?.audit
+        ? { audit: observation.record.provenance.audit }
+        : {}),
+    }));
+    mergeHistory(merged, prior);
+
+    store.transaction(() => {
+      store.upsertScene(merged);
+      store.reassignProviderObservations(sceneIds, keeper.id);
+      for (const sceneId of sceneIds) {
+        if (sceneId !== keeper.id) store.deleteScene(sceneId);
+      }
+    });
+  }
 }
 
 const STUDIO_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -413,6 +543,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       }
       log.info("sync started", { runId, reason, window: { from, to } });
       const outcomes = await fanOut(from, now);
+      reconcileReleases(store, sources, from, to, now);
       const { matched, resolved, reverified, rejections, winners, expired, windowScenes } =
         await linkAndTally(from, to, now);
       return tally(
@@ -491,62 +622,9 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       .filter((lane): lane is FailedLane => !lane.ok)
       .map((lane) => lane.outcome);
 
-    // Claim each release URL once across ALL lanes before anything is written.
-    // A Traxxx studio lane and the TPDB lane both cover the same studio and
-    // both emit the studio's own release URL, so without this one release is
-    // stored - and shown - twice. Claimed across lanes rather than per-lane
-    // because the overlap is precisely cross-lane. Seeded from the stored rows
-    // too, so a release already in the catalogue keeps its existing row and
-    // lane order decides ties.
-    const claimed = new Map<string, string>();
-    // A scene its own source has POSITIVELY excluded does not hold its claim. It
-    // is about to be deleted, so if it kept the claim, a second lane's record
-    // for that same release would be suppressed as a duplicate - and then the
-    // stored row would be deleted by the exclusion, leaving the release absent
-    // from the catalogue until some later sync happened to re-import it. The
-    // claim map has to reflect what will exist AFTER the write phase, not what
-    // exists now.
-    // Matched on (source_id, native id) rather than a composed string: a scene
-    // id is `source:id` for a plain lane but `source:label:id` when the adapter
-    // emits sub-labels, and the exclusion list holds the NATIVE id either way.
-    const excluded = new Set(
-      lanes.flatMap((lane) =>
-        (lane.result.excludedSceneIds ?? []).map((id) => `${lane.adapter.id} ${id}`),
-      ),
-    );
-    for (const scene of store.listAll()) {
-      if (excluded.has(`${scene.sourceId} ${scene.id.slice(scene.sourceId.length + 1)}`)) continue;
-      const identity = scene.releaseUrl ? releaseIdentity(scene) : undefined;
-      if (identity) claimed.set(identity, scene.id);
-    }
-    for (const lane of lanes) {
-      const kept: RawScene[] = [];
-      let suppressed = 0;
-      for (const raw of lane.result.scenes) {
-        const identity = releaseIdentity(raw);
-        if (identity) {
-          // Claimed by a DIFFERENT row. Claimed by this record's own row is not
-          // a duplicate - it is this scene's previous version, and suppressing
-          // it would freeze the scene at its first write and stop every
-          // subsequent update from ever landing.
-          const owner = claimed.get(identity);
-          if (owner !== undefined && owner !== sceneKey(lane.adapter, raw)) {
-            suppressed += 1;
-            continue;
-          }
-          claimed.set(identity, sceneKey(lane.adapter, raw));
-        }
-        kept.push(raw);
-      }
-      if (suppressed) {
-        log.info("sync: dropped releases already covered by another lane", {
-          source: lane.adapter.id,
-          suppressed,
-        });
-        lane.result = { ...lane.result, scenes: kept };
-      }
-    }
-
+    // Store every provider observation before reconciling identities. A failed
+    // provider never replaces its last-good observation, and one provider can
+    // therefore contribute fields without suppressing another provider's data.
     await runStudioLookups(lanes, now);
 
     for (const lane of lanes) {
@@ -604,7 +682,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           // Only IDs the source positively excluded are deleted, and only from
           // this lane. Absence from `scenes` deletes nothing: a bounded run
           // that checked part of its queue must not remove the rest.
-          store.deleteSourceScenes(lane.adapter.id, lane.result.excludedSceneIds ?? []);
+          store.removeProviderRecords(lane.adapter.id, lane.result.excludedSceneIds ?? []);
           recordSourceSuccess(store, lane.adapter, count, now, windowDays, lane.result.labels);
         });
         log.info("sync: source ok", {

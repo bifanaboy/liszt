@@ -67,7 +67,9 @@ The composite input set recorded in open issue #115 is the public Fansly page,
 TPDB sites `fuckingpornstars`, `maximogarcia`, and `manyvidsmaximogarcia`, plus
 the existing ManyVids store `1003095958`. They should map to one Maximo identity.
 Titles containing the requested `trans` marker are excluded. When duplicate
-observations have matching durations, the issue requests choosing the “earliest video.” Use the earliest provider release date, then configured provider priority and stable provider ID for ties. This is an explicit, reversible interpretation because the issue did not name an ordering field.
+observations have matching durations, choose the one with the oldest release
+date, then configured provider priority and stable provider ID for ties. This
+uses the ordering field the user confirmed.
 
 ### Dredd
 
@@ -91,9 +93,8 @@ mirror candidates as ambiguous without shared ID evidence.
 The duration range is calculated from positive provider observations, not from
 an average. A candidate passes duration eligibility when its duration is
 within the inclusive range plus the existing one-second edge tolerance. If all
-providers agree, this preserves the current ±1-second behavior. A wide-range
-cutoff must be selected from observed source differences before automatic
-matching is enabled for such ranges; no arbitrary cutoff is specified here.
+providers agree, this preserves the current ±1-second behavior. Ranges wider
+than one second require review and cannot automatically link.
 
 ## Audited repairs and maintenance scope
 

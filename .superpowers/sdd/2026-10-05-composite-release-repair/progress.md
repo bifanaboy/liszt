@@ -13,8 +13,8 @@ Mode: Native sequential execution in `/workspace/liszt-repair`.
 
 ### Task 1: Close source and merge-rule gaps
 - Bang source verified live on 2026-10-05: newest listing uses SearchResultsPage JSON-LD and pagination; detail pages use VideoObject JSON-LD. Captured representative URL and fields in `task-1.md` and design spec. Restrict to `www.bang.com` and require production company Bang! Originals.
-- Maximo earliest ordering ruling: earliest `datePublished`/release date, ties by configured source priority then stable provider ID. This is reversible because the issue comment did not specify an ordering field.
-- No production DB available to measure spread; choose a conservative maximum automatic range width of 1 sec; wider ranges need review.
+- Maximo earliest ordering ruling: the user confirmed oldest release date, ties by configured source priority then stable provider ID.
+- No production DB available to measure spread; selected a conservative maximum automatic range width of 1 sec; wider ranges need review.
 - Per-field conflicts use configured priority and preserve every provider observation/provenance.
 
 ## Task progress
@@ -51,6 +51,13 @@ Mode: Native sequential execution in `/workspace/liszt-repair`.
 - Migration regression proves scene IDs, live links, dead-link history, resolver watermark/verdict, and an observation survive upgrade.
 - Focused merge/migration/sync tests pass (47/47). Typecheck, lint, format pass.
 - Full suite's three remaining read-model failures are assigned to Task 4. One ManyVids spacing test was timing-sensitive on the first full run; Task 8 will rerun it.
+
+### Task 4: Use one conservative identity and merge path
+- Canonical reconciliation now runs after successful/failed lanes have been independently recorded; every retained group is rebuilt from observations, including a single remaining provider after another is excluded.
+- Removed the pre-write `claimed` suppression and display-time read-model deduplication. Provider observations are retained and same-studio normalized release URLs reconcile into one stored scene.
+- Same-host page slug punctuation variants normalize only when a numeric page identifier anchors the URL. Cross-host title similarity and URL-less records remain separate.
+- Dead links dominate live links during history merge; a scene with no remaining live links clears its resolver verdict.
+- Focused identity, sync, read-model, and resolver checks pass (37/37); typecheck, lint, and formatting pass.
 
 ## Task progress
 - Task 1: completed
