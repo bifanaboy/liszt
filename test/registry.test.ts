@@ -117,7 +117,7 @@ test("Maximo TPDB aliases and provider lanes share one canonical studio key", as
               duration: 600,
               url: `https://example.test/${parsed.searchParams.get("site_id")}`,
               performers: [],
-              tags: [],
+              tags: parsed.searchParams.get("site_id") === "7875" ? [{ name: "Anal" }] : [],
             },
           ],
           meta: { current_page: 1, last_page: 1 },
@@ -139,3 +139,85 @@ test("Maximo TPDB aliases and provider lanes share one canonical studio key", as
     ["tpdb-maximogarcia", "tpdb-maximogarcia", "tpdb-maximogarcia", "tpdb-maximogarcia"],
   );
 });
+
+for (const tags of [undefined, [], ["creampie"], ["anal"]]) {
+  test(`linked TPDB sites add anal only for listed IDs with original tags ${JSON.stringify(tags)}`, async () => {
+    const siteIds = [7875, 7876];
+    const sources = createSources({
+      madouquApiBase: "https://example.test/wp-json",
+      traxxxWatchlist: [],
+      manyvidsStoreIds: [],
+      tpdbApiKey: "test-token",
+      studioLinks: [
+        {
+          studioId: "linked-studio",
+          studio: "Linked Studio",
+          aliases: ["Linked Alias"],
+          tags,
+          tpdb: { siteIds, name: "Linked TPDB Name" },
+        },
+      ],
+    });
+    const requestedSiteIds: number[] = [];
+    const context = {
+      now: new Date("2026-10-04T00:00:00Z"),
+      fetcher: {
+        json: async (url: string) => {
+          const parsed = new URL(url);
+          const meta = { current_page: 1, last_page: 1 };
+          if (parsed.pathname === "/sites") {
+            return {
+              data: [
+                ...siteIds.map((id) => ({ id, name: `TPDB site ${id}` })),
+                { id: 7877, name: "Linked Alias" },
+              ],
+              meta,
+            };
+          }
+          assert.equal(parsed.pathname, "/scenes");
+          const siteId = Number(parsed.searchParams.get("site_id"));
+          requestedSiteIds.push(siteId);
+          return {
+            data: [
+              { suffix: "both", tags: ["Anal", "Creampie"] },
+              { suffix: "creampie", tags: ["Creampie"] },
+              { suffix: "anal", tags: ["Anal"] },
+              { suffix: "neither", tags: [] },
+            ].map((scene) => ({
+              id: `${siteId}-${scene.suffix}`,
+              title: `Scene ${siteId} ${scene.suffix}`,
+              date: "2026-10-03",
+              tags: scene.tags.map((name) => ({ name })),
+            })),
+            meta,
+          };
+        },
+      },
+      log: () => {},
+    } as unknown as SourceContext;
+    const tpdb = sources.find((source) => source.id === "tpdb-watchlist");
+    assert.ok(tpdb);
+    const result = await tpdb.fetch("2026-10-01", context);
+    const listedSuffixes = tags?.includes("creampie") ? ["both"] : ["both", "anal"];
+    const otherSuffixes = tags?.includes("creampie")
+      ? ["both", "creampie"]
+      : tags?.includes("anal")
+        ? ["both", "anal"]
+        : ["both", "creampie", "anal", "neither"];
+    assert.deepEqual(requestedSiteIds, [7875, 7876, 7877]);
+    assert.deepEqual(
+      result.scenes.map((scene) => scene.sourceSceneId),
+      [
+        ...listedSuffixes.map((suffix) => `7875-${suffix}`),
+        ...otherSuffixes.map((suffix) => `7876-${suffix}`),
+        ...otherSuffixes.map((suffix) => `7877-${suffix}`),
+      ],
+    );
+    assert.ok(
+      result.scenes.every(
+        (scene) => scene.studioId === "linked-studio" && scene.studio === "Linked Studio",
+      ),
+    );
+    assert.deepEqual(siteIds, [7875, 7876]);
+  });
+}

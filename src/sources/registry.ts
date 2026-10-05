@@ -160,20 +160,29 @@ export function createSources({
   tpdbStudios.push(
     ...studioLinks
       .filter((link) => link.tpdb)
-      .map((link) => {
-        const tags = [
-          ...new Set([
-            ...(link.tags ?? []),
-            ...(link.tpdb!.siteIds.some((siteId) => tpdbAnalSiteIds.has(siteId)) ? ["anal"] : []),
-          ]),
-        ];
-        return {
+      .flatMap((link) => {
+        const analSiteIds = link.tpdb!.siteIds.filter((siteId) => tpdbAnalSiteIds.has(siteId));
+        const studio: TpdbStudio = {
           studioId: link.studioId,
           studio: link.studio,
           aliases: [link.studio, ...(link.aliases ?? []), link.tpdb!.name],
-          siteIds: link.tpdb!.siteIds,
-          ...(tags.length ? { tags } : {}),
+          siteIds: link.tpdb!.siteIds.filter((siteId) => !tpdbAnalSiteIds.has(siteId)),
+          ...(link.tags?.length ? { tags: link.tags } : {}),
         };
+        // Name matches keep the link's original tags; only listed site IDs add anal.
+        return [
+          studio,
+          ...(analSiteIds.length
+            ? [
+                {
+                  ...studio,
+                  aliases: [],
+                  siteIds: analSiteIds,
+                  tags: [...new Set([...(link.tags ?? []), "anal"])],
+                },
+              ]
+            : []),
+        ];
       }),
   );
 
