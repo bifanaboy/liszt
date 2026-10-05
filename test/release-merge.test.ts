@@ -98,3 +98,53 @@ test("missing fields retain the last good provider value", () => {
   assert.equal(merged.durationSec, 600);
   assert.equal(merged.thumbnailUrl, "https://a.test/poster.jpg");
 });
+
+test("duration disagreement becomes a provenance-backed range and wide ranges need review", () => {
+  const records = [
+    observation("provider-a", "a1", {
+      sourceSceneId: "a1",
+      title: "Shared release",
+      releaseDate: "2026-10-02",
+      performers: [],
+      durationSec: 600,
+      thumbnailUrl: "",
+    }),
+    observation("provider-b", "b1", {
+      sourceSceneId: "b1",
+      title: "Shared release",
+      releaseDate: "2026-10-02",
+      performers: [],
+      durationSec: 602,
+      thumbnailUrl: "",
+    }),
+  ];
+  const merged = mergeRelease(records);
+  assert.equal(merged.durationSec, null);
+  assert.deepEqual(merged.durationRange, { minSec: 600, maxSec: 602 });
+  assert.equal(merged.durationReview, true);
+  assert.equal(merged.fieldProvenance?.durationSec, "provider-a, provider-b");
+});
+
+test("Maximo equal-duration duplicates select the oldest release date", () => {
+  const records = [
+    observation("provider-b", "b1", {
+      sourceSceneId: "b1",
+      title: "Shared release",
+      releaseDate: "2026-10-03",
+      performers: [],
+      durationSec: 600,
+      thumbnailUrl: "",
+      studioId: "maximo-garcia",
+    }),
+    observation("provider-a", "a1", {
+      sourceSceneId: "a1",
+      title: "Shared release",
+      releaseDate: "2026-10-01",
+      performers: [],
+      durationSec: 600,
+      thumbnailUrl: "",
+      studioId: "maximo-garcia",
+    }),
+  ];
+  assert.equal(mergeRelease(records, { oldestDate: true }).releaseDate, "2026-10-01");
+});

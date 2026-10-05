@@ -66,6 +66,7 @@ async function main(): Promise<void> {
     },
     manyvidsStoreIds: config.manyvidsStoreIds,
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
+    bangListingUrl: config.bangListingUrl,
     store,
     tpdbApiKey: config.tpdbApiKey,
     studioLinks: config.studioLinks,

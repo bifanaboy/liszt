@@ -218,6 +218,8 @@ export interface SceneIdentity {
   performers: string[];
   releaseDate: string;
   durationSec: number | null;
+  durationRange?: { minSec: number; maxSec: number };
+  durationReview?: boolean;
   /** Scene-code retrieval hint, e.g. Mambo Perv's OB codes. */
   sceneCode?: string | null;
 }
@@ -592,14 +594,23 @@ export function pickMatch(
   options: PickOptions,
 ): PickResult | null {
   const tolerance = resolveTolerance(options.durationToleranceSec);
-  if (!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) return null;
+  const range = scene.durationRange;
+  if (scene.durationReview) return null;
+  if (
+    (!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) &&
+    (!range || range.minSec <= 0 || range.maxSec < range.minSec)
+  )
+    return null;
 
   const release = parseTimestamp(scene.releaseDate);
   const bestByStem = new Map<string, Scored>();
   for (const candidate of candidates) {
     const duration = Number(candidate.duration);
     if (!Number.isFinite(duration)) continue;
-    if (Math.abs(duration - (scene.durationSec ?? 0)) > tolerance) continue;
+    const delta = range
+      ? Math.max(range.minSec - duration, 0, duration - range.maxSec)
+      : Math.abs(duration - (scene.durationSec ?? 0));
+    if (delta > tolerance) continue;
     if (options.dateWindowDays !== null) {
       // A three-state check that a two-state one cannot express: "unknown" is a
       // rejection, not a pass. See `withinDateWindow`.

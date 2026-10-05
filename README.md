@@ -1,529 +1,104 @@
 # Liszt
 
-A long-running personal release watchlist. On boot and on a timer it polls every
-source for scene metadata, keeps a rolling window in SQLite, and resolves **one
-playback link per scene, or none**.
+Liszt keeps a rolling watchlist of releases from configured feeds. It combines
+provider records into canonical releases, records which provider supplied each
+field, and resolves at most one playback link for each release.
 
-Named matches require identity evidence. If neither tube can name the scene,
-the resolver may provide a guess explicitly marked **LOW CONFIDENCE**.
+## Start locally
 
-An unmatched scene is a valid result, not a failure. Tube coverage is empirical
-and changes as uploads are removed or sources become inaccessible - this is not a
-completeness claim.
-
----
-
-## Quick start
+Requirements: Node.js 24 and npm.
 
 ```sh
-npm install
-cp .env.example .env       # optional: every value has a default
-npm run dev                # dashboard on http://127.0.0.1:3000
+npm ci
+npm run dev
 ```
 
-Node 24+. No build step: TypeScript runs through Node's native type stripping.
-
-| Command                           | What it does                                             |
-| --------------------------------- | -------------------------------------------------------- |
-| `npm run dev`                     | Watch-mode server.                                       |
-| `npm start`                       | Server.                                                  |
-| `npm run calibrate`               | Pool-match measurement. See [Calibration](#calibration). |
-| `npm run catalogue-coverage`      | Union-coverage audit. See [below](#manyvids-and-catalogue-coverage). |
-| `npm run discover-uploaders`      | Proposes trusted-pool accounts; writes nothing.          |
-| `npm test`                        | The suite. Fixture-driven, never live network.           |
-| `npm run typecheck` / `lint`      | `tsc --noEmit` / `eslint`.                               |
-| `npm run format` / `format:check` | Prettier. See the note below.                            |
-
-Set `TPDB_API_KEY` in the server environment to enable TPDB. The catalogue stays
-public; see [No perimeter](#no-perimeter) and [Deployment](#deployment).
-
-Formatting is Prettier at `printWidth: 100`, the column the code was already
-written to, and `format:check` runs in CI. `.prettierignore` holds back what must
-not be rewritten: `test/fixtures` are byte-captured responses from live pages that
-the parser tests assert on exactly; `public/` is the ported dashboard UI as it
-arrived, with a one-line 12KB `styles.css`; and `package-lock.json` is npm's to
-write.
-
-What the tools read under `public/` is deliberately split. `npm run lint` parses
-the browser JS the app ships — `public/app.js` and the modules it imports,
-`public/source-health.js` and `public/catalogues.js`, with `app.js` the sole
-`<script>` tag in `index.html` — so a syntax error in any of them is caught
-before it can white-screen the dashboard. Those files run with `no-undef` off,
-since the browser globals they use are not defined in Node and there is no
-`globals` dependency to name them; the rule cannot tell browser globals from
-other undeclared identifiers, so what that costs is any `no-undef` check at all
-over the two files — a misspelled global, and equally a renamed local helper or
-a binding deleted at its call site. `public/index.html` and `public/styles.css`
-are still read by no tool: not JavaScript, and not reformatable without
-rewriting vendored UI. `public/` remains a verbatim port, not hand-maintained
-code.
-
-`format:check` covers YAML — `render.yaml` and the workflow files are in scope —
-but **Markdown is excluded** by `.prettierignore`, so `README.md` is never
-formatted or checked and a prose edit cannot fail this command. The required
-check is still `checksPass`, so Render does not deploy while a required check
-fails: an unformatted YAML or TypeScript file blocks deploys exactly as a
-broken build does. Run `npm run format` before pushing either.
-
----
-
-## Architecture
-
-```
-source adapters          pipeline              tube ladder            serving
-─────────────            ────────              ───────────            ───────
-traxxx.me   ┐            window filter   ┌──▶ 1 eporner pool  ─┐
-ManyVids    ├─▶ RawScene ┼─▶ normalise ───┤    2 sxyprn        ─┼─▶ Scene ─▶ SQLite
-madouqu     │            isolation        │                                  ▼
-fc2cmadb    ┘            upsert by pk     └─▶ re-verify (stalest 25)   read model
-                                                   two-strike dead   dashboard + API
-```
-
-| Concern                                   | File                        |
-| ----------------------------------------- | --------------------------- |
-| Composition root                          | `src/app.ts`                |
-| One sync cycle                            | `src/pipeline/sync.ts`      |
-| Scheduling, single-flight                 | `src/pipeline/scheduler.ts` |
-| Canonical schema (the one parse boundary) | `src/core/schema.ts`        |
-| The measured gate (pure, no I/O)          | `src/core/matching.ts`      |
-| Ladder                                    | `src/tubes/resolve.ts`      |
-| FC2 exact-code lane                       | `src/tubes/fc2-eporner.ts`  |
-| Link lifecycle                            | `src/tubes/reverify.ts`     |
-| Trusted-pool index                        | `src/tubes/eporner-pool.ts` |
-| Sources                                   | `src/sources/`              |
-| HTTP                                      | `src/serving/http.ts`       |
-
-### Sources
-
-Five categories, in `src/sources/registry.ts`.
-
-| Lane                                         | Mechanism                                  | Matcher  |
-| -------------------------------------------- | ------------------------------------------ | -------- |
-| Woodman Casting X, plus the built-in Traxxx watchlist (18 lanes, including Bang) | `traxxx.me` REST, no auth | yes |
-| ManyVids creator stores                      | public JSON list, full and incremental pulls | yes |
-| TPDB watchlist                               | authenticated paginated API, matched studio names | yes |
-| madouqu (11 categories)                      | WordPress REST + Mandarin classifier       | **none** |
-| fc2cmadb                                     | cursor-paginated Inertia listing, paced detail checks | yes      |
-
-TPDB supplements Traxxx and ManyVids. It lists only studios whose cleaned names
-match an existing watchlist studio. Set the shared `TPDB_API_KEY` environment
-variable to enable this source; the app never returns or logs its value.
-Overlapping listings collapse in the dashboard when their release URLs match,
-or when title, date and duration match and a release URL is unavailable. Missing
-metadata can be filled from the other provider.
-
-Rows from retired source lanes are removed, along with their playback-link and
-source-health records, at the first sync after the upgrade. Their link history
-is not transferred to a replacement lane because the old and new scene ids do
-not provide a reliable one-to-one mapping.
-
-Traxxx discovers releases. Before matching, sync reads the exact release page
-for studios covered by a Stash CommunityScrapers scene scraper and prefers
-those page fields over Traxxx, keeping Traxxx as the fallback. Unsupported
-release hosts stay on Traxxx metadata. The detail lookup is capped at 50 scenes
-per sync and an incomplete page is retried no more than once per day.
-
-Traxxx watchlist entries use this exact grammar:
-`https://traxxx.me/(network|channel)/<slug>/scenes/latest/1`, with an optional
-`?tags=<slug>[,<slug>...]`. Other hosts, sorts, pages, and query parameters are
-rejected at startup. The built-in list is the eighteen lanes in
-`src/sources/traxxx-watchlist.ts`, fifteen of them filtered to the `anal` tag,
-including Bang's `https://traxxx.me/network/bang/scenes/latest/1?tags=anal`.
-`LISZT_TRAXXX_WATCHLIST` accepts a comma-separated list of entries and replaces
-that built-in list rather than appending to it, which makes a single lane easy
-to isolate during calibration.
-
-**Woodman Casting X** is a traxxx channel lane like the watchlist ones, with one
-exclusion: the studio writes `XXXX` as a whole token in the scene title of the
-scenes it marks, and those are dropped before the record is parsed. The marker
-comes from traxxx's title, which is the studio's own title — not from the studio
-page, whose own chrome repeats "Woodman casting X" on every scene. The match is
-delimited, so real titles such as `Shania VegaX casting`, `Lexxxus Adams
-casting` and `- BTS -` scenes stay eligible. See `src/sources/woodman-casting-x.ts`.
-
-Two things are load-bearing and must not be "simplified" away:
-
-- **The traxxx filter guard.** traxxx silently ignores an unknown `e=` filter and
-  returns the entire ~500k index. The adapter compares the filtered total to the
-  unfiltered total, throws when they are equal, and re-checks every record's
-  entity slug. One typo would otherwise ingest the whole catalogue as one studio.
-- **The madouqu classifier.** Only titles classified as anal sex are admitted;
-  safety, trans/gay, non-anal and play-only terms are excluded, and title
-  evidence is stored in provenance. The lane sets `matcher: null`, so its scenes
-  are metadata only and never enter tube matching.
-
-### The gate
-
-The shared rules are implemented in `src/core/matching.ts`, configured in
-`src/config.ts`, and applied by both rungs in `src/tubes/resolve.ts`.
-
-**Candidate filters. Both must hold:**
-
-1. Duration within `LISZT_MATCH_DURATION_TOLERANCE_SEC` (default **±1 second**).
-2. Upload date between `release − 1 day` and `release + LISZT_MATCH_DATE_WINDOW_DAYS`
-   (default 7), inclusive in whole UTC calendar days. Unknown dates are rejected.
-
-**Identity gates named matches; it also ranks them.** After date and duration
-filtering, candidates collapse by title stem. A named winner must have an
-identity tier above zero; even a sole survivor cannot become a named match
-without identity evidence. Named survivors rank by identity tier, highest view
-count, upload-date lag, then URL.
-
-| Tier | Meaning                                                                                      |
-| ---- | -------------------------------------------------------------------------------------------- |
-| `3`  | Normalized scene title appears in the candidate title, or all scene-code tokens are present. |
-| `2`  | All tokens of a full performer name are present.                                             |
-| `1`  | A performer's first token is present, including supported name-plus-date-code forms.         |
-| `0`  | No identity evidence; cannot win a named match.                                              |
-
-Tier 1 is accepted; a full-name-only rule would reject useful first-name
-retitles. A scene without performers is still eligible: title or scene-code
-evidence can identify it. A scene without a positive duration is not resolved.
-
-### Two rungs and a guess fallback
-
-`src/tubes/resolve.ts` tries, in order:
-
-1. **Eporner trusted pool** — date and duration filters, then the identity gate.
-2. **sxyprn** — search cards, verified post details, then the same identity gate.
-
-A named winner stops resolution and receives `confidence: "high"`. If a rung
-cannot name a candidate, resolution proceeds to the next tube. There is no
-third Eporner open-search rung.
-
-The FC2 lane is the one exception to the ladder, and it is a lane **switch**
-rather than a rung: `src/tubes/fc2-eporner.ts` resolves `fc2cmadb` scenes
-instead of the ladder, because an FC2 release is named by a numeric code in a
-repost title rather than by a performer, and widening the shared gates to admit
-that would weaken every other lane. It searches the bare code, admits a result
-only when the title carries that number as a whole token, and stores every live
-upload it finds — several links for one scene, each re-verified on its own.
-Those links are `confidence: "high"` with no identity tier, because nothing is
-ranked: the code is the evidence. Its winners are tallied under `winnerPool` on
-the run row.
-
-If neither rung produces a named winner, the terminal fallback picks the
-highest-view candidate from the retained date-and-duration survivors across
-both tubes. Unknown view counts rank below known counts; URL breaks ties.
-This is a **guess**, always saved as `confidence: "low"`, not an identity-backed
-match. The UI in `public/app.js` labels it **LOW CONFIDENCE**; metadata-poor
-scenes display **REVIEW** instead, which takes precedence.
-
-A rung error lets the other rung run but contributes no fallback candidates;
-it is not recorded as a clean no-match. With no usable survivor the scene stays
-unlinked for a later cycle. Known-dead URLs are never re-added.
-
-A tube that keeps failing is held off by a circuit breaker rather than retried
-per release, so a broken source costs a bounded number of requests per cycle
-instead of one deadline per release. The break is reported separately from the
-failure that opened it, and each rung's failures are counted on their own, so a
-held-off tube is distinguishable in the logs from a live timeout.
-
-`/api/runs` stores resolver rejection counters separately from catalogue-source
-outcomes. A resolver outage therefore does not mark healthy catalogue polling
-as failed, and the dashboard reports resolver unavailability independently.
-
-The sxyprn rung is **paced by its own package**, which honours the site's
-`Crawl-delay: 10` and will not answer more than six requests a minute. So the
-rung asks for one request at a time and starts its per-call deadline only once
-that request reaches the front of the queue. That distinction is the whole fix
-for the run of `sxyprn search timed out after 15000ms` in production: the ladder
-fans several scenes out at once, and a deadline that counted the package's own
-10-second spacing expired on healthy calls that had not been asked yet. Waiting
-for the source is not a failure, so it is not reported as one, and it is not
-charged to the deadline that exists to bound a request that never answers.
-
-Requests to that source are counted per cycle and stored on the run row as
-`sxyprnSearches` and `sxyprnDetails`, split by pass. Each request costs the
-source's ten-second spacing, so that count is what says how long a refresh took;
-the ladder's own `attempted` and `errored` counters cover both tubes and cannot
-answer it. The dashboard shows the total as **slow-source lookups**, beside the
-rung's failures. Counting happens where the request is issued, so a call held
-off by the circuit breaker and a search answered from the in-memory cache both
-cost nothing and count as nothing.
-
-The rung's winners are also counted on the run row, split by where they came
-from: `winnerPool` and `winnerSxyprn` are the links each tube actually named, and
-`winnerFallback` is the number of flagged guesses. `matched` is one figure over
-both — a named match and a guess are both stored as links — so this split is what
-makes the headline number readable, and the dashboard shows the guess count on the
-same line as the truncation and request readings.
-
-The trusted pool searches a bounded number of candidates per scene, so a scene
-with more survivors than that budget is **truncated, not exhausted**. Those
-searches are counted as `incomplete`, never as a clean no-match: the candidates
-past the cut were never examined, so the counter states what is actually known.
-The dashboard reports them as **search truncated** beside any rung error. The
-candidates that were examined still rotate on the next run — least-recently-
-attempted first, for both the hydration budget and the rows pulled from SQLite —
-so a late candidate becomes reachable rather than being cut off permanently.
-
-Rows whose upload date is known are narrowed by the running time in the database
-query, with the same tolerance the gate itself uses, so an account holding
-thousands of dated uploads cannot spend the whole scan budget on rows the gate
-would reject for free. Those are the rows that need no rotation, and behind them
-sit the undated rows — the ones still waiting for a date from the video API — so
-narrowing early is what keeps that working set reachable at all. A row with no
-recorded running time is still examined rather than assumed away.
-
-### Sync behaviour
-
-- One source failing does not stop the others; it becomes a run outcome with
-  `ok: false`, keeps its last success timestamp, and **retains its last-good
-  in-window records**.
-- A source returning no scenes _without asserting_ `verifiedEmpty` fails the run.
-  This is what stops a parser bug from replacing a catalogue with silence.
-- Deletion happens on window expiry, or when a successful source run names a
-  native id in `excludedSceneIds` - the FC2 lane uses that for a record found
-  censored, removed, or matching a documented exclusion. Either way the deletion
-  is scoped to that one source. A scene only absent from a successful response is
-  kept until it leaves the window.
-- Upserts are keyed on the stable id `<source-id>:<source-scene-id>`, so a repeat
-  sync converges instead of duplicating. A source that emits several labels joins
-  the label into that key — `<source-id>:<label-id>:<source-scene-id>` — because a
-  cross-listed post would otherwise collide on one row, where the last label
-  processed would win and the others be lost.
-- A scene with a live link is not re-matched; re-verify owns it. A scene with no
-  link is retried on later cycles. A scene with no duration stays unmatched
-  rather than being admitted through a weaker rule.
-
-### Link verification
-
-Each cycle re-verifies the stalest 25 links. eporner is checked through
-`video/id`, where an empty result is a definitive deletion. **Only a definitive
-non-existence counts as a strike** - timeouts, 403 anti-bot walls, 5xx, and
-malformed bodies are inconclusive and never count. Two consecutive definitive
-failures move a link to dead history; if a scene's last live link dies it
-re-enters resolution. Known-dead URLs are never re-added.
-
----
-
-## No perimeter
-
-The catalogue remains public: every route is served to anyone who can reach the
-port, including `POST /api/refresh`.
-
-The reasoning, once, so it is not re-litigated: this is a disposable public read
-model. It holds no user accounts or private catalogue data. The TPDB token is
-read from `TPDB_API_KEY`; the app never returns or logs its value.
-
-What the app _does_ do with that posture:
-
-- **TPDB is optional.** Without a configured token its source reports that setup is
-  needed and retains any last-good catalogue records. A failed request does not
-  erase stored scenes.
-- **`/health` is answered before anything else**, from a constant
-  `{"status":"ok"}` with no store or source state in it. It is Render's deploy
-  gate, and a health check that leaked anything would leak it to whoever felt
-  like asking.
-- **`/api/health` is a different route and it is stateful.** That is the entire
-  reason `/health` exists separately.
-- **Refresh is single-flight**, so a caller cannot stack cycles or multiply the
-  external request volume beyond one at a time. Sustained traffic against
-  `POST /api/refresh` is the accepted cost of being public; if that ever matters,
-  the cheapest lever is deleting that one route.
-
----
-
-## HTTP surface
-
-| Route          | Method     | Purpose                                                                |
-| -------------- | ---------- | ---------------------------------------------------------------------- |
-| `/health`      | GET / HEAD | Liveness only. Contentless by design; nothing else is evaluated first. |
-| `/api/health`  | GET        | Liveness with a timestamp. A different route, and a stateful one.      |
-| `/api/scenes`  | GET        | Read model: scenes, sources, window stats, last run.                   |
-| `/api/progress` | GET       | The live cycle's meters, polled on their own cadence.                  |
-| `/api/sources` | GET        | Per-source health.                                                     |
-| `/api/runs`    | GET        | Recent run ledger.                                                     |
-| `/api/refresh` | POST       | Start or join one cycle. Returns `202` immediately.                    |
-| `/` + static   | GET        | The dashboard.                                                         |
-
-The TPDB token is configured through the server's `TPDB_API_KEY` environment
-variable. It is never included in public responses or logs.
-
-`/api/sources`, not `/api/studios`: "source" is canonical, and one source may
-emit several studio labels. All responses are `no-store`, so no edge caches the
-catalogue, and static serving is path-traversal safe by construction.
-
-The dashboard's release ledger has two pages, **Catalogue** and **Asian**. The
-Asian-language lanes — fc2cmadb and madouqu — have their own page, so the main
-list is not mostly Japanese-language titles; `/api/scenes` carries their ids as
-`asianSourceIds` so the split is decided by the registry rather than by a UI
-string list. Membership is by `sourceId`, so every sub-label of a lane follows
-its lane. Each page counts its own figures — releases in the window, releases
-with a link, and the linking percentage — from the rows it shows, and exports
-only those rows. `LAST REFRESH` stays shared: a cycle refreshes every lane.
-
-The boot sync, the interval, and `POST /api/refresh` all funnel through one
-single-flight runner, so two cycles can never overlap against the same database.
-
----
-
-## Calibration
-
-The trusted pool runs first. Both rungs use the same default ±1-second duration
-tolerance and require identity evidence for named matches. The fallback is
-always low confidence; views cannot establish identity.
-
-So measure before changing anything:
-
-```sh
-npm run calibrate
-```
-
-It reports four things, and the window's value should be read against all four:
-
-- a **lag histogram**, computed over every duration-_surviving_ candidate rather
-  than over the winners — a histogram of links you already accepted cannot show
-  the tail the window exists to cut off;
-- a per-stage **funnel**: considered → duration-passed → date-passed → linked;
-- **unknown-date counts**, which is how a rung that cannot supply dates at all
-  announces itself rather than looking like an empty catalogue;
-- the **identity-tier histogram** of the winners.
-
-The escape hatch is an env var, not a code change. Above roughly three weeks the
-rule has stopped doing useful work and should be deleted rather than tuned.
-
----
-
-## ManyVids and catalogue coverage
-
-ManyVids imports the **full public video list**, starting with Maximo Garcia's
-store (`1003095958`). `LISZT_MANYVIDS_STORE_IDS` accepts comma-separated store ids;
-add `1008105753` for Filou Fitt, or set it explicitly empty to disable the source.
-Each store has its own source health and failure isolation. Store owners are not
-assumed to appear in every video; performer names remain unknown unless supplied.
-
-The first poll and a poll every seven days walk every page. Between full pulls,
-paging stops after a page containing only known video ids. Requests start at least
-400 milliseconds apart per store. Successful snapshots and known ids survive
-restarts in SQLite; a failed page leaves the snapshot and full-pull date untouched.
-As with other sources, catalogue rows remain until they leave the rolling window.
-
-The scene response keeps the store id, original UTC launch timestamp, UTC release
-day, runtime in seconds, price (`regular`, `onSale`, `free`), thumbnail and preview
-URLs, and known tags. Preview clips are metadata, never verified playback links.
-The endpoint currently omits tags: we leave those unknown rather than fetching
-hundreds of tag-filtered lists each run. ManyVids applies the shared trans and
-cross-dressing exclusion terms to titles and descriptions today, and to tags if
-the endpoint starts returning them. Existing matching rows are removed on the
-next successful poll that also returns an eligible scene; an all-excluded poll is
-treated as suspicious and keeps the last-good rows. This filter applies only to
-ManyVids; Traxxx lanes use their configured listing filters and do not apply this
-catalogue-wide exclusion. Hidden and club-only videos are outside this public
-source; endpoint changes fail the poll and preserve last-good records.
-
-For the union-coverage audit in #20, run `npm run catalogue-coverage`. It compares
-ManyVids and Traxxx records in the local rolling window. The coverage command
-does not read TPDB's live source; TPDB and StashDB are marked unavailable unless
-you provide normalized JSON exports. To compare all four databases, pass:
-
-```sh
-npm run catalogue-coverage -- --tpdb tpdb.json --stashdb stashdb.json --traxxx traxxx.json --manyvids manyvids.json
-```
-
-Each export is an array of `{ id, title, releaseDate, durationSec }` records (or an
-object with a `scenes` array). Dates must be `YYYY-MM-DD`; durations are seconds.
-A supplied empty array means checked and empty; an omitted provider means unknown.
-Export dates/windows should cover the same period for meaningful comparison.
-
-The report contains likely release groups, the union count, and each provider's
-share of that union. Associations require title token similarity of at least 80%,
-release dates within two UTC days, and positive runtimes within three seconds.
-This runtime margin covers the 50:50–50:53 example in #46 and applies only to the
-catalogue audit; playback matching keeps its existing ±1-second tolerance.
-Ambiguous candidates remain separate; every record in a group must agree with
-every other. These are conservative estimates for review, not a completeness
-claim. Original titles, dates and runtimes remain in the report; it chooses no
-provider precedence and does not merge or rewrite stored scenes.
-
----
-
-## Configuration
-
-Full list with defaults in `.env.example`. `TPDB_API_KEY` is optional; set it in
-the server environment to enable TPDB.
-
-| Variable                                         | Default              | Effect                                                                |
-| ------------------------------------------------ | -------------------- | --------------------------------------------------------------------- |
-| `LISZT_LISTEN_ADDR`                              | `127.0.0.1`          | Loopback by default; `render.yaml` overrides it for Render's proxy.   |
-| `LISZT_DB_PATH`                                  | `data/liszt.db`      | SQLite file.                                                          |
-| `TPDB_API_KEY`                                   | unset                | Shared TPDB API token; enables the TPDB watchlist.                     |
-| `PORT`                                           | `3000`               |                                                                       |
-| `LISZT_WINDOW_DAYS`                              | `90`                 | Rolling window.                                                       |
-| `LISZT_POLL_INTERVAL_MINUTES`                    | `30`                 | Poll cadence.                                                         |
-| `LISZT_BOOT_SYNC`                                | `true`               | One sync after listen.                                                |
-| `LISZT_FETCH_CONCURRENCY` / `_TIMEOUT_MS`        | `4` / `15000`        | Outbound bound.                                                       |
-| `LISZT_TRAXXX_MIN_INTERVAL_MS` / `_CACHE_TTL_MS` | `250` / `300000`     | Politeness.                                                           |
-| `LISZT_TRAXXX_WATCHLIST`                        | 18 built-in lanes, including Bang | Comma-separated listing URLs; setting it replaces the built-in list. |
-| `LISZT_MADOUQU_API_BASE`                         | WordPress.com mirror | The origin is Cloudflare-challenged.                                  |
-| `LISZT_MANYVIDS_STORE_IDS` | `1003095958` | Public ManyVids stores; comma-separated, explicitly empty disables. |
-| `LISZT_MANYVIDS_MIN_INTERVAL_MS` | `400` | Minimum spacing between request starts per ManyVids store. |
-| `LISZT_FC2_LISTING_MIN_INTERVAL_MS`              | `2000`               | FC2 listing-page spacing.                                             |
-| `LISZT_FC2_DETAIL_MIN_INTERVAL_MS`               | `8500`               | FC2 detail-page spacing; the lane's dominant cost.                    |
-| `LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC`           | `20`                 | Detail checks one sync may read; the rest resume next sync.           |
-| `LISZT_FC2_RECHECK_DAYS`                         | `7`                  | Retries an unmarked censorship badge before retiring it undecided.   |
-| `LISZT_TRUSTED_UPLOADERS`                        | curated account list | Comma-separated Eporner accounts trusted for matching.                |
-| `LISZT_MATCH_DURATION_TOLERANCE_SEC`             | `1`                  | Duration band, identical on every rung.                               |
-| `LISZT_MATCH_DATE_WINDOW_DAYS`                   | `7`                  | Upload window's upper bound. Lower bound is fixed at release − 1 day. |
-| `LISZT_POOL_FULL_REWALK_DAYS`                    | `7`                  | Drift/deletion correction cadence.                                    |
-| `LISZT_SXYPRN_TIMEOUT_MS`                        | `15000`              |                                                                       |
-| `LISZT_LOG_STDERR`                               | `false`              | JSON logs to stderr; the CLI sets it.                                 |
-
----
-
-## Deployment
-
-**The live service is the free Render deployment**, at
-[liszt-h2cl.onrender.com](https://liszt-h2cl.onrender.com), backed by this
-repository. Its settings were verified on 2026-10-01:
-
-| Setting             | Live service                                  |
-| ------------------- | --------------------------------------------- |
-| Region              | `singapore`                                   |
-| Plan                | `free`                                        |
-| Build               | `yarn`                                        |
-| Start               | `npm run start`                               |
-| Render health check | Not configured; the app serves `GET /health`. |
-| Deploy trigger      | `checksPass`                                  |
-| Persistent disk     | None; SQLite uses the instance filesystem.    |
-
-The catalogue and pool index are disposable and rebuild through boot sync.
-An instance replacement can lose the database; inspect sync status before
-interpreting an empty catalogue as a bug.
-
-**[`render.yaml`](render.yaml) is a hypothetical paid persistent-disk option,
-not the live setup.** It currently declares `0.5c-512mb`, `oregon`,
-`npm ci --omit=dev`, `node src/app.ts`, `/health`, and a 1 GB `liszt-data`
-disk mounted at `/data`, with `LISZT_DB_PATH=/data/liszt.db`. Its paid-plan
-comments do not describe the current live service.
-
-Do not propose syncing that blueprint, adding a disk, changing plans or regions,
-or "fixing" hosting to reconcile the difference. The live free deployment is
-intentional. Hosting changes require a separate explicit task.
-
-For repository coding agents, deployment settings are documentation context
-only: agents have repository read/write access, not private Render access or
-credential-management authority. Keep these deployment and matching facts
-consistent with [AGENTS.md](AGENTS.md), checking the source files before edits.
-
----
-
-## Relationship to the earlier projects
-
-This is a greenfield rebuild. `liszt-codex` (committed-JSON + GitHub Actions
-refresh) and `liszt-hands` (SQLite service) are **superseded references** and are
-not modified or imported. Codex supplied the UI that is ported into `public/`;
-hands supplied the architecture. Neither is part of this application, and there
-is no data exchange between them and this database.
-
-The rebuild exists because the older pair could not do the obvious thing - poll
-regularly - and because a scene missing from one snapshot silently vanished.
-
-## Documentation and contributor guidance
-
-This guide describes the app and its supported local workflows. When it may
-disagree with the implementation, verify behavior against the source, tests,
-package scripts, and workflows before changing the guide. Repository-wide agent
-rules are in [AGENTS.md](AGENTS.md); scheduled maintenance prompts are in
-[`prompts/`](prompts/).
+Open <http://127.0.0.1:3000>. Set `TPDB_API_KEY` in the process environment to
+enable ThePornDB. Other settings and defaults are listed in [`.env.example`](.env.example).
+
+Useful commands:
+
+- `npm start` runs the server without watch mode.
+- `npm test` runs the fixture based suite; it does not call provider sites.
+- `npm run typecheck`, `npm run lint`, and `npm run format:check` check the code.
+- `npm run calibrate` measures trusted pool matching against current data.
+- `npm run catalogue-coverage` reports likely overlap between provider feeds;
+  it does not merge or modify releases.
+- `npm run link-studios` resolves studio URLs into a checked in declaration.
+
+## Feed and release behavior
+
+Each provider has an adapter that understands its own API, pagination, and
+record shape. Adapters emit provider observations into a shared release
+pipeline. A new API needs its own adapter; the app does not guess how arbitrary
+URLs work.
+
+When adding a feed, declare a studio policy:
+
+- **Split** keeps the studio identity each record reports. This is the default.
+- **Umbrella** assigns every record from that feed to one named identity, such
+  as `DreddXXX`.
+
+If the feed cannot identify a studio in split mode, Liszt keeps it under the
+feed's own label for review rather than guessing another studio. Existing
+provider studio keys remain attached to umbrella records, and provider
+observations and field provenance remain available when another feed fails or
+omits a field.
+
+Verified duplicate releases are stored once. Shared release URLs are normalized
+conservatively; similar titles on unrelated hosts do not merge. Maximo's known
+Fansly, ManyVids, and ThePornDB lanes share the `maximo-garcia` studio identity
+and can reconcile records with the same normalized title. Matching durations
+select the oldest release date. Conflicting durations remain as a min/max
+range; a range wider than one second is marked for review and cannot link
+automatically.
+
+The Dredd defaults group ThePornDB site IDs `50864`, `39697`, and `81939` under
+the Dredd identity, with `DreddXXX` as an alias. Bang! Originals reads the
+verified `www.bang.com/videos` JSON-LD listing and its linked release pages.
+
+## Playback matching
+
+Named playback links need title or performer identity evidence. Duration and
+release date filter candidates; neither alone names a release. The default
+duration tolerance is one second. A candidate for a duration range may fall
+within one second of either edge. Ranges wider than one second are held for
+review. Upload dates must fall from one day before the release through seven
+days after it by default; unknown dates are rejected.
+
+The resolver checks the trusted Eporner pool, then sxyprn details when its
+optional package is installed. If neither names a candidate, Liszt may show the
+best surviving candidate as **LOW CONFIDENCE**. With no usable candidate, the
+release stays unlinked. Known dead links are not re-added.
+
+## HTTP routes
+
+- `GET /health` and `GET /api/health` report server health.
+- `GET /api/scenes` returns the release catalogue and provenance.
+- `GET /api/sources`, `GET /api/runs`, and `GET /api/progress` expose sync status.
+- `POST /api/refresh` starts a refresh.
+
+The catalogue is public and the refresh route has no authentication. Do not
+expose this service to an untrusted network without adding an access boundary.
+
+## Configuration and hosting
+
+`TPDB_API_KEY` enables ThePornDB. `LISZT_STUDIO_LINKS` accepts a JSON array of
+studio declarations; without it, Liszt reads [`studio-links.default.json`](studio-links.default.json).
+`LISZT_TRAXXX_WATCHLIST` replaces the built in Traxxx listing URLs. The
+ManyVids store list, Bang listing URL, polling window, matching window, and
+network limits can also be set through the variables in [`.env.example`](.env.example).
+
+The live deployment is the free Render service at
+<https://liszt-h2cl.onrender.com>. It has no persistent disk, so its catalogue
+and pool index can be lost when the instance is replaced and rebuilt by sync.
+[`render.yaml`](render.yaml) describes a separate paid persistent disk setup;
+it is not the live service configuration.
+
+## Repository notes
+
+- [`AGENTS.md`](AGENTS.md) contains repository-specific coding and review rules.
+- [`docs/superpowers/specs/2026-10-05-composite-release-repair-design.md`](docs/superpowers/specs/2026-10-05-composite-release-repair-design.md)
+  records the composite-feed behavior and its safety rules.
+- Detailed source evidence and execution progress are in the matching
+  `.superpowers/sdd/` task record.

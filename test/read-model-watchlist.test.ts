@@ -16,6 +16,7 @@ function record(id: string, overrides: Record<string, unknown> = {}): Scene {
     performers: ["Alex"],
     releaseDate: "2026-10-03",
     durationSec: 600,
+    durationReview: false,
     thumbnailUrl: "",
     tags: [],
     provenance: [

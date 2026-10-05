@@ -6,11 +6,15 @@
 
 /** What a source adapter emits, before normalisation. */
 export interface RawScene {
+  /** Optional sub-feed identity when one adapter polls multiple declared feeds. */
+  providerId?: string;
   sourceSceneId: string;
   title: string;
   releaseDate: string;
   performers: string[];
   durationSec?: number | null;
+  durationRange?: { minSec: number; maxSec: number };
+  durationReview?: boolean;
   thumbnailUrl?: string;
   releaseUrl?: string;
   storeId?: string;
@@ -36,6 +40,8 @@ export interface RawScene {
   /** A sub-label identity, when one source emits several studio labels. */
   studioId?: string;
   studio?: string;
+  /** Stable provider-side studio key retained when a feed uses an umbrella label. */
+  providerStudioId?: string;
 }
 
 /** A provider-native record together with its current canonical association. */
@@ -66,6 +72,16 @@ export type MergeField =
 /** Higher entries win field conflicts; remaining ties sort by provider ID. */
 export interface MergePolicy {
   priority?: Partial<Record<MergeField, readonly string[]>>;
+  oldestDate?: boolean;
+}
+
+export type StudioPolicy =
+  { mode: "split" } | { mode: "umbrella"; studioId: string; studio: string };
+
+export interface FeedDefinition {
+  adapterId: string;
+  sourceUrl: string;
+  studioPolicy: StudioPolicy;
 }
 
 export interface FetchOptions {

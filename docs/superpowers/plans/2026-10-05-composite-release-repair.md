@@ -16,6 +16,9 @@
 - Keep existing release-date and identity gates; duration alone cannot name a match.
 - Keep provider failures isolated and retain last-good observations.
 - Do not merge cross-host records by title alone.
+- For the declared Maximo composite only, cross-provider title groups require a
+  shared Maximo identity and positive duration on every observation; wide
+  duration disagreement is retained for review.
 - Separate studios by default; apply an umbrella alias only when declared.
 - Preserve existing playback links and dead-link history through migrations.
 - Use one descriptive word for local variables in changed code; prefer clear domain words over short or generic names.

@@ -69,7 +69,11 @@ test("ManyVids imports captured metadata and round-trips through SQLite", async 
     );
     assert.equal(result.scenes.length, 5);
     const raw = result.scenes[0]!;
+    assert.equal(raw.studioId, "maximo-garcia");
+    assert.equal(raw.studio, "Maximo Garcia");
+    assert.equal(raw.providerStudioId, "manyvids-1003095958");
     const scene = normaliseScene(adapter, raw, ctx.now);
+    assert.equal(scene.id, "manyvids-1003095958:7871546");
     store.upsertScene(scene);
     const saved = store.getScene(scene.id)!;
     assert.equal(saved.durationSec, 2171);

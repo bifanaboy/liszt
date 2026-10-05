@@ -112,6 +112,8 @@ export const Config = z.object({
 
   manyvidsStoreIds: z.array(z.string().regex(/^\d+$/)).default(["1003095958"]),
   manyvidsMinIntervalMs: z.coerce.number().int().min(0).default(400),
+  /** Verified JSON-LD listing consumed by the Bang provider adapter. */
+  bangListingUrl: z.string().url().default("https://www.bang.com/videos?by=date.desc"),
 
   // Tube ladder.
   trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
@@ -283,6 +285,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
             ),
           ],
     manyvidsMinIntervalMs: env.LISZT_MANYVIDS_MIN_INTERVAL_MS,
+    bangListingUrl: env.LISZT_BANG_LISTING_URL,
     trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,

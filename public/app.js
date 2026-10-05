@@ -120,8 +120,19 @@ function render() {
     }).join("");
     const releaseUrl = safeUrl(scene.releaseUrl);
     const lowConfidence = scene.videoMatching && scene.videoMatching.confidence === "low";
-    const flag = scene.metadataPoor ? '<span class="review-tag" title="Metadata-poor or low-confidence match; inspect before trusting">REVIEW</span>' : (lowConfidence ? '<span class="review-tag" title="No tube found a title that names this scene. This link was chosen from videos that matched its duration and upload window, using view count only; check it by hand.">LOW CONFIDENCE</span>' : "");
-    return `<article class="release-row"><time class="release-date" datetime="${esc(scene.releaseDate)}"><strong>${esc(niceDate(scene.releaseDate).split(" ")[0])}</strong><span>${esc(niceDate(scene.releaseDate).split(" ").slice(1).join(" "))}</span></time><div class="release-thumb">${thumb}</div><div class="release-main"><div class="release-meta"><span class="studio-tag">${esc(scene.label)}</span>${flag}${scene.durationSec ? `<span>${Math.round(scene.durationSec / 60)} MIN</span>` : ""}</div><h4>${esc(scene.title)}</h4><p class="performers">${(scene.performers || []).length ? scene.performers.map(esc).join(" <i>·</i> ") : "Performer information unavailable"}</p></div><div class="release-links">${outbound || '<span class="unlinked">No verified link</span>'}${releaseUrl ? `<a class="release-page" href="${esc(releaseUrl)}" target="_blank" rel="noopener noreferrer">Release page ↗</a>` : ""}</div></article>`;
+    const flag = scene.durationReview || scene.metadataPoor ? '<span class="review-tag" title="Provider durations disagree; inspect the release before trusting a playback match">REVIEW</span>' : (lowConfidence ? '<span class="review-tag" title="No tube found a title that names this scene. This link was chosen from videos that matched its duration and upload window, using view count only; check it by hand.">LOW CONFIDENCE</span>' : "");
+    const runtime = (value) => `${Math.floor(value / 60)}m ${String(value % 60).padStart(2, "0")}s`;
+    const duration = scene.durationRange
+      ? `${runtime(scene.durationRange.minSec)}–${runtime(scene.durationRange.maxSec)}`
+      : scene.durationSec
+        ? `${Math.round(scene.durationSec / 60)} MIN`
+        : "";
+    const labels = { title: "Title", releaseDate: "Release date", performers: "Performers", durationSec: "Duration", thumbnailUrl: "Thumbnail", releaseUrl: "Release page" };
+    const sources = Object.entries(scene.fieldProvenance || {}).map(([field, source]) => `${labels[field] || field}: ${source}`);
+    const evidence = sources.length
+      ? `<details class="field-provenance"><summary>Field sources</summary><p>${sources.map(esc).join(" · ")}</p></details>`
+      : "";
+    return `<article class="release-row"><time class="release-date" datetime="${esc(scene.releaseDate)}"><strong>${esc(niceDate(scene.releaseDate).split(" ")[0])}</strong><span>${esc(niceDate(scene.releaseDate).split(" ").slice(1).join(" "))}</span></time><div class="release-thumb">${thumb}</div><div class="release-main"><div class="release-meta"><span class="studio-tag">${esc(scene.label)}</span>${flag}${duration ? `<span>${esc(duration)}</span>` : ""}</div><h4>${esc(scene.title)}</h4><p class="performers">${(scene.performers || []).length ? scene.performers.map(esc).join(" <i>·</i> ") : "Performer information unavailable"}</p>${evidence}</div><div class="release-links">${outbound || '<span class="unlinked">No verified link</span>'}${releaseUrl ? `<a class="release-page" href="${esc(releaseUrl)}" target="_blank" rel="noopener noreferrer">Release page ↗</a>` : ""}</div></article>`;
   }).join("")}</section>`).join("");
 }
 

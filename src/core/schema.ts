@@ -110,6 +110,11 @@ export const SceneBase = z.object({
   performers: z.array(z.string().min(1)).default([]),
   releaseDate: DateOnly,
   durationSec: z.number().int().positive().nullable().default(null),
+  durationRange: z
+    .object({ minSec: z.number().int().positive(), maxSec: z.number().int().positive() })
+    .refine((range) => range.minSec <= range.maxSec, "duration range is reversed")
+    .optional(),
+  durationReview: z.boolean().default(false),
   thumbnailUrl: z.string().default(""),
   releaseUrl: z.string().url().optional(),
   storeId: z.string().regex(/^\d+$/).optional(),

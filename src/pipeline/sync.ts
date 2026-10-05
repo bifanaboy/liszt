@@ -105,8 +105,8 @@ function recordSourceFailure(
   message: string,
   windowDays: number,
 ): void {
-  const priorRows = store.listSources().filter((status) => status.sourceId === adapter.id);
-  const prior = priorRows.find((status) => status.labelId === adapter.id);
+  const statuses = store.listSources().filter((status) => status.sourceId === adapter.id);
+  const success = statuses.find((status) => status.labelId === adapter.id);
   store.upsertSource({
     sourceId: adapter.id,
     labelId: adapter.id,
@@ -118,11 +118,11 @@ function recordSourceFailure(
     matcher: adapter.matcher,
     // A failed poll keeps its prior success timestamp so "last success" stays
     // meaningful rather than being reset by a transient outage.
-    lastSuccessAt: prior?.lastSuccessAt ?? null,
+    lastSuccessAt: success?.lastSuccessAt ?? null,
     lastError: message,
-    sceneCount: prior?.sceneCount ?? 0,
+    sceneCount: success?.sceneCount ?? 0,
   });
-  for (const child of priorRows.filter((status) => status.labelId !== adapter.id)) {
+  for (const child of statuses.filter((status) => status.labelId !== adapter.id)) {
     store.upsertSource({
       sourceId: adapter.id,
       labelId: child.labelId,
@@ -146,14 +146,15 @@ function recordSourceFailure(
  * that emits several labels can emit the SAME post under more than one of them
  * (madouqu cross-lists posts into Madou, Jelly/91 and others), and with the
  * bare two-part key those records collided on one row - the last category
- * processed won and the other label's record was lost. Single-label sources
- * keep the historical two-part key, so existing rows stay put.
+ * processed won and the other label's record was lost. Umbrella labels retain
+ * a stable provider studio key, so changing display identity does not re-key
+ * the provider's stored record.
  */
-export function sceneKey(adapter: SourceAdapter, raw: RawScene): string {
-  const labelId = raw.studioId ?? adapter.id;
+export function sceneKey(adapter: SourceAdapter, record: RawScene): string {
+  const labelId = record.providerStudioId ?? record.studioId ?? adapter.id;
   return labelId === adapter.id
-    ? `${adapter.id}:${raw.sourceSceneId}`
-    : `${adapter.id}:${labelId}:${raw.sourceSceneId}`;
+    ? `${adapter.id}:${record.sourceSceneId}`
+    : `${adapter.id}:${labelId}:${record.sourceSceneId}`;
 }
 
 /**
@@ -172,26 +173,28 @@ export function sceneKey(adapter: SourceAdapter, raw: RawScene): string {
  */
 export function normaliseScene(
   adapter: SourceAdapter,
-  raw: RawScene,
+  record: RawScene,
   now: Date,
   previous?: Scene,
   studioMetadataCheckedAt?: string | null,
 ): Scene {
-  const labelId = raw.studioId ?? adapter.id;
-  const id = sceneKey(adapter, raw);
-  const provenance = raw.provenance;
+  const labelId = record.studioId ?? adapter.id;
+  const id = sceneKey(adapter, record);
+  const provenance = record.provenance;
   const candidate: Record<string, unknown> = {
     id,
     sourceId: adapter.id,
-    source: raw.source ?? adapter.name,
+    source: record.source ?? adapter.name,
     labelId,
-    label: raw.studio ?? adapter.name,
-    title: raw.title,
-    performers: raw.performers,
-    releaseDate: raw.releaseDate,
-    durationSec: raw.durationSec ?? null,
-    thumbnailUrl: raw.thumbnailUrl ?? "",
-    tags: raw.tags ?? [],
+    label: record.studio ?? adapter.name,
+    title: record.title,
+    performers: record.performers,
+    releaseDate: record.releaseDate,
+    durationSec: record.durationSec ?? null,
+    ...(record.durationRange ? { durationRange: record.durationRange } : {}),
+    durationReview: record.durationReview ?? false,
+    thumbnailUrl: record.thumbnailUrl ?? "",
+    tags: record.tags ?? [],
     videoUrls: previous?.videoUrls ?? [],
     deadVideoUrls: previous?.deadVideoUrls ?? [],
     videoCheckedAt: previous?.videoCheckedAt ?? null,
@@ -199,22 +202,22 @@ export function normaliseScene(
     studioMetadataCheckedAt: studioMetadataCheckedAt ?? previous?.studioMetadataCheckedAt ?? null,
     provenance: [
       {
-        source: provenance?.source ?? raw.source ?? adapter.name,
+        source: provenance?.source ?? record.source ?? adapter.name,
         fetchedAt: now.toISOString(),
         ...(provenance?.sourceUrl ? { sourceUrl: provenance.sourceUrl } : {}),
         ...(provenance?.recordUrl ? { recordUrl: provenance.recordUrl } : {}),
-        sourceSceneId: provenance?.sourceSceneId ?? raw.sourceSceneId,
+        sourceSceneId: provenance?.sourceSceneId ?? record.sourceSceneId,
         ...(provenance?.audit ? { audit: provenance.audit } : {}),
       },
     ],
-    fieldProvenance: raw.fieldProvenance ?? {},
-    metadataPoor: raw.metadataPoor ?? false,
+    fieldProvenance: record.fieldProvenance ?? {},
+    metadataPoor: record.metadataPoor ?? false,
   };
   for (const field of ["storeId", "launchDate", "previewUrl", "price"] as const) {
-    if (raw[field] !== undefined) candidate[field] = raw[field];
+    if (record[field] !== undefined) candidate[field] = record[field];
   }
-  if (raw.releaseUrl) candidate.releaseUrl = raw.releaseUrl;
-  if (raw.studioCode) candidate.studioCode = raw.studioCode;
+  if (record.releaseUrl) candidate.releaseUrl = record.releaseUrl;
+  if (record.studioCode) candidate.studioCode = record.studioCode;
   return parseAtBoundary(Scene, candidate, `sync.scene(${id})`);
 }
 
@@ -239,22 +242,26 @@ function sourcePolicy(sources: readonly SourceAdapter[]): MergePolicy {
   return { priority };
 }
 
-function mergeHistory(scene: Scene, prior: readonly Scene[]): void {
+function canonicalStudio(id: string): string {
+  return id === "tpdb-maximogarcia" || id === "manyvids-1003095958" ? "maximo-garcia" : id;
+}
+
+function mergeHistory(scene: Scene, history: readonly Scene[]): void {
   const dead = new Map<string, Scene["deadVideoUrls"][number]>();
   const live = new Map<string, Scene["videoUrls"][number]>();
-  for (const record of prior) {
+  for (const record of history) {
     for (const link of record.deadVideoUrls) dead.set(link.url, link);
     for (const link of record.videoUrls) live.set(link.url, link);
   }
   scene.deadVideoUrls = [...dead.values()];
   scene.videoUrls = [...live.values()].filter((link) => !dead.has(link.url));
   scene.videoCheckedAt =
-    prior
+    history
       .map((record) => record.videoCheckedAt)
       .filter((value): value is string => value !== null)
       .sort()[0] ?? null;
   scene.videoMatching = scene.videoUrls.length
-    ? (prior.find((record) => record.videoMatching)?.videoMatching ?? null)
+    ? (history.find((record) => record.videoMatching)?.videoMatching ?? null)
     : null;
 }
 
@@ -266,79 +273,134 @@ export function reconcileReleases(
   to: string,
   now: Date,
 ): void {
-  const current = store.listWindow(from, to);
-  const known = new Map(current.map((scene) => [scene.id, scene]));
-  const observations = store
-    .listProviderObservations()
-    .filter((observation) => known.has(observation.sceneId));
-  const groups = new Map<string, ProviderObservation[]>();
-  for (const observation of observations) {
-    const identity = releaseIdentity(observation.record);
-    const key = identity
-      ? JSON.stringify([observation.studioId, identity])
-      : JSON.stringify([observation.providerId, observation.studioId, observation.recordId]);
-    const group = groups.get(key) ?? [];
-    group.push(observation);
-    groups.set(key, group);
+  const scenes = store.listWindow(from, to);
+  const existing = new Map(scenes.map((scene) => [scene.id, scene]));
+  const records = store.listProviderObservations().filter((record) => existing.has(record.sceneId));
+  const clusters = new Map<string, ProviderObservation[]>();
+  for (const record of records) {
+    const identity = releaseIdentity(record.record);
+    const title = record.record.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const duration = record.record.durationSec;
+    const key =
+      canonicalStudio(record.studioId) === "maximo-garcia" &&
+      title &&
+      Number.isSafeInteger(duration) &&
+      duration! > 0
+        ? JSON.stringify(["maximo-title", canonicalStudio(record.studioId), title])
+        : identity
+          ? JSON.stringify(["url", canonicalStudio(record.studioId), identity])
+          : JSON.stringify([record.providerId, record.studioId, record.recordId]);
+    const cluster = clusters.get(key) ?? [];
+    cluster.push(record);
+    clusters.set(key, cluster);
   }
 
   const policy = sourcePolicy(sources);
   const rank = new Map(sources.map((source, index) => [source.id, index]));
-  for (const group of groups.values()) {
-    const sceneIds = [...new Set(group.map((observation) => observation.sceneId))];
-    const prior = sceneIds
-      .map((id) => known.get(id))
+  const providers = new Set(sources.map((source) => source.id));
+  for (const cluster of clusters.values()) {
+    if (cluster.length === 1) {
+      const item = cluster[0]!;
+      const scene = existing.get(item.sceneId);
+      const related =
+        scene &&
+        (scene.sourceId === item.providerId ||
+          (item.providerId.startsWith("tpdb-site-") && scene.sourceId === "tpdb-watchlist"));
+      const stale =
+        scene &&
+        (Object.values(scene.fieldProvenance).some((field) =>
+          field
+            .split(/,\s*/)
+            .some(
+              (provider) =>
+                (providers.has(provider) || provider.startsWith("tpdb-site-")) &&
+                provider !== item.providerId,
+            ),
+        ) ||
+          scene.provenance.some(
+            (source) =>
+              (providers.has(source.source) || source.source.startsWith("tpdb-site-")) &&
+              source.source !== item.providerId,
+          ));
+      if (related && !stale) continue;
+    }
+    const linked = cluster.every((record) => releaseIdentity(record.record));
+    const maximo = cluster.every((record) => canonicalStudio(record.studioId) === "maximo-garcia");
+    if (maximo || !linked) {
+      const counts = new Map<string, number>();
+      for (const record of cluster) {
+        counts.set(record.providerId, (counts.get(record.providerId) ?? 0) + 1);
+      }
+      if (counts.size < 2 || [...counts.values()].some((count) => count > 1)) continue;
+    }
+    const ids = [...new Set(cluster.map((record) => record.sceneId))];
+    const stored = ids
+      .map((id) => existing.get(id))
       .filter((scene): scene is Scene => Boolean(scene));
-    if (!prior.length) continue;
-    prior.sort(
+    if (!stored.length) continue;
+    stored.sort(
       (first, second) =>
         second.videoUrls.length - first.videoUrls.length ||
         (rank.get(first.sourceId) ?? Number.MAX_SAFE_INTEGER) -
           (rank.get(second.sourceId) ?? Number.MAX_SAFE_INTEGER) ||
         first.id.localeCompare(second.id),
     );
-    const keeper = prior[0]!;
-    const first = [...group].sort(
+    const canonical = stored[0]!;
+    const lead = [...cluster].sort(
       (left, right) =>
         (rank.get(left.providerId) ?? Number.MAX_SAFE_INTEGER) -
           (rank.get(right.providerId) ?? Number.MAX_SAFE_INTEGER) ||
         left.providerId.localeCompare(right.providerId) ||
         left.recordId.localeCompare(right.recordId),
     )[0]!;
-    const source = sources.find((candidate) => candidate.id === keeper.sourceId) ??
-      sources.find((candidate) => candidate.id === first.providerId) ?? {
-        id: keeper.sourceId,
-        name: keeper.source,
-        authority: { name: keeper.source, url: "", role: "Provider observation" },
+    const source = sources.find((candidate) => candidate.id === canonical.sourceId) ??
+      sources.find((candidate) => candidate.id === lead.providerId) ?? {
+        id: canonical.sourceId,
+        name: canonical.source,
+        authority: { name: canonical.source, url: "", role: "Provider observation" },
         matcher: null,
         fetch: async () => ({ scenes: [], verifiedEmpty: true }),
       };
-    const raw = mergeRelease(group, policy);
-    const merged = normaliseScene(source, raw, now, keeper);
-    merged.id = keeper.id;
-    merged.sourceId = keeper.sourceId;
-    merged.source = keeper.source;
-    merged.provenance = group.map((observation) => ({
-      source: observation.providerId,
-      fetchedAt: observation.fetchedAt,
-      sourceSceneId: observation.recordId,
-      ...(observation.record.provenance?.sourceUrl
-        ? { sourceUrl: observation.record.provenance.sourceUrl }
+    const durations = cluster.map((record) => record.record.durationSec);
+    const measured = durations.filter(
+      (duration): duration is number => Number.isSafeInteger(duration) && (duration ?? 0) > 0,
+    );
+    const sameDuration =
+      measured.length > 0 && measured.every((duration) => duration === measured[0]);
+    const mergePolicy = {
+      ...policy,
+      oldestDate:
+        cluster.every((record) => canonicalStudio(record.studioId) === "maximo-garcia") &&
+        sameDuration,
+    };
+    const release = mergeRelease(cluster, mergePolicy);
+    if (maximo) {
+      release.studioId = "maximo-garcia";
+      release.studio = "Maximo Garcia";
+    }
+    const scene = normaliseScene(source, release, now, canonical);
+    scene.id = canonical.id;
+    scene.sourceId = canonical.sourceId;
+    scene.source = canonical.source;
+    scene.provenance = cluster.map((record) => ({
+      source: record.providerId,
+      fetchedAt: record.fetchedAt,
+      sourceSceneId: record.recordId,
+      ...(record.record.provenance?.sourceUrl
+        ? { sourceUrl: record.record.provenance.sourceUrl }
         : {}),
-      ...((observation.record.provenance?.recordUrl ?? observation.record.releaseUrl)
-        ? { recordUrl: observation.record.provenance?.recordUrl ?? observation.record.releaseUrl }
+      ...((record.record.provenance?.recordUrl ?? record.record.releaseUrl)
+        ? { recordUrl: record.record.provenance?.recordUrl ?? record.record.releaseUrl }
         : {}),
-      ...(observation.record.provenance?.audit
-        ? { audit: observation.record.provenance.audit }
-        : {}),
+      ...(record.record.provenance?.audit ? { audit: record.record.provenance.audit } : {}),
     }));
-    mergeHistory(merged, prior);
+    mergeHistory(scene, stored);
 
     store.transaction(() => {
-      store.upsertScene(merged);
-      store.reassignProviderObservations(sceneIds, keeper.id);
-      for (const sceneId of sceneIds) {
-        if (sceneId !== keeper.id) store.deleteScene(sceneId);
+      store.upsertScene(scene);
+      store.reassignProviderObservations(ids, canonical.id);
+      for (const sceneId of ids) {
+        if (sceneId !== canonical.id) store.deleteScene(sceneId);
       }
     });
   }
@@ -366,11 +428,11 @@ interface FailedLane {
 
 /** Merge one exact-page result without losing verified studio fields on later polls. */
 export function mergeStudioMetadata(
-  raw: RawScene,
+  record: RawScene,
   page: Partial<RawScene> | null,
   previous?: Scene,
 ): RawScene {
-  const merged: RawScene = { ...raw };
+  const output: RawScene = { ...record };
   const fields = [
     "title",
     "releaseDate",
@@ -381,26 +443,28 @@ export function mergeStudioMetadata(
   ] as const;
   for (const field of fields) {
     if (page?.[field] !== undefined && page[field] !== null) {
-      Object.assign(merged, { [field]: page[field] });
+      Object.assign(output, { [field]: page[field] });
       continue;
     }
     if (
-      raw.fieldProvenance?.[field] !== "studio-site" &&
+      record.fieldProvenance?.[field] !== "studio-site" &&
       previous?.fieldProvenance[field] === "studio-site"
     ) {
-      Object.assign(merged, { [field]: previous[field] });
+      Object.assign(output, { [field]: previous[field] });
     }
   }
-  merged.fieldProvenance = {
+  output.fieldProvenance = {
     ...previous?.fieldProvenance,
-    ...raw.fieldProvenance,
+    ...record.fieldProvenance,
     ...page?.fieldProvenance,
   };
   // Preserve the current catalogue record as the required provenance entry;
   // page provenance is appended by the caller after normalization.
-  merged.provenance = raw.provenance;
-  merged.metadataPoor = Boolean(raw.metadataPoor) || !merged.durationSec || merged.durationSec <= 0;
-  return merged;
+  output.provenance = record.provenance;
+  output.metadataPoor =
+    Boolean(record.metadataPoor) ||
+    (!output.durationRange && (!output.durationSec || output.durationSec <= 0));
+  return output;
 }
 
 export interface SyncLookups {
@@ -568,7 +632,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
    */
   async function fanOut(from: string, now: Date): Promise<RunOutcome[]> {
     progress?.stage("populating");
-    const all = await mapWithConcurrency(
+    const results = await mapWithConcurrency(
       [...sources],
       async (adapter): Promise<FetchedLane | FailedLane> => {
         progress?.sourceStart(adapter.id);
@@ -617,32 +681,36 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       },
       fetchConcurrency,
     );
-    const lanes = all.filter((lane): lane is FetchedLane => lane.ok);
-    const outcomes: RunOutcome[] = all
+    const fetched = results.filter((lane): lane is FetchedLane => lane.ok);
+    const outcomes: RunOutcome[] = results
       .filter((lane): lane is FailedLane => !lane.ok)
       .map((lane) => lane.outcome);
 
     // Store every provider observation before reconciling identities. A failed
     // provider never replaces its last-good observation, and one provider can
     // therefore contribute fields without suppressing another provider's data.
-    await runStudioLookups(lanes, now);
+    await runStudioLookups(fetched, now);
 
-    for (const lane of lanes) {
+    for (const lane of fetched) {
       let count = 0;
       try {
         store.transaction(() => {
-          for (const raw of lane.result.scenes) {
+          for (const record of lane.result.scenes) {
             try {
-              const previous = lane.existing.get(sceneKey(lane.adapter, raw));
-              const merged = studioFieldsRetained(lane, raw)
-                ? mergeStudioMetadata(raw, lane.pages.get(raw) ?? null, previousFor(raw, previous))
-                : raw;
+              const previous = lane.existing.get(sceneKey(lane.adapter, record));
+              const output = studioFieldsRetained(lane, record)
+                ? mergeStudioMetadata(
+                    record,
+                    lane.pages.get(record) ?? null,
+                    previousFor(record, previous),
+                  )
+                : record;
               const scene = normaliseScene(
                 lane.adapter,
-                merged,
+                output,
                 now,
                 previous,
-                lane.checkedAt.get(raw),
+                lane.checkedAt.get(record),
               );
               const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
               const unique = new Map(
@@ -651,8 +719,8 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
                   item,
                 ]),
               );
-              if (lane.pages.get(raw)?.provenance) {
-                const item = lane.pages.get(raw)!.provenance!;
+              if (lane.pages.get(record)?.provenance) {
+                const item = lane.pages.get(record)!.provenance!;
                 unique.set(`${item.source}|${item.sourceUrl ?? ""}|${item.recordUrl ?? ""}`, {
                   ...item,
                   fetchedAt: now.toISOString(),
@@ -662,12 +730,12 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
               store.transaction(() => {
                 store.upsertScene(scene);
                 store.upsertProviderObservation({
-                  providerId: lane.adapter.id,
-                  recordId: raw.sourceSceneId,
+                  providerId: record.providerId ?? lane.adapter.id,
+                  recordId: record.sourceSceneId,
                   sceneId: scene.id,
-                  studioId: raw.studioId ?? scene.labelId,
-                  studio: raw.studio ?? scene.label,
-                  record: raw,
+                  studioId: record.providerStudioId ?? record.studioId ?? scene.labelId,
+                  studio: record.studio ?? scene.label,
+                  record,
                   fetchedAt: now.toISOString(),
                 });
               });
@@ -706,13 +774,13 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
 
   /** One bulk read, not one per record: the stored links have to reach the upsert. */
   function existingFor(adapter: SourceAdapter, result: SourceResult): Map<string, Scene> {
-    return store.getScenesByIds(result.scenes.map((raw) => sceneKey(adapter, raw)));
+    return store.getScenesByIds(result.scenes.map((record) => sceneKey(adapter, record)));
   }
 
   /** The stored scene, minus fields a different studio page supplied. */
-  function previousFor(raw: RawScene, previous: Scene | undefined): Scene | undefined {
+  function previousFor(record: RawScene, previous: Scene | undefined): Scene | undefined {
     const studioUrl = lastStudioUrl(previous);
-    if (!previous || !raw.releaseUrl || !studioUrl || studioUrl === raw.releaseUrl) {
+    if (!previous || !record.releaseUrl || !studioUrl || studioUrl === record.releaseUrl) {
       return previous;
     }
     // The release URL changed, so the page that supplied these values is no
@@ -724,8 +792,8 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
   }
 
   /** True when a studio-supplied field may be carried forward for this record. */
-  function studioFieldsRetained(lane: FetchedLane, raw: RawScene): boolean {
-    return lane.checkedAt.has(raw) || raw.source === "traxxx.me";
+  function studioFieldsRetained(lane: FetchedLane, record: RawScene): boolean {
+    return lane.checkedAt.has(record) || record.source === "traxxx.me";
   }
 
   /** The release page that last supplied studio fields, or undefined. */
@@ -736,20 +804,20 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
   }
 
   /** One studio lookup per selected record, in bounded parallel across lanes. */
-  async function runStudioLookups(lanes: FetchedLane[], now: Date): Promise<void> {
-    const candidates = lanes
-      .flatMap((lane) =>
-        lane.result.scenes.flatMap((raw) => {
-          if (raw.source !== "traxxx.me" || !raw.releaseUrl) return [];
-          const profile = getStudioMetadataProfile(raw.releaseUrl);
+  async function runStudioLookups(feeds: FetchedLane[], now: Date): Promise<void> {
+    const candidates = feeds
+      .flatMap((feed) =>
+        feed.result.scenes.flatMap((record) => {
+          if (record.source !== "traxxx.me" || !record.releaseUrl) return [];
+          const profile = getStudioMetadataProfile(record.releaseUrl);
           if (!profile) return [];
-          const previous = lane.existing.get(sceneKey(lane.adapter, raw));
+          const previous = feed.existing.get(sceneKey(feed.adapter, record));
           const attemptedAt = previous?.studioMetadataCheckedAt ?? null;
           // A release URL that no studio page has ever answered for has no
           // cooldown either: the recorded attempt describes a different page.
           const studioUrl = lastStudioUrl(previous);
-          if (previous && studioUrl && studioUrl !== raw.releaseUrl) {
-            return [{ lane, raw, previous, attemptedAt, profile }];
+          if (previous && studioUrl && studioUrl !== record.releaseUrl) {
+            return [{ feed, record, previous, attemptedAt, profile }];
           }
           if (profile.fields.every((field) => previous?.fieldProvenance[field] === "studio-site")) {
             return [];
@@ -757,7 +825,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           if (attemptedAt && now.getTime() - new Date(attemptedAt).getTime() < STUDIO_RETRY_MS) {
             return [];
           }
-          return [{ lane, raw, previous, attemptedAt, profile }];
+          return [{ feed, record, previous, attemptedAt, profile }];
         }),
       )
       .sort((a, b) => {
@@ -766,7 +834,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         if (!a.attemptedAt && b.attemptedAt) return -1;
         if (a.attemptedAt && !b.attemptedAt) return 1;
         if (!a.attemptedAt && !b.attemptedAt) {
-          return a.raw.releaseDate.localeCompare(b.raw.releaseDate);
+          return a.record.releaseDate.localeCompare(b.record.releaseDate);
         }
         return (
           (a.attemptedAt ? Date.parse(a.attemptedAt) : 0) -
@@ -776,21 +844,21 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const selected = candidates.slice(0, STUDIO_LOOKUP_LIMIT);
     const stamp = now.toISOString();
     for (const candidate of selected) {
-      candidate.lane.checkedAt.set(candidate.raw, stamp);
+      candidate.feed.checkedAt.set(candidate.record, stamp);
     }
     // Isolated, not the shared pool: a studio that is timing out must not hold
     // every other source's request behind it, and 50 serial lookups would add
     // half a minute to a cycle for no gain.
     await mapIsolated(
       selected,
-      async ({ lane, raw }) => {
+      async ({ feed, record }) => {
         try {
-          lane.pages.set(raw, await scrapeReleaseMetadata(raw.releaseUrl!, fetcher));
+          feed.pages.set(record, await scrapeReleaseMetadata(record.releaseUrl!, fetcher));
         } catch (error) {
-          lane.pages.set(raw, null);
+          feed.pages.set(record, null);
           log.warn("sync: studio metadata lookup failed; keeping catalogue values", {
-            source: lane.adapter.id,
-            scene: raw.sourceSceneId,
+            source: feed.adapter.id,
+            scene: record.sourceSceneId,
             error: (error as Error).message,
           });
         }

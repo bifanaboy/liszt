@@ -26,15 +26,17 @@ function ranked(
   policy: MergePolicy,
 ): ProviderObservation[] {
   const priority = policy.priority?.[field] ?? [];
-  return [...observations].sort((first, second) => {
-    const left = priority.indexOf(first.providerId);
-    const right = priority.indexOf(second.providerId);
-    const leftRank = left < 0 ? priority.length : left;
-    const rightRank = right < 0 ? priority.length : right;
+  return [...observations].sort((lead, next) => {
+    const leadId = lead.providerId.startsWith("tpdb-site-") ? "tpdb-watchlist" : lead.providerId;
+    const nextId = next.providerId.startsWith("tpdb-site-") ? "tpdb-watchlist" : next.providerId;
+    const leadRank = priority.indexOf(leadId);
+    const nextRank = priority.indexOf(nextId);
+    const first = leadRank < 0 ? priority.length : leadRank;
+    const second = nextRank < 0 ? priority.length : nextRank;
     return (
-      leftRank - rightRank ||
-      first.providerId.localeCompare(second.providerId) ||
-      first.recordId.localeCompare(second.recordId)
+      first - second ||
+      lead.providerId.localeCompare(next.providerId) ||
+      lead.recordId.localeCompare(next.recordId)
     );
   });
 }
@@ -47,30 +49,65 @@ export function mergeRelease(
   if (!observations.length) throw new Error("Cannot merge a release without observations");
 
   const ordered = ranked(observations, "title", policy);
-  const first = ordered[0]!;
-  const merged: RawScene = {
-    ...first.record,
-    sourceSceneId: first.recordId,
-    studioId: first.studioId,
-    studio: first.studio,
+  const lead = ordered[0]!;
+  const output: RawScene = {
+    ...lead.record,
+    sourceSceneId: lead.recordId,
+    studioId: lead.studioId,
+    studio: lead.studio,
     fieldProvenance: {},
   };
   const provenance: Record<string, string> = {};
 
   for (const field of fields) {
-    const winner = ranked(observations, field, policy).find((item) => present(item.record[field]));
+    const candidates = ranked(observations, field, policy).filter((item) =>
+      present(item.record[field]),
+    );
+    const winner =
+      field === "releaseDate" && policy.oldestDate
+        ? [...candidates].sort(
+            (first, second) =>
+              first.record.releaseDate.localeCompare(second.record.releaseDate) ||
+              ranked(observations, field, policy).indexOf(first) -
+                ranked(observations, field, policy).indexOf(second),
+          )[0]
+        : candidates[0];
     if (!winner) continue;
-    Object.assign(merged, { [field]: winner.record[field] });
+    Object.assign(output, { [field]: winner.record[field] });
     provenance[field] = winner.providerId;
   }
 
-  merged.source = first.providerId;
-  merged.fieldProvenance = provenance;
-  merged.provenance = {
-    source: first.providerId,
-    sourceSceneId: first.recordId,
-    ...(first.record.provenance?.sourceUrl ? { sourceUrl: first.record.provenance.sourceUrl } : {}),
-    ...(first.record.releaseUrl ? { recordUrl: first.record.releaseUrl } : {}),
+  const durations = observations
+    .map((item) => item.record.durationSec)
+    .filter((value): value is number => Number.isSafeInteger(value) && (value ?? 0) > 0);
+  if (durations.length) {
+    const minimum = Math.min(...durations);
+    const maximum = Math.max(...durations);
+    if (minimum === maximum) {
+      output.durationSec = minimum;
+    } else {
+      output.durationSec = null;
+      output.durationRange = { minSec: minimum, maxSec: maximum };
+      output.durationReview = maximum - minimum > 1;
+      provenance.durationSec = [
+        ...new Set(
+          observations
+            .filter(
+              (item) => item.record.durationSec !== undefined && item.record.durationSec !== null,
+            )
+            .map((item) => item.providerId),
+        ),
+      ].join(", ");
+    }
+  }
+
+  output.source = lead.providerId;
+  output.fieldProvenance = provenance;
+  output.provenance = {
+    source: lead.providerId,
+    sourceSceneId: lead.recordId,
+    ...(lead.record.provenance?.sourceUrl ? { sourceUrl: lead.record.provenance.sourceUrl } : {}),
+    ...(lead.record.releaseUrl ? { recordUrl: lead.record.releaseUrl } : {}),
   };
-  return merged;
+  return output;
 }

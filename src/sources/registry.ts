@@ -24,9 +24,10 @@ import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2c
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
-import type { SourceAdapter } from "./types.ts";
+import type { FeedDefinition, SourceAdapter, StudioPolicy } from "./types.ts";
 import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
 import type { StudioLink } from "./studio-identity.ts";
+import { applyStudioPolicy } from "./studio-policy.ts";
 
 export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
   "tushy",
@@ -56,12 +57,23 @@ export interface RegistryOptions {
   manyvidsMinIntervalMs?: number;
   /** Configured listing URL for Bang! Originals (single URL composite feed). */
   bangListingUrl?: string | undefined;
-  /** Hosts the Bang! Originals feed may reference. */
-  bangAllowedHosts?: readonly string[];
   /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
    * failing every cycle, following the SETUP REQUIRED pattern. */
   tpdbApiKey?: string;
   studioLinks?: readonly StudioLink[];
+}
+
+function registerFeed(
+  source: SourceAdapter,
+  url: string,
+  studioPolicy: StudioPolicy,
+): SourceAdapter {
+  const definition: FeedDefinition = {
+    adapterId: source.id,
+    sourceUrl: url,
+    studioPolicy,
+  };
+  return applyStudioPolicy(source, definition);
 }
 
 /** The complete set of adapters run by the sync, in a stable order. */
@@ -70,19 +82,27 @@ export function createSources({
   traxxxWatchlist,
   store,
   fc2 = {},
-  bangListingUrl,
-  bangAllowedHosts = ["sexlikereal.com", "www.sexlikereal.com", "analvids.com", "www.analvids.com"],
+  bangListingUrl = "https://www.bang.com/videos?by=date.desc",
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
   tpdbApiKey,
   studioLinks = [],
 }: RegistryOptions): SourceAdapter[] {
+  const maximoPolicy = {
+    mode: "umbrella" as const,
+    studioId: "maximo-garcia",
+    studio: "Maximo Garcia",
+  };
   const sources = [
-    createMaximoGarciaStudio(),
+    registerFeed(createMaximoGarciaStudio(), "https://fansly.com/maximo_garcia", maximoPolicy),
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
-      createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
+      registerFeed(
+        createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
+        `https://www.manyvids.com/bff/store/videos/${storeId}/`,
+        storeId === "1003095958" ? maximoPolicy : { mode: "split" },
+      ),
     ),
-    createBangOriginalsStudio(bangListingUrl, bangAllowedHosts),
+    registerFeed(createBangOriginalsStudio(bangListingUrl), bangListingUrl, { mode: "split" }),
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
@@ -109,9 +129,17 @@ export function createSources({
   // prevents synthetic manyvids aliases from contaminating the TPDB alias map
   // when TPDB is not set up (SETUP REQUIRED pattern).
   if (tpdbApiKey) {
+    const linked = studioLinks.some(
+      (link) =>
+        link.studio.toLowerCase() === "maximo garcia" ||
+        link.aliases?.some((alias) => alias.toLowerCase() === "maximo garcia"),
+    );
+    const stores = [...new Set(manyvidsStoreIds)].filter(
+      (storeId) => storeId !== "1003095958" || !linked,
+    );
     tpdbStudios.push(
-      ...[...new Set(manyvidsStoreIds)].map((storeId) => ({
-        studioId: `manyvids-${storeId}`,
+      ...stores.map((storeId) => ({
+        studioId: storeId === "1003095958" ? "maximo-garcia" : `manyvids-${storeId}`,
         studio: storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`,
         aliases: [storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`],
       })),

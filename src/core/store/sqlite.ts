@@ -472,6 +472,8 @@ export class SqliteStore {
             launchDate: parsed.launchDate,
             previewUrl: parsed.previewUrl,
             price: parsed.price,
+            durationRange: parsed.durationRange,
+            durationReview: parsed.durationReview,
           }),
         );
 

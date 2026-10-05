@@ -162,6 +162,7 @@ export function createTpdbWatchlistSource(options: {
             }
             const recordUrl = scene.url ?? undefined;
             scenes.push({
+              providerId: `tpdb-site-${siteId}`,
               sourceSceneId: scene.id,
               studioId: studio.studioId,
               studio: studio.studio,

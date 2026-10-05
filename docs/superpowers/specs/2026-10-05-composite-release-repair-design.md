@@ -42,12 +42,18 @@ with this behavior or make it hard to maintain.
    policy (`split` by default, or `umbrella` with a studio identity).
 2. The provider adapter converts API-specific responses into provider
    observations with stable provider IDs, studio identity, exact field values,
-   and provenance.
+   and provenance. Umbrella assignment changes the displayed studio identity
+   but retains the provider's studio key so later policy edits do not re-key
+   provider-native records.
 3. A shared identity and merge step groups observations only when there is
    reliable evidence that they describe the same release. A normalized release
    URL or verified shared provider identity is strong evidence. A title alone,
-   or a title shared across unrelated hosts, is not sufficient. Ambiguous
-   observations remain separate and can be reviewed.
+   or a title shared across unrelated hosts, is not sufficient. Maximo is the
+   documented exception: observations from distinct Maximo providers can group
+   by normalized title only when every record has a positive duration. The
+   resulting duration range exposes disagreement and blocks automatic linking
+   when it is wider than one second. Ambiguous observations remain separate
+   and can be reviewed.
 4. The merge step selects canonical fields, records field-level provenance,
    combines duration observations into a range, and persists one canonical
    release plus its provider observations.
@@ -88,7 +94,10 @@ Normalize the same release URL across harmless differences such as host casing,
 fragments, trailing slashes, and verified punctuation variants in a path. Do
 not merge cross-host mirrors by title alone. Issue #130 specifically describes
 same-page punctuation variants as duplicates, while treating different-host
-mirror candidates as ambiguous without shared ID evidence.
+mirror candidates as ambiguous without shared ID evidence. Maximo records are
+grouped by normalized title only inside the declared Maximo studio and only
+when every contributing provider supplies a positive duration; duration
+disagreements remain visible as ranges and wide ranges require review.
 
 The duration range is calculated from positive provider observations, not from
 an average. A candidate passes duration eligibility when its duration is

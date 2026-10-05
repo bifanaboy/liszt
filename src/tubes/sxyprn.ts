@@ -198,7 +198,7 @@ export function createSxyprnLookup({
   return async function lookup(scene: MatchScene): Promise<SxyprnMatch[]> {
     const code = scene.sceneCode ?? configuredSceneCode(scene);
     const queries = buildQueries(scene);
-    if (!queries.length || !Number.isFinite(scene.durationSec)) return [];
+    if (!queries.length || (!Number.isFinite(scene.durationSec) && !scene.durationRange)) return [];
     const allCandidates = new Map<string, SxyprnCard>();
     let successfulSearches = 0;
     const searchErrors: string[] = [];
@@ -250,7 +250,13 @@ export function createSxyprnLookup({
       const duration = Number(item.duration);
       return (
         Number.isFinite(duration) &&
-        Math.abs(duration - (scene.durationSec ?? 0)) <= (durationToleranceSec ?? 1)
+        (scene.durationRange
+          ? Math.max(
+              scene.durationRange.minSec - duration,
+              0,
+              duration - scene.durationRange.maxSec,
+            )
+          : Math.abs(duration - (scene.durationSec ?? 0))) <= (durationToleranceSec ?? 1)
       );
     });
     if (!durationSurvivors.length) return [];
@@ -325,8 +331,14 @@ export function createSxyprnLookup({
         withinDateWindow(scene.releaseDate, detail.uploadDate ?? null, dateWindowDays) === true;
       const durationPass =
         Number.isFinite(duration) &&
-        Number.isFinite(scene.durationSec) &&
-        Math.abs(duration - (scene.durationSec ?? 0)) <= (durationToleranceSec ?? 1);
+        (Number.isFinite(scene.durationSec) || Boolean(scene.durationRange)) &&
+        (scene.durationRange
+          ? Math.max(
+              scene.durationRange.minSec - duration,
+              0,
+              duration - scene.durationRange.maxSec,
+            )
+          : Math.abs(duration - (scene.durationSec ?? 0))) <= (durationToleranceSec ?? 1);
       if (
         validSxyprnUrl(detail.url) &&
         detail.url === item.url &&

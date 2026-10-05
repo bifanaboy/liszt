@@ -58,13 +58,35 @@ Mode: Native sequential execution in `/workspace/liszt-repair`.
 - Same-host page slug punctuation variants normalize only when a numeric page identifier anchors the URL. Cross-host title similarity and URL-less records remain separate.
 - Dead links dominate live links during history merge; a scene with no remaining live links clears its resolver verdict.
 - Focused identity, sync, read-model, and resolver checks pass (37/37); typecheck, lint, and formatting pass.
+- Maximo's cross-domain lanes share a normalized-title reconciliation key only inside the Maximo identity and only when each observation carries a positive duration. Same-source title collisions remain separate for review.
+
+### Task 5: Add studio policies and repair composite feeds
+- Added reusable split/umbrella policy application; split preserves adapter-provided identities and umbrella maps every record to the declared alias.
+- Maximo Fansly, ManyVids store `1003095958`, and TPDB aliases (`maximogarcia`, `fuckingpornstars`, `manyvidsmaximogarcia`) now use the `maximo-garcia` studio identity. TPDB site observations retain per-site provider provenance.
+- Maximo applies the whole-word `trans` title exclusion. When durations match, canonical release date selection uses the oldest provider date, then stable configured priority.
+- Replaced Bang placeholder with a narrow SearchResultsPage/VideoObject JSON-LD parser, exact `www.bang.com` host/path checks, production-company validation, pagination date cutoff, and verified-empty behavior. Bang listing URL is wired through config with a verified default.
+- Focused Bang, studio-policy, registry, Maximo, and ManyVids checks pass; static checks pass.
+
+### Task 6: Add duration ranges to matching and display
+- Canonical releases retain exact provider durations; equal values stay scalar, disagreements become inclusive min/max ranges with each provider named in `fieldProvenance`.
+- A range wider than one second sets `durationReview` and skips automatic resolution. Eligible ranges accept candidates within one second of either edge while preserving date and identity checks.
+- SQLite stores range/review fields in its existing storefront JSON column; this avoids a schema migration and preserves existing scene IDs and playback history.
+- The dashboard shows exact range runtimes and a REVIEW flag, and includes an expandable field-source list.
+- Focused matching, merge, resolution, and sync checks pass; full-suite verification remains in Task 8.
+
+### Task 7: Remove targeted naming and documentation bloat
+- README reduced from 529 lines to a concise user guide with setup, feed policies, matching behavior, routes, and config pointers.
+- AGENTS shared matching/deployment fact blocks now point to the README; agent-only scope/review rules remain there.
+- Removed five completed dated plans under `docs/superpowers/plans/` and `.hermes/plans/`; retained the active repair plan, design, and execution ledger.
+- One-word naming review completed for the changed pipeline/source locals; provider/source terms remain where they carry domain meaning.
+- Documentation-link review completed; local links resolve. README reduced from 529 to 133 lines.
 
 ## Task progress
 - Task 1: completed
 - Task 2: completed
-- Task 3: completed (focused checks pass; full suite has known Task 4 failures)
-- Task 4: pending
-- Task 5: pending
-- Task 6: pending
-- Task 7: pending
-- Task 8: pending
+- Task 3: completed
+- Task 4: completed
+- Task 5: completed
+- Task 6: completed
+- Task 7: completed
+- Task 8: completed (typecheck, lint, format, 569 tests, HTTP smoke check; no conflict markers; diff check clean)

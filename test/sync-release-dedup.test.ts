@@ -140,6 +140,74 @@ test("similar titles on different hosts do not merge", async () => {
   }
 });
 
+test("Maximo cross-provider records merge by normalized title and keep the oldest release date", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("maximo-garcia", () => [
+        raw("fansly-1", {
+          studioId: "maximo-garcia",
+          studio: "Maximo Garcia",
+          title: "A Shared Release!",
+          releaseDate: "2026-03-05",
+          durationSec: 600,
+          releaseUrl: "https://fansly.com/maximo_garcia/post/1",
+        }),
+      ]),
+      adapter("tpdb-watchlist", () => [
+        raw("mv-1", {
+          providerId: "tpdb-site-7875",
+          studioId: "tpdb-maximogarcia",
+          studio: "Maximo Garcia",
+          title: "A Shared-Release",
+          releaseDate: "2026-03-04",
+          durationSec: 600,
+          releaseUrl: "https://www.maximogarcia.com/scene/1/shared-release/",
+        }),
+      ]),
+    ])("first");
+    assert.equal(store.listAll().length, 1);
+    assert.equal(store.listProviderObservations().length, 2);
+    assert.equal(store.listAll()[0]?.releaseDate, "2026-03-04");
+  } finally {
+    store.close();
+  }
+});
+
+test("Maximo duration disagreements are retained as a reviewable range", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("maximo-garcia", () => [
+        raw("fansly-1", {
+          studioId: "maximo-garcia",
+          title: "A Shared Release",
+          releaseDate: "2026-03-05",
+          durationSec: 600,
+        }),
+      ]),
+      adapter("tpdb-watchlist", () => [
+        raw("mv-1", {
+          providerId: "tpdb-site-7875",
+          studioId: "tpdb-maximogarcia",
+          title: "A Shared Release",
+          releaseDate: "2026-03-04",
+          durationSec: 602,
+        }),
+      ]),
+    ])("first");
+    const scene = store.listAll()[0]!;
+    assert.equal(store.listAll().length, 1);
+    assert.equal(scene.durationSec, null);
+    assert.deepEqual(scene.durationRange, { minSec: 600, maxSec: 602 });
+    assert.equal(scene.durationReview, true);
+  } finally {
+    store.close();
+  }
+});
+
 test("a scene still updates itself on later syncs", async () => {
   // The dedup is seeded from stored rows, so a naive "already seen" check would
   // make every scene suppress itself and freeze the catalogue at its first

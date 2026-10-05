@@ -95,14 +95,16 @@ export function createManyVidsSource({
           await ctx.fetcher.json(url),
           `manyvids.page(${storeId}:${current})`,
         );
-        const p = result.pagination;
+        const pagination = result.pagination;
         if (
-          p.currentPage !== current ||
-          (p.nextPage !== null && (p.nextPage !== current + 1 || p.nextPage > p.totalPages)) ||
-          (p.totalPages > 0 && current > p.totalPages) ||
-          (p.nextPage === null && current < p.totalPages) ||
-          (!result.data.length && (p.total !== 0 || p.nextPage !== null || current !== 1)) ||
-          (result.data.length > 0 && p.total === 0)
+          pagination.currentPage !== current ||
+          (pagination.nextPage !== null &&
+            (pagination.nextPage !== current + 1 || pagination.nextPage > pagination.totalPages)) ||
+          (pagination.totalPages > 0 && current > pagination.totalPages) ||
+          (pagination.nextPage === null && current < pagination.totalPages) ||
+          (!result.data.length &&
+            (pagination.total !== 0 || pagination.nextPage !== null || current !== 1)) ||
+          (result.data.length > 0 && pagination.total === 0)
         ) {
           throw new Error(`ManyVids ${storeId}: inconsistent pagination on page ${current}`);
         }
@@ -118,11 +120,11 @@ export function createManyVidsSource({
           full,
         });
         if (
-          p.nextPage === null ||
+          pagination.nextPage === null ||
           (!full && result.data.length > 0 && result.data.every((video) => known.has(video.id)))
         )
           break;
-        current = p.nextPage;
+        current = pagination.nextPage;
       }
       const snapshot = {
         fullPulledAt: full ? ctx.now.toISOString() : prior!.fullPulledAt,

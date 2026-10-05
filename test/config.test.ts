@@ -41,6 +41,15 @@ test("default studio links register every Dredd TPDB site under one alias", () =
   assert.deepEqual(dredd.tpdb?.siteIds, [50864, 39697, 81939]);
 });
 
+test("Bang has a verified default listing URL and permits an explicit override", () => {
+  assert.equal(loadConfig({}).bangListingUrl, "https://www.bang.com/videos?by=date.desc");
+  assert.equal(
+    loadConfig({ LISZT_BANG_LISTING_URL: "https://www.bang.com/videos?by=date.desc&page=2" })
+      .bangListingUrl,
+    "https://www.bang.com/videos?by=date.desc&page=2",
+  );
+});
+
 test("a broken studio declaration is a named configuration error, not a silent drop", () => {
   // A silently dropped studio is indistinguishable from a studio that released
   // nothing, which is the failure this whole mechanism exists to avoid.

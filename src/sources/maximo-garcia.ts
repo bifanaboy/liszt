@@ -2,6 +2,10 @@
 import { createFanslySource } from "./fansly.ts";
 import type { SourceAdapter, SourceContext, RawScene } from "./types.js";
 
+export function isExcludedMaximoTitle(title: string): boolean {
+  return /(^|[^0-9a-z])trans([^0-9a-z]|$)/i.test(title);
+}
+
 export function createMaximoGarciaStudio(): SourceAdapter {
   return {
     id: "maximo-garcia",
@@ -13,15 +17,17 @@ export function createMaximoGarciaStudio(): SourceAdapter {
     },
     matcher: "sxyprn+eporner",
     async fetch(windowStart: string, ctx: SourceContext) {
-      const fanslyAdapter = createFanslySource({ usernames: ["maximo_garcia"] });
-      const fanslyResult = await fanslyAdapter.fetch(windowStart, ctx);
+      const fansly = createFanslySource({ usernames: ["maximo_garcia"] });
+      const pulled = await fansly.fetch(windowStart, ctx);
       // Keep the studio label while preserving Fansly provenance.
-      const scenes: RawScene[] = fanslyResult.scenes.map((s) => ({
-        ...s,
-        studioId: "maximo-garcia",
-        studio: "Maximo Garcia",
-      }));
-      return { scenes, verifiedEmpty: scenes.length === 0 ? true : fanslyResult.verifiedEmpty };
+      const scenes: RawScene[] = pulled.scenes
+        .filter((scene) => !isExcludedMaximoTitle(scene.title))
+        .map((scene) => ({ ...scene, studioId: "maximo-garcia", studio: "Maximo Garcia" }));
+      return {
+        scenes,
+        verifiedEmpty: scenes.length === 0 ? pulled.verifiedEmpty : false,
+        ...(pulled.excludedSceneIds ? { excludedSceneIds: pulled.excludedSceneIds } : {}),
+      };
     },
   };
 }
