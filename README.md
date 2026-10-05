@@ -100,5 +100,3 @@ it is not the live service configuration.
 - [`AGENTS.md`](AGENTS.md) contains repository-specific coding and review rules.
 - [`docs/superpowers/specs/2026-10-05-composite-release-repair-design.md`](docs/superpowers/specs/2026-10-05-composite-release-repair-design.md)
   records the composite-feed behavior and its safety rules.
-- Detailed source evidence and execution progress are in the matching
-  `.superpowers/sdd/` task record.
