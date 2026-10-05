@@ -43,6 +43,8 @@ export interface TpdbStudio {
   aliases: readonly string[];
   siteIds?: readonly number[];
   tags?: readonly string[];
+  /** Use TPDB's current display name for issue-driven numeric site lists. */
+  useSiteName?: boolean;
 }
 
 export function cleanStudioName(value: string): string {
@@ -138,7 +140,9 @@ export function createTpdbWatchlistSource(options: {
             )
               continue;
           }
-          if (studio) sites.set(site.id, studio);
+          if (studio) {
+            sites.set(site.id, studio.useSiteName ? { ...studio, studio: site.name } : studio);
+          }
         }
       }
       const scenes: RawScene[] = [];

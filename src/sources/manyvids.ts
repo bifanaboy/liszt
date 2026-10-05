@@ -1,4 +1,4 @@
-/** Public store listings only. No login, tag gates, or source-precedence rule. */
+/** Public store listings only. No login or source-precedence rule. */
 import { z } from "zod";
 import { setTimeout as pause } from "node:timers/promises";
 import { DateOnly, IsoTimestamp, parseAtBoundary } from "../core/schema.ts";
@@ -132,6 +132,7 @@ export function createManyVidsSource({
       };
       const excludedSceneIds: string[] = [];
       const scenes: RawScene[] = snapshot.videos.flatMap((video) => {
+        if (!(video.tags ?? []).some((tag) => tag.trim().toLowerCase() === "anal")) return [];
         const releaseDate = new Date(video.launchDate).toISOString().slice(0, 10);
         if (releaseDate < windowStart || releaseDate > ctx.now.toISOString().slice(0, 10))
           return [];
