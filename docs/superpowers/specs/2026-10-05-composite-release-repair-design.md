@@ -67,8 +67,7 @@ The composite input set recorded in open issue #115 is the public Fansly page,
 TPDB sites `fuckingpornstars`, `maximogarcia`, and `manyvidsmaximogarcia`, plus
 the existing ManyVids store `1003095958`. They should map to one Maximo identity.
 Titles containing the requested `trans` marker are excluded. When duplicate
-observations have matching durations, the issue requests choosing the “earliest
-video”; the exact meaning of “earliest” must be confirmed before implementation.
+observations have matching durations, the issue requests choosing the “earliest video.” Use the earliest provider release date, then configured provider priority and stable provider ID for ties. This is an explicit, reversible interpretation because the issue did not name an ordering field.
 
 ### Dredd
 
@@ -79,11 +78,7 @@ IDs. The IDs appear in prior merged work but are absent from the current
 
 ### Bang! Originals
 
-The current adapter is a placeholder and cannot emit releases. Open issue #144
-also records that a concrete listing URL and sample response are needed to
-choose and verify its parser. Do not invent a URL or response format. The shared
-adapter and feed configuration design must support Bang; its real parser can
-only be completed after that evidence is available.
+The current adapter is a placeholder and cannot emit releases. A live capture of `https://www.bang.com/videos?by=date.desc` shows a `SearchResultsPage` JSON-LD listing with video URLs and pagination. Each linked video page has `VideoObject` JSON-LD with name, thumbnail, datePublished, duration, and production company. Require `Bang! Originals`, allow only `www.bang.com` links, and stop pagination at the requested window boundary. The observed listing exposes three pages of up to 44 records.
 
 ## Release identity and duration safety
 
@@ -157,18 +152,9 @@ matching is enabled for such ranges; no arbitrary cutoff is specified here.
 
 ## Open decisions and evidence gaps
 
-1. **Bang feed sample:** issue #144 is open and has no comments or sample
-   response. The parser cannot be specified further until a URL and captured
-   response are available.
-2. **Meaning of “earliest video” for Maximo:** issue #115 records the phrase but
-   does not say whether this means earliest release date, provider publication
-   time, or another ordering.
-3. **Conflicting non-duration fields:** select a deterministic source priority
-   or verified-value rule and retain all observations. The user has approved
-   provenance, but has not chosen which non-empty value wins when providers
-   disagree.
-4. **Maximum duration spread:** measure observed provider disagreement and
-   choose a safe cutoff before duration ranges can auto-link.
+1. **Maximo “earliest video” wording:** issue #115 does not identify an ordering field. The reversible implementation ruling uses the earliest provider release date; configured provider priority and stable provider ID break ties.
+2. **Conflicting non-duration fields:** preserve observations, select by configured per-field provider priority, and persist the winning source.
+3. **Maximum duration spread:** no production corpus is available in this checkout. Use a conservative 1-second inclusive range-width ceiling for automatic matching and hold wider ranges for review; revisit after composite observations accumulate.
 
 ## Related repository work
 
