@@ -11,7 +11,13 @@ export function applyStudioPolicy(source: SourceAdapter, feed: FeedDefinition): 
     async fetch(windowStart, context): Promise<SourceResult> {
       const result = await source.fetch(windowStart, context);
       const policy = feed.studioPolicy;
-      if (policy.mode === "split") return result;
+      if (policy.mode === "split") {
+        const scenes = result.scenes.map((scene) => {
+          if (scene.studioId?.trim() || scene.studio?.trim()) return scene;
+          return { ...scene, metadataPoor: true, studioIdentityMissing: true };
+        });
+        return { ...result, scenes };
+      }
       const scenes: RawScene[] = result.scenes.map((scene) => ({
         ...scene,
         providerStudioId: scene.providerStudioId ?? scene.studioId ?? source.id,

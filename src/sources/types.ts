@@ -37,6 +37,8 @@ export interface RawScene {
   /** Per-field provenance, e.g. `{ durationSec: "studio-site" }`. */
   fieldProvenance?: Record<string, string>;
   metadataPoor?: boolean;
+  /** Split-mode feed record omitted both its studio id and display name. */
+  studioIdentityMissing?: boolean;
   /** Verified release-page fields retained beside the provider's original values. */
   studioMetadata?: StudioEvidence | null;
   /** A sub-label identity, when one source emits several studio labels. */

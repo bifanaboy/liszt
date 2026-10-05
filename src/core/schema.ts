@@ -136,6 +136,8 @@ export const SceneBase = z.object({
   fieldProvenance: z.record(z.string(), z.string()).default({}),
   /** True when the source page could not supply a field the gate needs. */
   metadataPoor: z.boolean().default(false),
+  /** Split-mode feed record omitted both its studio id and display name. */
+  studioIdentityMissing: z.boolean().default(false),
   videoUrls: z.array(VideoLink).default([]),
   deadVideoUrls: z.array(DeadVideoLink).default([]),
   /** Last attempt to read the studio's own release details, when applicable. */

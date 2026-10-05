@@ -120,7 +120,11 @@ function render() {
     }).join("");
     const releaseUrl = safeUrl(scene.releaseUrl);
     const lowConfidence = scene.videoMatching && scene.videoMatching.confidence === "low";
-    const flag = scene.durationReview || scene.metadataPoor ? '<span class="review-tag" title="Provider durations disagree; inspect the release before trusting a playback match">REVIEW</span>' : (lowConfidence ? '<span class="review-tag" title="No tube found a title that names this scene. This link was chosen from videos that matched its duration and upload window, using view count only; check it by hand.">LOW CONFIDENCE</span>' : "");
+    const reasons = [];
+    if (scene.durationReview) reasons.push("Provider durations disagree; inspect the release before trusting a playback match.");
+    if (scene.studioIdentityMissing) reasons.push("Studio identity is missing; review before grouping this release under a studio.");
+    if (scene.metadataPoor && !scene.studioIdentityMissing) reasons.push("Required release metadata is incomplete; inspect the release before trusting its details.");
+    const flag = reasons.length ? `<span class="review-tag" title="${esc(reasons.join(" "))}">REVIEW</span>` : (lowConfidence ? '<span class="review-tag" title="No tube found a title that names this scene. This link was chosen from videos that matched its duration and upload window, using view count only; check it by hand.">LOW CONFIDENCE</span>' : "");
     const runtime = (value) => `${Math.floor(value / 60)}m ${String(value % 60).padStart(2, "0")}s`;
     const duration = scene.durationRange
       ? `${runtime(scene.durationRange.minSec)}–${runtime(scene.durationRange.maxSec)}`

@@ -212,6 +212,7 @@ export function normaliseScene(
     ],
     fieldProvenance: record.fieldProvenance ?? {},
     metadataPoor: record.metadataPoor ?? false,
+    studioIdentityMissing: record.studioIdentityMissing ?? false,
   };
   for (const field of ["storeId", "launchDate", "previewUrl", "price"] as const) {
     if (record[field] !== undefined) candidate[field] = record[field];

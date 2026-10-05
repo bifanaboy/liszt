@@ -25,6 +25,7 @@ function record(id: string, overrides: Record<string, unknown> = {}): Scene {
     ],
     fieldProvenance: { title: "provider-a", durationSec: "provider-b" },
     metadataPoor: false,
+    studioIdentityMissing: false,
     studioMetadataCheckedAt: null,
     videoUrls: [],
     deadVideoUrls: [],

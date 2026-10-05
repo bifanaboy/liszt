@@ -254,6 +254,43 @@ test("the Asian page shows only the Asian lanes, and its figures are its own", a
   assert.match(app.element("#list").innerHTML, /A release/);
 });
 
+test("review tooltip explains missing studio identity without claiming a duration conflict", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      scenes: [
+        {
+          ...release,
+          studioIdentityMissing: true,
+          metadataPoor: true,
+          videoMatching: { confidence: "high" },
+        },
+      ],
+    }),
+  );
+
+  const html = app.element("#list").innerHTML;
+  assert.match(html, /REVIEW/);
+  assert.match(html, /Studio identity is missing/);
+  assert.doesNotMatch(html, /Provider durations disagree/);
+});
+
+test("review tooltip describes duration disagreement and incomplete metadata accurately", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      scenes: [
+        { ...release, durationReview: true },
+        { ...release, title: "Incomplete", metadataPoor: true },
+      ],
+    }),
+  );
+
+  const html = app.element("#list").innerHTML;
+  assert.match(html, /Provider durations disagree/);
+  assert.match(html, /Required release metadata is incomplete/);
+});
+
 test("a #asian link opens the Asian page before the catalogue arrives", async () => {
   const app = await dashboard(async () => response(catalogue), "#asian");
   assert.equal(app.element("#catalogue-title").textContent, "Asian");

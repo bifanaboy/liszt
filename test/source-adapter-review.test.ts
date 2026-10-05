@@ -163,6 +163,30 @@ test("split studio policy preserves each studio identity emitted by a feed", asy
   );
 });
 
+test("split studio policy marks records with no studio identity for review", async () => {
+  const source: SourceAdapter = {
+    id: "provider",
+    name: "Provider",
+    authority: { name: "Provider", url: "https://example.test/feed", role: "Test feed" },
+    matcher: null,
+    async fetch() {
+      return {
+        verifiedEmpty: false,
+        scenes: [{ sourceSceneId: "one", title: "One", releaseDate: "2026-10-01", performers: [] }],
+      };
+    },
+  };
+  const result = await applyStudioPolicy(source, {
+    adapterId: source.id,
+    sourceUrl: source.authority.url,
+    studioPolicy: { mode: "split" },
+  }).fetch("2026-10-01", {} as SourceContext);
+
+  assert.equal(result.scenes[0]!.studioIdentityMissing, true);
+  assert.equal(result.scenes[0]!.metadataPoor, true);
+  assert.equal(result.scenes[0]!.studioId, undefined);
+});
+
 test("umbrella studio policy assigns every feed record to its declared alias", async () => {
   const source: SourceAdapter = {
     id: "provider",
