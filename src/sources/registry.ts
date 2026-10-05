@@ -84,7 +84,7 @@ export function createSources({
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
       createManyVidsSource({ storeId, store, minIntervalMs: manyvidsMinIntervalMs }),
     ),
-    createBangOriginalsStudio(),
+    createBangOriginalsStudio(maximoListingUrl, maximoAllowedHosts),
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
