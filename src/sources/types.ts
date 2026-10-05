@@ -6,11 +6,15 @@
 
 /** What a source adapter emits, before normalisation. */
 export interface RawScene {
+  /** Optional sub-feed identity when one adapter polls multiple declared feeds. */
+  providerId?: string;
   sourceSceneId: string;
   title: string;
   releaseDate: string;
   performers: string[];
   durationSec?: number | null;
+  durationRange?: { minSec: number; maxSec: number };
+  durationReview?: boolean;
   thumbnailUrl?: string;
   releaseUrl?: string;
   storeId?: string;
@@ -33,9 +37,64 @@ export interface RawScene {
   /** Per-field provenance, e.g. `{ durationSec: "studio-site" }`. */
   fieldProvenance?: Record<string, string>;
   metadataPoor?: boolean;
+  /** Split-mode feed record omitted both its studio id and display name. */
+  studioIdentityMissing?: boolean;
+  /** Verified release-page fields retained beside the provider's original values. */
+  studioMetadata?: StudioEvidence | null;
   /** A sub-label identity, when one source emits several studio labels. */
   studioId?: string;
   studio?: string;
+  /** Stable provider-side studio key retained when a feed uses an umbrella label. */
+  providerStudioId?: string;
+}
+
+export interface StudioEvidence {
+  fields: Partial<
+    Pick<RawScene, "title" | "releaseDate" | "performers" | "durationSec" | "thumbnailUrl" | "tags">
+  >;
+  provenance?: RawScene["provenance"];
+  fieldProvenance?: Record<string, string>;
+  fetchedAt: string;
+}
+
+/** A provider-native record together with its current canonical association. */
+export interface ProviderObservation {
+  providerId: string;
+  recordId: string;
+  sceneId: string;
+  studioId: string;
+  studio: string;
+  record: RawScene;
+  fetchedAt: string;
+}
+
+export type MergeField =
+  | "title"
+  | "releaseDate"
+  | "performers"
+  | "durationSec"
+  | "thumbnailUrl"
+  | "releaseUrl"
+  | "tags"
+  | "storeId"
+  | "launchDate"
+  | "previewUrl"
+  | "price"
+  | "studioCode";
+
+/** Higher entries win field conflicts; remaining ties sort by provider ID. */
+export interface MergePolicy {
+  priority?: Partial<Record<MergeField, readonly string[]>>;
+  oldestDate?: boolean;
+}
+
+export type StudioPolicy =
+  { mode: "split" } | { mode: "umbrella"; studioId: string; studio: string };
+
+export interface FeedDefinition {
+  adapterId: string;
+  sourceUrl: string;
+  studioPolicy: StudioPolicy;
 }
 
 export interface FetchOptions {
@@ -88,6 +147,8 @@ export interface SourceResult {
    * catalogue, so a bounded or partial run can never delete what it did not read.
    */
   excludedSceneIds?: string[];
+  /** Positively excluded native records when one adapter polls several providers. */
+  excludedRecords?: Array<{ providerId: string; recordId: string }>;
   /**
    * Explicitly true when the source really has no matching records. A result
    * with no scenes and `verifiedEmpty: false` is treated as suspicious and

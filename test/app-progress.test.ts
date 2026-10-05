@@ -254,6 +254,46 @@ test("the Asian page shows only the Asian lanes, and its figures are its own", a
   assert.match(app.element("#list").innerHTML, /A release/);
 });
 
+test("review disclosure explains missing studio identity without claiming a duration conflict", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      scenes: [
+        {
+          ...release,
+          studioIdentityMissing: true,
+          metadataPoor: true,
+          videoMatching: { confidence: "high" },
+        },
+      ],
+    }),
+  );
+
+  const html = app.element("#list").innerHTML;
+  assert.match(
+    html,
+    /<details class="review-reasons"><summary class="review-tag">REVIEW<\/summary><p>Studio identity is missing/,
+  );
+  assert.match(html, /Studio identity is missing/);
+  assert.doesNotMatch(html, /Provider durations disagree/);
+});
+
+test("review disclosure describes duration disagreement and incomplete metadata accurately", async () => {
+  const app = await dashboard(async () =>
+    response({
+      ...catalogue,
+      scenes: [
+        { ...release, durationReview: true },
+        { ...release, title: "Incomplete", metadataPoor: true },
+      ],
+    }),
+  );
+
+  const html = app.element("#list").innerHTML;
+  assert.match(html, /<\/summary><p>Provider durations disagree/);
+  assert.match(html, /<\/summary><p>Required release metadata is incomplete/);
+});
+
 test("a #asian link opens the Asian page before the catalogue arrives", async () => {
   const app = await dashboard(async () => response(catalogue), "#asian");
   assert.equal(app.element("#catalogue-title").textContent, "Asian");

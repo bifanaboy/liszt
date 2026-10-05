@@ -110,6 +110,11 @@ export const SceneBase = z.object({
   performers: z.array(z.string().min(1)).default([]),
   releaseDate: DateOnly,
   durationSec: z.number().int().positive().nullable().default(null),
+  durationRange: z
+    .object({ minSec: z.number().int().positive(), maxSec: z.number().int().positive() })
+    .refine((range) => range.minSec <= range.maxSec, "duration range is reversed")
+    .optional(),
+  durationReview: z.boolean().default(false),
   thumbnailUrl: z.string().default(""),
   releaseUrl: z.string().url().optional(),
   storeId: z.string().regex(/^\d+$/).optional(),
@@ -131,6 +136,8 @@ export const SceneBase = z.object({
   fieldProvenance: z.record(z.string(), z.string()).default({}),
   /** True when the source page could not supply a field the gate needs. */
   metadataPoor: z.boolean().default(false),
+  /** Split-mode feed record omitted both its studio id and display name. */
+  studioIdentityMissing: z.boolean().default(false),
   videoUrls: z.array(VideoLink).default([]),
   deadVideoUrls: z.array(DeadVideoLink).default([]),
   /** Last attempt to read the studio's own release details, when applicable. */

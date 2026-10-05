@@ -614,7 +614,13 @@ export function preFilter(
   if (
     durationToleranceSec !== undefined &&
     video.durationSec !== null &&
-    Math.abs(video.durationSec - (scene.durationSec ?? 0)) > durationToleranceSec
+    (scene.durationRange
+      ? Math.max(
+          scene.durationRange.minSec - video.durationSec,
+          0,
+          video.durationSec - scene.durationRange.maxSec,
+        )
+      : Math.abs(video.durationSec - (scene.durationSec ?? 0))) > durationToleranceSec
   ) {
     return false;
   }
@@ -816,8 +822,15 @@ export async function gatherPoolSurvivors(
   // working set is never examined again. That working set is where the rows
   // still missing an upload date live, so the starvation was permanent: a valid
   // candidate could never be hydrated, however many runs went by.
-  const band =
-    typeof scene.durationSec === "number" && Number.isFinite(scene.durationSec)
+  // The midpoint and half-width express the inclusive range using the same
+  // SQL band as a single duration, including the gate's tolerance at each end.
+  const band = scene.durationRange
+    ? {
+        durationSec: (scene.durationRange.minSec + scene.durationRange.maxSec) / 2,
+        toleranceSec:
+          (scene.durationRange.maxSec - scene.durationRange.minSec) / 2 + durationToleranceSec,
+      }
+    : typeof scene.durationSec === "number" && Number.isFinite(scene.durationSec)
       ? { durationSec: scene.durationSec, toleranceSec: durationToleranceSec }
       : undefined;
   for (const uploader of uploaders) {
@@ -913,7 +926,12 @@ export function createPoolLookup(options: PoolLookupOptions) {
   const { store, fetcher, uploaders, durationToleranceSec, dateWindowDays, log } = options;
 
   return async (scene: MatchScene, now: Date): Promise<PoolMatch | null> => {
-    if (!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) return null;
+    if (
+      scene.durationReview ||
+      ((!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) &&
+        !scene.durationRange)
+    )
+      return null;
     if (!Number.isFinite(Date.parse(scene.releaseDate))) return null;
 
     const gathered = await gatherPoolSurvivors(

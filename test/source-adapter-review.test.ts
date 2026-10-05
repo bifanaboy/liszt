@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createBangOriginalsStudio } from "../src/sources/bang-originals.ts";
 import { createMaximoGarciaStudio } from "../src/sources/maximo-garcia.ts";
-import type { SourceContext } from "../src/sources/types.ts";
+import { applyStudioPolicy } from "../src/sources/studio-policy.ts";
+import type { SourceAdapter, SourceContext } from "../src/sources/types.ts";
 
 function context(json: SourceContext["fetcher"]["json"]): SourceContext {
   return {
@@ -21,27 +21,6 @@ function context(json: SourceContext["fetcher"]["json"]): SourceContext {
     mapIsolated: async (items, task) => Promise.all(items.map(task)),
   };
 }
-
-const noRequests = context(async () => {
-  throw new Error("Unexpected JSON request");
-});
-
-test("Bang emits no fabricated release and does not verify an unparsed listing as empty", async () => {
-  const source = createBangOriginalsStudio("https://www.analvids.com/listing");
-  for (const windowStart of ["2026-10-01", "2026-10-06"]) {
-    assert.deepEqual(await source.fetch(windowStart, noRequests), {
-      scenes: [],
-      verifiedEmpty: false,
-    });
-  }
-});
-
-test("Bang still requires its listing URL", async () => {
-  await assert.rejects(
-    createBangOriginalsStudio().fetch("2026-10-01", noRequests),
-    /not configured/,
-  );
-});
 
 test("Maximo preserves Fansly evidence and filters releases using the supplied window", async () => {
   const dates = ["2026-10-01T00:00:00Z", "2026-09-30T23:59:59Z", "2026-10-05T12:00:01Z"];
@@ -141,4 +120,118 @@ test("Maximo preserves Fansly evidence and filters releases using the supplied w
     releaseDate: "Fansly",
     durationSec: "Fansly",
   });
+});
+
+test("split studio policy preserves each studio identity emitted by a feed", async () => {
+  const source: SourceAdapter = {
+    id: "provider",
+    name: "Provider",
+    authority: { name: "Provider", url: "https://example.test/feed", role: "Test feed" },
+    matcher: null,
+    async fetch() {
+      return {
+        verifiedEmpty: false,
+        scenes: [
+          {
+            sourceSceneId: "one",
+            title: "One",
+            releaseDate: "2026-10-01",
+            performers: [],
+            studioId: "first",
+            studio: "First",
+          },
+          {
+            sourceSceneId: "two",
+            title: "Two",
+            releaseDate: "2026-10-01",
+            performers: [],
+            studioId: "second",
+            studio: "Second",
+          },
+        ],
+      };
+    },
+  };
+  const result = await applyStudioPolicy(source, {
+    adapterId: source.id,
+    sourceUrl: source.authority.url,
+    studioPolicy: { mode: "split" },
+  }).fetch("2026-10-01", {} as SourceContext);
+  assert.deepEqual(
+    result.scenes.map((scene) => scene.studioId),
+    ["first", "second"],
+  );
+});
+
+test("split studio policy marks records with no studio identity for review", async () => {
+  const source: SourceAdapter = {
+    id: "provider",
+    name: "Provider",
+    authority: { name: "Provider", url: "https://example.test/feed", role: "Test feed" },
+    matcher: null,
+    async fetch() {
+      return {
+        verifiedEmpty: false,
+        scenes: [{ sourceSceneId: "one", title: "One", releaseDate: "2026-10-01", performers: [] }],
+      };
+    },
+  };
+  const result = await applyStudioPolicy(source, {
+    adapterId: source.id,
+    sourceUrl: source.authority.url,
+    studioPolicy: { mode: "split" },
+  }).fetch("2026-10-01", {} as SourceContext);
+
+  assert.equal(result.scenes[0]!.studioIdentityMissing, true);
+  assert.equal(result.scenes[0]!.metadataPoor, true);
+  assert.equal(result.scenes[0]!.studioId, undefined);
+});
+
+test("umbrella studio policy assigns every feed record to its declared alias", async () => {
+  const source: SourceAdapter = {
+    id: "provider",
+    name: "Provider",
+    authority: { name: "Provider", url: "https://example.test/feed", role: "Test feed" },
+    matcher: null,
+    async fetch() {
+      return {
+        verifiedEmpty: false,
+        scenes: [
+          {
+            sourceSceneId: "one",
+            title: "One",
+            releaseDate: "2026-10-01",
+            performers: [],
+            studioId: "first",
+            studio: "First",
+          },
+          {
+            sourceSceneId: "two",
+            title: "Two",
+            releaseDate: "2026-10-01",
+            performers: [],
+            studioId: "second",
+            studio: "Second",
+          },
+        ],
+      };
+    },
+  };
+  const result = await applyStudioPolicy(source, {
+    adapterId: source.id,
+    sourceUrl: source.authority.url,
+    studioPolicy: { mode: "umbrella", studioId: "DreddXXX", studio: "DreddXXX" },
+  }).fetch("2026-10-01", {} as SourceContext);
+  assert.deepEqual(
+    result.scenes.map((scene) => scene.studioId),
+    ["DreddXXX", "DreddXXX"],
+  );
+  assert.deepEqual(
+    result.scenes.map((scene) => scene.studio),
+    ["DreddXXX", "DreddXXX"],
+  );
+  assert.deepEqual(
+    result.scenes.map((scene) => scene.providerStudioId),
+    ["first", "second"],
+  );
 });

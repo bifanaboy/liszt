@@ -61,11 +61,6 @@ if (values.help || positionals.length === 0) {
 }
 
 const config = loadConfig();
-if (!config.tpdbApiKey) {
-  throw new Error("TPDB_API_KEY is not set; cannot resolve a studio");
-}
-const fetcher = new HttpFetcher(config.fetchTimeoutMs);
-
 const [traxxxUrl, tpdbUrl, positionalName] = positionals;
 const displayName = values.name ?? positionalName;
 
@@ -84,14 +79,20 @@ for (const url of urls) {
 const traxxxInput = urls.find((url) => TRAXXX_WEB_HOSTS.includes(new URL(url).hostname));
 const tpdbInput = urls.find((url) => TPDB_WEB_HOSTS.includes(new URL(url).hostname));
 
+if (tpdbInput && !config.tpdbApiKey) {
+  throw new Error("TPDB_API_KEY is not set; cannot resolve a TPDB studio URL");
+}
+const fetcher = new HttpFetcher(config.fetchTimeoutMs);
+
 const lane: TraxxxLaneSpec | undefined = traxxxInput
   ? parseTraxxxListingUrl(traxxxInput)
   : undefined;
 const lookup = tpdbInput ? parseTpdbStudioUrl(tpdbInput) : undefined;
 
-const resolved = lookup
-  ? await resolveTpdbSite(fetcher, config.tpdbApiKey, lookupForResolver(lookup, displayName))
-  : undefined;
+const resolved =
+  lookup && config.tpdbApiKey
+    ? await resolveTpdbSite(fetcher, config.tpdbApiKey, lookupForResolver(lookup, displayName))
+    : undefined;
 
 const studio = displayName ?? (lane ? lane.slug.replace(/-/g, " ") : undefined);
 if (!studio) {

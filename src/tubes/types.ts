@@ -28,6 +28,8 @@ export interface MatchScene {
   performers: string[];
   releaseDate: string;
   durationSec: number | null;
+  durationRange?: { minSec: number; maxSec: number };
+  durationReview?: boolean;
   /** Scene-code retrieval hint, e.g. Mambo Perv's OB codes. */
   sceneCode?: string;
 }
@@ -42,6 +44,8 @@ export function toMatchScene(scene: Scene): MatchScene {
     performers: scene.performers,
     releaseDate: scene.releaseDate,
     durationSec: scene.durationSec,
+    ...(scene.durationRange ? { durationRange: scene.durationRange } : {}),
+    durationReview: scene.durationReview,
     ...(scene.studioCode ? { sceneCode: scene.studioCode } : {}),
   };
 }

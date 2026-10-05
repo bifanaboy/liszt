@@ -16,6 +16,12 @@ test("the same page reached by different routes is one identity", () => {
   );
 });
 
+test("normalizes a dropped apostrophe within the same page path", () => {
+  const first = "https://www.letsdoeit.com/scene/11521133/balls-deep-in-ex-s-big-ass";
+  const second = "https://www.letsdoeit.com/scene/11521133/balls-deep-in-exs-big-ass";
+  assert.equal(releaseIdentity({ releaseUrl: first }), releaseIdentity({ releaseUrl: second }));
+});
+
 test("different pages are different identities", () => {
   assert.notEqual(
     releaseIdentity({ releaseUrl: "https://x.test/a" }),
@@ -25,6 +31,13 @@ test("different pages are different identities", () => {
     releaseIdentity({ releaseUrl: "https://x.test/scene?a=1" }),
     releaseIdentity({ releaseUrl: "https://x.test/scene?a=2" }),
     "a query string can distinguish two pages on one path",
+  );
+});
+
+test("similar titles on different hosts remain distinct identities", () => {
+  assert.notEqual(
+    releaseIdentity({ releaseUrl: "https://www.analvids.com/watch/4996438/curvy-tommy" }),
+    releaseIdentity({ releaseUrl: "https://www.sexlikereal.com/scenes/curvy-tommy-93382" }),
   );
 });
 

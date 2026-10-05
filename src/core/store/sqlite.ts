@@ -21,6 +21,7 @@ import {
   type RunOutcome,
 } from "../schema.ts";
 import { toIsoUtc } from "../matching.ts";
+import type { ProviderObservation, RawScene } from "../../sources/types.ts";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
 
@@ -279,6 +280,170 @@ export class SqliteStore {
       .run(sourceId, snapshot);
   }
 
+  /** Save the latest provider-native record without erasing omitted last-good fields. */
+  upsertProviderObservation(observation: ProviderObservation): void {
+    this.transaction(() => {
+      let prior = this.db
+        .prepare(
+          `SELECT provider_id, studio_id, record_json FROM provider_observations
+         WHERE provider_id = ? AND studio_id = ? AND record_id = ?`,
+        )
+        .get(observation.providerId, observation.studioId, observation.recordId) as
+        { provider_id: string; studio_id: string; record_json: string } | undefined;
+      if (!prior && observation.providerId.startsWith("tpdb-site-")) {
+        const legacy = this.db
+          .prepare(
+            `SELECT provider_id, studio_id, record_json FROM provider_observations
+           WHERE record_id = ? AND (provider_id = ? OR provider_id = 'tpdb-watchlist')`,
+          )
+          .all(observation.recordId, observation.providerId) as {
+          provider_id: string;
+          studio_id: string;
+          record_json: string;
+        }[];
+        if (legacy.length === 1) prior = legacy[0];
+      }
+      const record: RawScene = prior
+        ? { ...(JSON.parse(prior.record_json) as RawScene), ...observation.record }
+        : { ...observation.record };
+      if (prior) {
+        const previous = JSON.parse(prior.record_json) as RawScene;
+        for (const field of [
+          "performers",
+          "durationSec",
+          "thumbnailUrl",
+          "releaseUrl",
+          "tags",
+          "storeId",
+          "launchDate",
+          "previewUrl",
+          "price",
+          "studioCode",
+        ] as const) {
+          const value = observation.record[field];
+          const blank =
+            value === undefined ||
+            value === null ||
+            value === "" ||
+            (Array.isArray(value) && value.length === 0);
+          if (blank && previous[field] !== undefined && previous[field] !== null) {
+            Object.assign(record, { [field]: previous[field] });
+          }
+        }
+        record.fieldProvenance = {
+          ...previous.fieldProvenance,
+          ...observation.record.fieldProvenance,
+        };
+      }
+      this.db
+        .prepare(
+          `INSERT INTO provider_observations
+          (provider_id, record_id, studio_id, scene_id, studio, record_json, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (provider_id, studio_id, record_id) DO UPDATE SET
+          scene_id = excluded.scene_id,
+          studio = excluded.studio,
+          record_json = excluded.record_json,
+          fetched_at = excluded.fetched_at`,
+        )
+        .run(
+          observation.providerId,
+          observation.recordId,
+          observation.studioId,
+          observation.sceneId,
+          observation.studio,
+          JSON.stringify(record),
+          observation.fetchedAt,
+        );
+      if (
+        prior &&
+        (prior.provider_id !== observation.providerId || prior.studio_id !== observation.studioId)
+      ) {
+        this.db
+          .prepare(
+            "DELETE FROM provider_observations WHERE provider_id = ? AND studio_id = ? AND record_id = ?",
+          )
+          .run(prior.provider_id, prior.studio_id, observation.recordId);
+      }
+    });
+  }
+
+  /** Current observations, optionally restricted to one canonical release. */
+  listProviderObservations(sceneId?: string): ProviderObservation[] {
+    const rows = sceneId
+      ? this.db
+          .prepare(
+            `SELECT * FROM provider_observations WHERE scene_id = ?
+             ORDER BY provider_id, studio_id, record_id`,
+          )
+          .all(sceneId)
+      : this.db
+          .prepare(`SELECT * FROM provider_observations ORDER BY provider_id, studio_id, record_id`)
+          .all();
+    return (rows as Record<string, unknown>[]).map((row) => ({
+      providerId: String(row.provider_id),
+      recordId: String(row.record_id),
+      studioId: String(row.studio_id),
+      sceneId: String(row.scene_id),
+      studio: String(row.studio),
+      record: JSON.parse(String(row.record_json)) as RawScene,
+      fetchedAt: String(row.fetched_at),
+    }));
+  }
+
+  /** Drop only one provider's positively excluded native records. */
+  removeProviderRecords(providerId: string, recordIds: readonly string[]): string[] {
+    if (!recordIds.length) return [];
+    return this.transaction(() => {
+      const found = this.db
+        .prepare(
+          `SELECT scene_id FROM provider_observations
+           WHERE provider_id = ? AND record_id IN (${recordIds.map(() => "?").join(",")})`,
+        )
+        .all(providerId, ...recordIds) as { scene_id: string }[];
+      const sceneIds = new Set(found.map((row) => row.scene_id));
+
+      const scenes = this.db
+        .prepare("SELECT id FROM scenes WHERE source_id = ?")
+        .all(providerId) as { id: string }[];
+      for (const scene of scenes) {
+        if (recordIds.some((recordId) => scene.id.endsWith(`:${recordId}`))) {
+          sceneIds.add(scene.id);
+        }
+      }
+
+      this.db
+        .prepare(
+          `DELETE FROM provider_observations
+           WHERE provider_id = ? AND record_id IN (${recordIds.map(() => "?").join(",")})`,
+        )
+        .run(providerId, ...recordIds);
+      for (const sceneId of sceneIds) {
+        const retained = this.db
+          .prepare("SELECT 1 FROM provider_observations WHERE scene_id = ? LIMIT 1")
+          .get(sceneId);
+        if (!retained) this.deleteScene(sceneId);
+      }
+      return [...sceneIds];
+    });
+  }
+
+  /** Move every retained observation onto its merged canonical release. */
+  reassignProviderObservations(sceneIds: readonly string[], canonicalId: string): void {
+    for (const sceneId of new Set(sceneIds)) {
+      if (sceneId !== canonicalId) {
+        this.db
+          .prepare("UPDATE provider_observations SET scene_id = ? WHERE scene_id = ?")
+          .run(canonicalId, sceneId);
+      }
+    }
+  }
+
+  /** Delete a duplicate scene after its observations and links have been carried forward. */
+  deleteScene(sceneId: string): void {
+    this.db.prepare("DELETE FROM scenes WHERE id = ?").run(sceneId);
+  }
+
   /** Validate and save a scene, atomically replacing its stored fields and links. */
   upsertScene(scene: Scene): void {
     // Validate at the boundary before writing, so a malformed record names the
@@ -330,6 +495,8 @@ export class SqliteStore {
             launchDate: parsed.launchDate,
             previewUrl: parsed.previewUrl,
             price: parsed.price,
+            durationRange: parsed.durationRange,
+            durationReview: parsed.durationReview,
           }),
         );
 

@@ -2,15 +2,11 @@
 import { createFanslySource } from "./fansly.ts";
 import type { SourceAdapter, SourceContext, RawScene } from "./types.js";
 
-export function createMaximoGarciaStudio(
-  _listingUrl?: string,
-  _allowedHosts: readonly string[] = [
-    "sexlikereal.com",
-    "www.sexlikereal.com",
-    "analvids.com",
-    "www.analvids.com",
-  ],
-): SourceAdapter {
+export function isExcludedMaximoTitle(title: string): boolean {
+  return /(^|[^0-9a-z])trans([^0-9a-z]|$)/i.test(title);
+}
+
+export function createMaximoGarciaStudio(): SourceAdapter {
   return {
     id: "maximo-garcia",
     name: "Maximo Garcia",
@@ -21,15 +17,26 @@ export function createMaximoGarciaStudio(
     },
     matcher: "sxyprn+eporner",
     async fetch(windowStart: string, ctx: SourceContext) {
-      const fanslyAdapter = createFanslySource({ usernames: ["maximo_garcia"] });
-      const fanslyResult = await fanslyAdapter.fetch(windowStart, ctx);
+      const fansly = createFanslySource({ usernames: ["maximo_garcia"] });
+      const pulled = await fansly.fetch(windowStart, ctx);
+      const excludedSceneIds = [
+        ...new Set([
+          ...(pulled.excludedSceneIds ?? []),
+          ...pulled.scenes
+            .filter((scene) => isExcludedMaximoTitle(scene.title))
+            .map((scene) => scene.sourceSceneId),
+        ]),
+      ];
       // Keep the studio label while preserving Fansly provenance.
-      const scenes: RawScene[] = fanslyResult.scenes.map((s) => ({
-        ...s,
-        studioId: "maximo-garcia",
-        studio: "Maximo Garcia",
-      }));
-      return { scenes, verifiedEmpty: scenes.length === 0 ? true : fanslyResult.verifiedEmpty };
+      const scenes: RawScene[] = pulled.scenes
+        .filter((scene) => !isExcludedMaximoTitle(scene.title))
+        .map((scene) => ({ ...scene, studioId: "maximo-garcia", studio: "Maximo Garcia" }));
+      return {
+        scenes,
+        verifiedEmpty:
+          scenes.length === 0 ? pulled.verifiedEmpty || excludedSceneIds.length > 0 : false,
+        ...(excludedSceneIds.length ? { excludedSceneIds } : {}),
+      };
     },
   };
 }

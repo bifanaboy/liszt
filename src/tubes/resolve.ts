@@ -199,15 +199,15 @@ async function tryPool(
   // reported as an outage, which would otherwise make every run look degraded.
   if (!deps.poolLookup) return emptyAttempt();
   rejections.attempted += 1;
-  let match: PoolMatch | null;
+  let result: PoolMatch | null;
   try {
-    match = await deps.poolLookup(scene, deps.now);
+    result = await deps.poolLookup(scene, deps.now);
   } catch (error) {
     rejections.errored += 1;
     logRungFailure(deps, "eporner-pool", error);
     return emptyAttempt();
   }
-  const leftovers = (match?.fallbackCandidates ?? [])
+  const leftovers = (result?.fallbackCandidates ?? [])
     .filter((candidate) => candidate.url && !dead.has(candidate.url))
     .map((candidate) => ({
       source: "eporner-pool" as const,
@@ -219,45 +219,45 @@ async function tryPool(
   // empty. It must NOT also count as `noMatch`: the candidates past the cut were
   // never examined, and reporting them as a clean negative is the claim this
   // counter exists to stop making.
-  if (match?.hydrationCapped) rejections.incomplete += 1;
+  if (result?.hydrationCapped) rejections.incomplete += 1;
   // The pool rung reports a zeroed match rather than null when it ran and found
   // nothing, so a rejected count is always available and never inferred.
-  if (match?.rejected === "incomplete") {
+  if (result?.rejected === "incomplete") {
     // Return the survivors that DID clear the gate for the terminal fallback,
     // which is still a flagged guess rather than silence, but leave the rung's
     // own negative uncounted: the ladder has not exhausted its candidates.
     return { winner: null, leftovers };
   }
-  if (match?.rejected === "date" || match?.rejected === "duration") {
-    rejections.duration += match.rejected === "duration" ? 1 : 0;
-    rejections.date += match.rejectedByDate;
-    rejections.unknownDate += match.unknownDate;
+  if (result?.rejected === "date" || result?.rejected === "duration") {
+    rejections.duration += result.rejected === "duration" ? 1 : 0;
+    rejections.date += result.rejectedByDate;
+    rejections.unknownDate += result.unknownDate;
     rejections.noMatch += 1;
     return { winner: null, leftovers };
   }
-  if (match?.url && !dead.has(match.url) && match.identityTier > 0) {
+  if (result?.url && !dead.has(result.url) && result.identityTier > 0) {
     return {
       winner: {
-        link: linkFor("eporner-pool", match.url, deps.now),
-        tier: match.identityTier,
+        link: linkFor("eporner-pool", result.url, deps.now),
+        tier: result.identityTier,
       },
       leftovers: [],
     };
   }
-  if (!match || !match.url || dead.has(match.url) || match.identityTier === 0) {
+  if (!result || !result.url || dead.has(result.url) || result.identityTier === 0) {
     rejections.noMatch += 1;
     // Tests and injected callers may return an older-style winning row without
     // the survivor array. Retain that concrete row for the fallback instead of
     // silently losing the only evidence the rung returned.
-    if (match?.url && !dead.has(match.url) && !leftovers.length) {
+    if (result?.url && !dead.has(result.url) && !leftovers.length) {
       leftovers.push({
         source: "eporner-pool",
         candidate: {
-          url: match.url,
-          title: match.title,
+          url: result.url,
+          title: result.title,
           views: null,
         },
-        tier: match.identityTier,
+        tier: result.identityTier,
       });
     }
     return { winner: null, leftovers };
@@ -333,7 +333,15 @@ async function trySxyprn(
     // filters, so the second pick widens only to their largest observed delta
     // and defers date; it cannot admit anything new, it only orders survivors.
     const maxDelta = Math.max(
-      ...named.map((candidate) => Math.abs(candidate.duration - (scene.durationSec ?? 0))),
+      ...named.map((candidate) =>
+        scene.durationRange
+          ? Math.max(
+              scene.durationRange.minSec - candidate.duration,
+              0,
+              candidate.duration - scene.durationRange.maxSec,
+            )
+          : Math.abs(candidate.duration - (scene.durationSec ?? 0)),
+      ),
     );
     const best = pickMatch(scene, named, {
       durationToleranceSec: maxDelta,
@@ -376,7 +384,10 @@ export async function resolveScene(
     return { scene, changed: false, matched: false, rung: "none", tier: null };
   if (scene.videoUrls.length > 0)
     return { scene, changed: false, matched: false, rung: null, tier: null };
-  if (!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) {
+  if (
+    scene.durationReview ||
+    ((!Number.isFinite(scene.durationSec) || (scene.durationSec ?? 0) <= 0) && !scene.durationRange)
+  ) {
     return { scene, changed: false, matched: false, rung: null, tier: null };
   }
 
@@ -595,7 +606,11 @@ export async function resolveLinks({
   const eligible = scenes.filter((scene) => {
     if (matcherFor(scene).matcher === null) return false;
     if (scene.videoUrls.length > 0) return false;
-    return Number.isFinite(scene.durationSec) && (scene.durationSec ?? 0) > 0;
+    return (
+      !scene.durationReview &&
+      ((Number.isFinite(scene.durationSec) && (scene.durationSec ?? 0) > 0) ||
+        Boolean(scene.durationRange))
+    );
   });
   // `limit ? ... : ...` treated a limit of `0` as "no limit", which is the
   // opposite of what a caller passing 0 means, and passed a negative value

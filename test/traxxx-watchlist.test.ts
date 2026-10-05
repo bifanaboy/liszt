@@ -118,8 +118,9 @@ test("the registry replaces the retired Tushy lane with watchlist lanes", () => 
   for (const id of createTraxxxLaneIds(TRAXXX_WATCHLIST)) {
     assert.equal(ids.filter((sourceId) => sourceId === id).length, 1, id);
   }
-  assert.ok(!ids.includes("bang-originals"));
-  assert.ok(!ids.includes("maximo-garcia"));
+  assert.ok(ids.includes("bang-originals"));
+  assert.ok(ids.includes("maximo-garcia"));
+  assert.ok(!ids.includes("tpdb-watchlist"), "TPDB stays disabled until an API key is set");
   assert.ok(!ids.includes("tushy"));
 });
 

@@ -87,6 +87,25 @@ test("duration rejects at the boundary and accepts one second inside it", () => 
   assert.equal(MATCH_DURATION_TOLERANCE_SEC, 1);
 });
 
+test("a duration range accepts candidates inside the range and one second at either edge", () => {
+  const ranged = { ...scene, durationSec: null, durationRange: { minSec: 1418, maxSec: 1420 } };
+  for (const duration of [1417, 1418, 1419, 1420, 1421]) {
+    assert.ok(pickMatch(ranged, [candidate({ duration })], WINDOW), `${duration} should pass`);
+  }
+  assert.equal(pickMatch(ranged, [candidate({ duration: 1416 })], WINDOW), null);
+  assert.equal(pickMatch(ranged, [candidate({ duration: 1422 })], WINDOW), null);
+});
+
+test("a duration range marked for review cannot match automatically", () => {
+  const ranged = {
+    ...scene,
+    durationSec: null,
+    durationRange: { minSec: 1418, maxSec: 1420 },
+    durationReview: true,
+  };
+  assert.equal(pickMatch(ranged, [candidate()], WINDOW), null);
+});
+
 test("the reported bug: a 1845s decoy cannot be admitted by a 1847s scene", () => {
   // The exact trio from the report. The comparison is `> tolerance`, so a
   // tolerance of 2 admitted this decoy on the inclusive boundary: `2 > 2` is

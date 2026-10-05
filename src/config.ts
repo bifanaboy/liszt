@@ -6,7 +6,6 @@
  */
 import { z } from "zod";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { auditStudioLinks, StudioLinkSchema } from "./sources/studio-identity.ts";
 import { DEFAULT_FETCH_CONCURRENCY } from "./core/concurrency.ts";
 import { DEFAULT_TIMEOUT_MS } from "./core/fetcher.ts";
@@ -113,6 +112,8 @@ export const Config = z.object({
 
   manyvidsStoreIds: z.array(z.string().regex(/^\d+$/)).default(["1003095958"]),
   manyvidsMinIntervalMs: z.coerce.number().int().min(0).default(400),
+  /** Verified JSON-LD listing consumed by the Bang provider adapter. */
+  bangListingUrl: z.string().url().default("https://www.bang.com/videos?by=date.desc"),
 
   // Tube ladder.
   trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
@@ -236,7 +237,7 @@ const studioLinksFromEnv = (value: string | undefined): unknown => {
  * Fallback reader: committed default studio links from repo root. */
 function readDefaultStudioLinks(): unknown {
   try {
-    const path = join(__dirname, "..", "studio-links.default.json");
+    const path = new URL("../studio-links.default.json", import.meta.url);
     return JSON.parse(readFileSync(path, "utf8"));
   } catch {
     return [];
@@ -284,6 +285,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
             ),
           ],
     manyvidsMinIntervalMs: env.LISZT_MANYVIDS_MIN_INTERVAL_MS,
+    bangListingUrl: env.LISZT_BANG_LISTING_URL,
     trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,

@@ -193,9 +193,22 @@ test("sync preserves prior studio metadata only for Traxxx records not selected 
         isTraxxx
           ? {
               ...fieldProvenance,
+              ...(scene.releaseUrl ? { releaseUrl: "metadata" } : {}),
               ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
             }
-          : {},
+          : Object.fromEntries(
+              ["title", "releaseDate", "performers", "durationSec", "thumbnailUrl", "releaseUrl"]
+                .filter((field) => {
+                  const value = scene[field as keyof typeof scene];
+                  return (
+                    value !== undefined &&
+                    value !== null &&
+                    value !== "" &&
+                    !(Array.isArray(value) && !value.length)
+                  );
+                })
+                .map((field) => [field, "metadata"]),
+            ),
         scene.sourceSceneId,
       );
       assert.equal(
@@ -502,6 +515,10 @@ test("studio detail lookups are capped at 50 scenes per sync", async () => {
     assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.title, "Old title");
     assert.deepEqual(store.getScene("traxxx-watchlist:tushy:50")?.fieldProvenance, {
       title: "studio-site",
+      releaseDate: "traxxx-watchlist",
+      performers: "traxxx-watchlist",
+      durationSec: "traxxx-watchlist",
+      releaseUrl: "traxxx-watchlist",
     });
   } finally {
     store.close();
@@ -686,8 +703,8 @@ test("explicit retirement prunes only named source ids and keeps a failing activ
   await sync("outage");
 
   assert.equal(store.getScene("tushy:old"), null);
-  assert.ok(RETIRED_SOURCE_IDS.includes("bang-originals"));
-  assert.ok(RETIRED_SOURCE_IDS.includes("maximo-garcia"));
+  assert.equal(RETIRED_SOURCE_IDS.includes("bang-originals"), false);
+  assert.equal(RETIRED_SOURCE_IDS.includes("maximo-garcia"), false);
   assert.ok(store.getScene("active:current"));
   assert.deepEqual(
     store.listSources().map((status) => status.sourceId),
@@ -733,12 +750,25 @@ test("a failed poll keeps the source's last-good in-window rows", async () => {
 
   await sync("first");
   assert.equal(store.listWindow(FROM, "2026-03-10").length, 2);
+  const prior = store
+    .listProviderObservations()
+    .map((item) => item.recordId)
+    .sort();
+  assert.deepEqual(prior, ["1", "2"]);
 
   healthy = false;
   const second = await sync("second");
   assert.equal(second.outcomes[0]?.ok, false);
   // Retention: the records a temporarily-failing upstream omitted survive.
   assert.equal(store.listWindow(FROM, "2026-03-10").length, 2);
+  assert.deepEqual(
+    store
+      .listProviderObservations()
+      .map((item) => item.recordId)
+      .sort(),
+    prior,
+    "a failed poll leaves provider observations untouched",
+  );
   store.close();
 });
 

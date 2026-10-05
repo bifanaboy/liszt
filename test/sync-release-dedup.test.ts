@@ -58,18 +58,159 @@ test("one release described by two lanes is stored once", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
   try {
-    await buildSync(store, [
+    const sync = buildSync(store, [
       adapter("channel-darkkotv-anal", () => [
-        raw("1", { studioId: "channel-darkkotv-anal", releaseUrl: RELEASE }),
+        raw("1", {
+          studioId: "channel-darkkotv-anal",
+          releaseUrl: RELEASE,
+          thumbnailUrl: "",
+          fieldProvenance: { title: "channel-darkkotv-anal" },
+        }),
       ]),
       adapter("tpdb-watchlist", () => [
         raw("e265ca40-3ed9-4307-b583-e1a50f2346d0", {
           studioId: "channel-darkkotv-anal",
           releaseUrl: RELEASE.toUpperCase(),
+          thumbnailUrl: "https://img.test/scene.jpg",
+          fieldProvenance: { thumbnailUrl: "TPDB" },
+        }),
+      ]),
+    ]);
+    await sync("first");
+    const stored = store.listAll();
+    assert.equal(stored.length, 1, "the release is stored once");
+    assert.equal(store.listProviderObservations(stored[0]!.id).length, 2);
+    assert.equal(stored[0]?.thumbnailUrl, "https://img.test/scene.jpg");
+    assert.equal(stored[0]?.fieldProvenance.thumbnailUrl, "tpdb-watchlist");
+    assert.equal(stored[0]?.provenance.length, 2);
+    assert.equal(stored[0]?.sourceId, "channel-darkkotv-anal");
+    await sync("second");
+    const refreshed = store.listAll();
+    assert.equal(refreshed.length, 1);
+    assert.equal(refreshed[0]?.id, stored[0]?.id);
+    assert.equal(refreshed[0]?.sourceId, stored[0]?.sourceId);
+    assert.equal(refreshed[0]?.source, stored[0]?.source);
+  } finally {
+    store.close();
+  }
+});
+
+test("punctuation variants update one canonical release", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("provider-a", () => [
+        raw("first", {
+          studioId: "studio",
+          releaseUrl: "https://www.letsdoeit.com/scene/11521133/balls-deep-in-ex-s-big-ass",
+        }),
+      ]),
+      adapter("provider-b", () => [
+        raw("second", {
+          studioId: "studio",
+          releaseUrl: "https://www.letsdoeit.com/scene/11521133/balls-deep-in-exs-big-ass",
         }),
       ]),
     ])("first");
-    assert.equal(store.listAll().length, 1, "the release is stored once");
+    assert.equal(store.listAll().length, 1);
+    assert.equal(store.listProviderObservations().length, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("similar titles on different hosts do not merge", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("provider-a", () => [
+        raw("first", {
+          studioId: "studio",
+          title: "Curvy Tommy King’s Anal Fuck",
+          releaseDate: "2026-03-01",
+          releaseUrl: "https://www.analvids.com/watch/4996438/curvy-tommy-king",
+        }),
+      ]),
+      adapter("provider-b", () => [
+        raw("second", {
+          studioId: "studio",
+          title: "Curvy Tommy Kings Anal Fuck",
+          releaseDate: "2026-03-01",
+          releaseUrl: "https://www.sexlikereal.com/scenes/curvy-tommy-kings-93382",
+        }),
+      ]),
+    ])("first");
+    assert.equal(store.listAll().length, 2);
+  } finally {
+    store.close();
+  }
+});
+
+test("Maximo cross-provider records merge by normalized title and keep the oldest release date", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("maximo-garcia", () => [
+        raw("fansly-1", {
+          studioId: "maximo-garcia",
+          studio: "Maximo Garcia",
+          title: "A Shared Release!",
+          releaseDate: "2026-03-05",
+          durationSec: 600,
+          releaseUrl: "https://fansly.com/maximo_garcia/post/1",
+        }),
+      ]),
+      adapter("tpdb-watchlist", () => [
+        raw("mv-1", {
+          providerId: "tpdb-site-7875",
+          studioId: "tpdb-maximogarcia",
+          studio: "Maximo Garcia",
+          title: "A Shared-Release",
+          releaseDate: "2026-03-04",
+          durationSec: 600,
+          releaseUrl: "https://www.maximogarcia.com/scene/1/shared-release/",
+        }),
+      ]),
+    ])("first");
+    assert.equal(store.listAll().length, 1);
+    assert.equal(store.listProviderObservations().length, 2);
+    assert.equal(store.listAll()[0]?.releaseDate, "2026-03-04");
+  } finally {
+    store.close();
+  }
+});
+
+test("Maximo duration disagreements are retained as a reviewable range", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    await buildSync(store, [
+      adapter("maximo-garcia", () => [
+        raw("fansly-1", {
+          studioId: "maximo-garcia",
+          title: "A Shared Release",
+          releaseDate: "2026-03-05",
+          durationSec: 600,
+        }),
+      ]),
+      adapter("tpdb-watchlist", () => [
+        raw("mv-1", {
+          providerId: "tpdb-site-7875",
+          studioId: "tpdb-maximogarcia",
+          title: "A Shared Release",
+          releaseDate: "2026-03-04",
+          durationSec: 602,
+        }),
+      ]),
+    ])("first");
+    const scene = store.listAll()[0]!;
+    assert.equal(store.listAll().length, 1);
+    assert.equal(scene.durationSec, null);
+    assert.deepEqual(scene.durationRange, { minSec: 600, maxSec: 602 });
+    assert.equal(scene.durationReview, true);
   } finally {
     store.close();
   }
@@ -97,6 +238,42 @@ test("a scene still updates itself on later syncs", async () => {
       "the update lands",
     );
     assert.equal(store.listAll().length, 1);
+  } finally {
+    store.close();
+  }
+});
+
+test("a later provider joins the existing canonical release without changing its ID", async () => {
+  const store = new SqliteStore(":memory:");
+  store.migrate();
+  try {
+    let present = false;
+    const first = adapter("provider-a", () => [
+      raw("first", { studioId: "studio", releaseUrl: RELEASE, title: "Original title" }),
+    ]);
+    const second = adapter("provider-b", () =>
+      present
+        ? [
+            raw("second", {
+              studioId: "studio",
+              releaseUrl: RELEASE,
+              title: "Corrected title",
+              thumbnailUrl: "https://img.test/poster.jpg",
+            }),
+          ]
+        : [],
+    );
+    const sync = buildSync(store, [first, second]);
+    await sync("first");
+    const id = store.listAll()[0]?.id;
+    present = true;
+    await sync("second");
+
+    assert.equal(store.listAll().length, 1);
+    assert.equal(store.listAll()[0]?.id, id);
+    assert.equal(store.listAll()[0]?.title, "Original title");
+    assert.equal(store.listAll()[0]?.thumbnailUrl, "https://img.test/poster.jpg");
+    assert.equal(store.listProviderObservations(id).length, 2);
   } finally {
     store.close();
   }
