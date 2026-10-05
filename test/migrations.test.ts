@@ -5,7 +5,6 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
-import { Scene } from "../src/core/schema.ts";
 import { createSync } from "../src/pipeline/sync.ts";
 import { NullLogger } from "../src/core/logger.ts";
 import { fixedClock } from "../src/sources/types.ts";
@@ -77,57 +76,71 @@ test("observation migration preserves release IDs, playback history, and last-go
   }
   db.close();
 
-  const legacy = new SqliteStore(path);
+  // Seed the old schema directly: today's store requires today's migrations.
   const id = "bang-originals:scene-1";
-  legacy.upsertScene(
-    Scene.parse({
+  const legacy = new DatabaseSync(path);
+  legacy
+    .prepare(
+      `INSERT INTO scenes
+    (id, source_id, source, label_id, label, title, studio_code, storefront,
+     metadata_poor, release_date, duration_sec, performers, thumbnail_url, release_url,
+     provenance, field_provenance, video_checked_at, video_matching)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
       id,
-      sourceId: "bang-originals",
-      source: "Bang! Originals",
-      labelId: "bang-originals",
-      label: "Bang! Originals",
-      title: "Existing release",
-      studioCode: "original-123",
-      storeId: "12345",
-      metadataPoor: true,
-      releaseDate: "2026-10-02",
-      durationSec: 1200,
-      performers: ["Alex"],
-      thumbnailUrl: "https://bang.test/poster.jpg",
-      releaseUrl: "https://bang.test/video/1",
-      provenance: [
+      "bang-originals",
+      "Bang! Originals",
+      "bang-originals",
+      "Bang! Originals",
+      "Existing release",
+      "original-123",
+      JSON.stringify({ storeId: "12345" }),
+      1,
+      "2026-10-02",
+      1200,
+      JSON.stringify(["Alex"]),
+      "https://bang.test/poster.jpg",
+      "https://bang.test/video/1",
+      JSON.stringify([
         {
           source: "Bang! Originals",
           fetchedAt: "2026-10-02T00:00:00.000Z",
           sourceSceneId: "scene-1",
           recordUrl: "https://bang.test/video/1",
         },
-      ],
-      fieldProvenance: { title: "bang-originals" },
-      videoUrls: [
-        {
-          source: "eporner",
-          url: "https://tube.test/live",
-          verifiedAt: "2026-10-03T00:00:00.000Z",
-        },
-      ],
-      deadVideoUrls: [
-        {
-          source: "sxyprn",
-          url: "https://tube.test/dead",
-          deadAt: "2026-10-03T00:00:00.000Z",
-          deadReason: "not found",
-        },
-      ],
-      videoCheckedAt: "2026-10-03T00:00:00.000Z",
-      videoMatching: {
+      ]),
+      JSON.stringify({ title: "bang-originals" }),
+      "2026-10-03T00:00:00.000Z",
+      JSON.stringify({
         lane: "trusted-pool",
         matchedAt: "2026-10-03T00:00:00.000Z",
         rule: "identity",
         confidence: "high",
-      },
-    }),
-  );
+      }),
+    );
+  legacy
+    .prepare(
+      `INSERT INTO scene_links
+    (scene_id, kind, source, url, verified_at, dead_at, dead_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, "live", "eporner", "https://tube.test/live", "2026-10-03T00:00:00.000Z", null, null);
+  legacy
+    .prepare(
+      `INSERT INTO scene_links
+    (scene_id, kind, source, url, verified_at, dead_at, dead_reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      "dead",
+      "sxyprn",
+      "https://tube.test/dead",
+      null,
+      "2026-10-03T00:00:00.000Z",
+      "not found",
+    );
   legacy.close();
 
   const upgraded = new SqliteStore(path);
@@ -136,6 +149,7 @@ test("observation migration preserves release IDs, playback history, and last-go
     const stored = upgraded.getScene(id);
     assert.equal(stored?.id, id);
     assert.equal(stored?.videoUrls[0]?.url, "https://tube.test/live");
+    assert.equal(stored?.videoUrls[0]?.part, undefined, "migration must not invent parts");
     assert.equal(stored?.deadVideoUrls[0]?.url, "https://tube.test/dead");
     assert.equal(stored?.videoCheckedAt, "2026-10-03T00:00:00.000Z");
     assert.equal(stored?.videoMatching?.lane, "trusted-pool");
