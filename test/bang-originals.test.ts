@@ -46,6 +46,22 @@ function context(pages: Record<string, string>) {
   };
 }
 
+test("Bang follows pagination links with escaped HTML ampersands", async () => {
+  const first = "https://www.bang.com/video/first/first-scene";
+  const second = "https://www.bang.com/video/second/second-scene";
+  const url = "https://www.bang.com/videos?by=date.desc";
+  const next = `${url}&page=2`;
+  const fixture = context({
+    [url]: listing([first], '<a href="/videos?by=date.desc&amp;page=2">Next</a>'),
+    [next]: listing([second]),
+    [first]: detail(),
+    [second]: detail(),
+  });
+  const result = await createBangOriginalsStudio(url).fetch("2026-10-01", fixture.ctx);
+  assert.equal(result.scenes.length, 2);
+  assert.ok(fixture.calls.includes(next));
+});
+
 test("Bang parses verified VideoObject records from listing pages", async () => {
   const scene = "https://www.bang.com/video/abc123/a-verified-scene";
   const listingUrl = "https://www.bang.com/videos?by=date.desc";

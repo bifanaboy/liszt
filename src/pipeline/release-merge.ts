@@ -20,6 +20,12 @@ function present(value: unknown): boolean {
   return !Array.isArray(value) || value.length > 0;
 }
 
+function value(record: ProviderObservation, field: MergeField): unknown {
+  const fields = record.record.studioMetadata?.fields as
+    Partial<Record<MergeField, unknown>> | undefined;
+  return fields?.[field] ?? record.record[field];
+}
+
 function ranked(
   observations: readonly ProviderObservation[],
   field: MergeField,
@@ -53,33 +59,43 @@ export function mergeRelease(
   const output: RawScene = {
     ...lead.record,
     sourceSceneId: lead.recordId,
-    studioId: lead.studioId,
-    studio: lead.studio,
+    studioId: lead.record.studioId ?? lead.studioId,
+    studio: lead.record.studio ?? lead.studio,
     fieldProvenance: {},
   };
   const provenance: Record<string, string> = {};
 
   for (const field of fields) {
     const candidates = ranked(observations, field, policy).filter((item) =>
-      present(item.record[field]),
+      present(value(item, field)),
     );
     const winner =
       field === "releaseDate" && policy.oldestDate
         ? [...candidates].sort(
             (first, second) =>
-              first.record.releaseDate.localeCompare(second.record.releaseDate) ||
+              String(value(first, "releaseDate")).localeCompare(
+                String(value(second, "releaseDate")),
+              ) ||
               ranked(observations, field, policy).indexOf(first) -
                 ranked(observations, field, policy).indexOf(second),
           )[0]
         : candidates[0];
     if (!winner) continue;
-    Object.assign(output, { [field]: winner.record[field] });
-    provenance[field] = winner.providerId;
+    Object.assign(output, { [field]: value(winner, field) });
+    provenance[field] =
+      winner.record.studioMetadata?.fields[
+        field as keyof typeof winner.record.studioMetadata.fields
+      ] !== undefined
+        ? (winner.record.studioMetadata.fieldProvenance?.[field] ?? "studio-site")
+        : winner.providerId;
   }
 
   const durations = observations
-    .map((item) => item.record.durationSec)
-    .filter((value): value is number => Number.isSafeInteger(value) && (value ?? 0) > 0);
+    .map((item) => value(item, "durationSec"))
+    .filter(
+      (duration): duration is number =>
+        typeof duration === "number" && Number.isSafeInteger(duration) && duration > 0,
+    );
   if (durations.length) {
     const minimum = Math.min(...durations);
     const maximum = Math.max(...durations);
@@ -92,10 +108,15 @@ export function mergeRelease(
       provenance.durationSec = [
         ...new Set(
           observations
-            .filter(
-              (item) => item.record.durationSec !== undefined && item.record.durationSec !== null,
-            )
-            .map((item) => item.providerId),
+            .filter((item) => {
+              const duration = value(item, "durationSec");
+              return typeof duration === "number" && Number.isSafeInteger(duration) && duration > 0;
+            })
+            .map((item) =>
+              item.record.studioMetadata?.fields.durationSec !== undefined
+                ? (item.record.studioMetadata.fieldProvenance?.durationSec ?? "studio-site")
+                : item.providerId,
+            ),
         ),
       ].join(", ");
     }

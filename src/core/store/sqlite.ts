@@ -283,13 +283,26 @@ export class SqliteStore {
   /** Save the latest provider-native record without erasing omitted last-good fields. */
   upsertProviderObservation(observation: ProviderObservation): void {
     this.transaction(() => {
-      const prior = this.db
+      let prior = this.db
         .prepare(
-          `SELECT record_json FROM provider_observations
+          `SELECT provider_id, studio_id, record_json FROM provider_observations
          WHERE provider_id = ? AND studio_id = ? AND record_id = ?`,
         )
         .get(observation.providerId, observation.studioId, observation.recordId) as
-        { record_json: string } | undefined;
+        { provider_id: string; studio_id: string; record_json: string } | undefined;
+      if (!prior && observation.providerId.startsWith("tpdb-site-")) {
+        const legacy = this.db
+          .prepare(
+            `SELECT provider_id, studio_id, record_json FROM provider_observations
+           WHERE record_id = ? AND (provider_id = ? OR provider_id = 'tpdb-watchlist')`,
+          )
+          .all(observation.recordId, observation.providerId) as {
+          provider_id: string;
+          studio_id: string;
+          record_json: string;
+        }[];
+        if (legacy.length === 1) prior = legacy[0];
+      }
       const record: RawScene = prior
         ? { ...(JSON.parse(prior.record_json) as RawScene), ...observation.record }
         : { ...observation.record };
@@ -342,6 +355,16 @@ export class SqliteStore {
           JSON.stringify(record),
           observation.fetchedAt,
         );
+      if (
+        prior &&
+        (prior.provider_id !== observation.providerId || prior.studio_id !== observation.studioId)
+      ) {
+        this.db
+          .prepare(
+            "DELETE FROM provider_observations WHERE provider_id = ? AND studio_id = ? AND record_id = ?",
+          )
+          .run(prior.provider_id, prior.studio_id, observation.recordId);
+      }
     });
   }
 

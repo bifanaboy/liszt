@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RawScene, SourceAdapter, SourceContext } from "./types.ts";
+import { isExcludedMaximoTitle } from "./maximo-garcia.ts";
 
 const Meta = z.object({
   current_page: z.number().int().positive(),
@@ -141,6 +142,7 @@ export function createTpdbWatchlistSource(options: {
         }
       }
       const scenes: RawScene[] = [];
+      const excludedRecords: { providerId: string; recordId: string }[] = [];
       for (const [siteId, studio] of sites) {
         for await (const page of pages(
           ctx,
@@ -160,9 +162,19 @@ export function createTpdbWatchlistSource(options: {
             ) {
               continue;
             }
+            if (
+              ["maximo-garcia", "tpdb-maximogarcia"].includes(studio.studioId) ||
+              cleanStudioName(studio.studio) === "maximogarcia"
+            ) {
+              if (isExcludedMaximoTitle(scene.title)) {
+                excludedRecords.push({ providerId: `tpdb-site-${siteId}`, recordId: scene.id });
+                continue;
+              }
+            }
             const recordUrl = scene.url ?? undefined;
             scenes.push({
               providerId: `tpdb-site-${siteId}`,
+              providerStudioId: `tpdb-site-${siteId}`,
               sourceSceneId: scene.id,
               studioId: studio.studioId,
               studio: studio.studio,
@@ -193,7 +205,11 @@ export function createTpdbWatchlistSource(options: {
       // if no sites matched (e.g. name drift, no token), report it explicitly
       // rather than unconditionally claiming success.
       const verified = sites.size > 0 || scenes.length > 0;
-      return { scenes, verifiedEmpty: verified };
+      return {
+        scenes,
+        verifiedEmpty: verified,
+        ...(excludedRecords.length ? { excludedRecords } : {}),
+      };
     },
   };
 }

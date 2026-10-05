@@ -246,6 +246,10 @@ function canonicalStudio(id: string): string {
   return id === "tpdb-maximogarcia" || id === "manyvids-1003095958" ? "maximo-garcia" : id;
 }
 
+function assignedStudio(observation: ProviderObservation): string {
+  return canonicalStudio(observation.record.studioId ?? observation.studioId);
+}
+
 function mergeHistory(scene: Scene, history: readonly Scene[]): void {
   const dead = new Map<string, Scene["deadVideoUrls"][number]>();
   const live = new Map<string, Scene["videoUrls"][number]>();
@@ -272,6 +276,7 @@ export function reconcileReleases(
   from: string,
   to: string,
   now: Date,
+  establishedIds: ReadonlySet<string> = new Set(),
 ): void {
   const scenes = store.listWindow(from, to);
   const existing = new Map(scenes.map((scene) => [scene.id, scene]));
@@ -280,15 +285,15 @@ export function reconcileReleases(
   for (const record of records) {
     const identity = releaseIdentity(record.record);
     const title = record.record.title.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const duration = record.record.durationSec;
+    const duration = record.record.studioMetadata?.fields.durationSec ?? record.record.durationSec;
     const key =
-      canonicalStudio(record.studioId) === "maximo-garcia" &&
+      assignedStudio(record) === "maximo-garcia" &&
       title &&
       Number.isSafeInteger(duration) &&
       duration! > 0
-        ? JSON.stringify(["maximo-title", canonicalStudio(record.studioId), title])
+        ? JSON.stringify(["maximo-title", assignedStudio(record), title])
         : identity
-          ? JSON.stringify(["url", canonicalStudio(record.studioId), identity])
+          ? JSON.stringify(["url", assignedStudio(record), identity])
           : JSON.stringify([record.providerId, record.studioId, record.recordId]);
     const cluster = clusters.get(key) ?? [];
     cluster.push(record);
@@ -297,36 +302,10 @@ export function reconcileReleases(
 
   const policy = sourcePolicy(sources);
   const rank = new Map(sources.map((source, index) => [source.id, index]));
-  const providers = new Set(sources.map((source) => source.id));
   for (const cluster of clusters.values()) {
-    if (cluster.length === 1) {
-      const item = cluster[0]!;
-      const scene = existing.get(item.sceneId);
-      const related =
-        scene &&
-        (scene.sourceId === item.providerId ||
-          (item.providerId.startsWith("tpdb-site-") && scene.sourceId === "tpdb-watchlist"));
-      const stale =
-        scene &&
-        (Object.values(scene.fieldProvenance).some((field) =>
-          field
-            .split(/,\s*/)
-            .some(
-              (provider) =>
-                (providers.has(provider) || provider.startsWith("tpdb-site-")) &&
-                provider !== item.providerId,
-            ),
-        ) ||
-          scene.provenance.some(
-            (source) =>
-              (providers.has(source.source) || source.source.startsWith("tpdb-site-")) &&
-              source.source !== item.providerId,
-          ));
-      if (related && !stale) continue;
-    }
     const linked = cluster.every((record) => releaseIdentity(record.record));
-    const maximo = cluster.every((record) => canonicalStudio(record.studioId) === "maximo-garcia");
-    if (maximo || !linked) {
+    const maximo = cluster.every((record) => assignedStudio(record) === "maximo-garcia");
+    if (cluster.length > 1 && (maximo || !linked)) {
       const counts = new Map<string, number>();
       for (const record of cluster) {
         counts.set(record.providerId, (counts.get(record.providerId) ?? 0) + 1);
@@ -340,6 +319,7 @@ export function reconcileReleases(
     if (!stored.length) continue;
     stored.sort(
       (first, second) =>
+        Number(establishedIds.has(second.id)) - Number(establishedIds.has(first.id)) ||
         second.videoUrls.length - first.videoUrls.length ||
         (rank.get(first.sourceId) ?? Number.MAX_SAFE_INTEGER) -
           (rank.get(second.sourceId) ?? Number.MAX_SAFE_INTEGER) ||
@@ -370,8 +350,7 @@ export function reconcileReleases(
     const mergePolicy = {
       ...policy,
       oldestDate:
-        cluster.every((record) => canonicalStudio(record.studioId) === "maximo-garcia") &&
-        sameDuration,
+        cluster.every((record) => assignedStudio(record) === "maximo-garcia") && sameDuration,
     };
     const release = mergeRelease(cluster, mergePolicy);
     if (maximo) {
@@ -382,18 +361,35 @@ export function reconcileReleases(
     scene.id = canonical.id;
     scene.sourceId = canonical.sourceId;
     scene.source = canonical.source;
-    scene.provenance = cluster.map((record) => ({
-      source: record.providerId,
-      fetchedAt: record.fetchedAt,
-      sourceSceneId: record.recordId,
-      ...(record.record.provenance?.sourceUrl
-        ? { sourceUrl: record.record.provenance.sourceUrl }
-        : {}),
-      ...((record.record.provenance?.recordUrl ?? record.record.releaseUrl)
-        ? { recordUrl: record.record.provenance?.recordUrl ?? record.record.releaseUrl }
-        : {}),
-      ...(record.record.provenance?.audit ? { audit: record.record.provenance.audit } : {}),
-    }));
+    scene.provenance = cluster.flatMap((record) => [
+      {
+        source: record.providerId,
+        fetchedAt: record.fetchedAt,
+        sourceSceneId: record.recordId,
+        ...(record.record.provenance?.sourceUrl
+          ? { sourceUrl: record.record.provenance.sourceUrl }
+          : {}),
+        ...((record.record.provenance?.recordUrl ?? record.record.releaseUrl)
+          ? { recordUrl: record.record.provenance?.recordUrl ?? record.record.releaseUrl }
+          : {}),
+        ...(record.record.provenance?.audit ? { audit: record.record.provenance.audit } : {}),
+      },
+      ...(record.record.studioMetadata?.provenance
+        ? [
+            {
+              source: "studio-site",
+              fetchedAt: record.record.studioMetadata.fetchedAt,
+              sourceSceneId: record.recordId,
+              ...(record.record.studioMetadata.provenance.sourceUrl
+                ? { sourceUrl: record.record.studioMetadata.provenance.sourceUrl }
+                : {}),
+              ...(record.record.studioMetadata.provenance.recordUrl
+                ? { recordUrl: record.record.studioMetadata.provenance.recordUrl }
+                : {}),
+            },
+          ]
+        : []),
+    ]);
     mergeHistory(scene, stored);
 
     store.transaction(() => {
@@ -606,8 +602,9 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         });
       }
       log.info("sync started", { runId, reason, window: { from, to } });
+      const establishedIds = new Set(store.listWindow(from, to).map((scene) => scene.id));
       const outcomes = await fanOut(from, now);
-      reconcileReleases(store, sources, from, to, now);
+      reconcileReleases(store, sources, from, to, now, establishedIds);
       const { matched, resolved, reverified, rejections, winners, expired, windowScenes } =
         await linkAndTally(from, to, now);
       return tally(
@@ -632,6 +629,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
    */
   async function fanOut(from: string, now: Date): Promise<RunOutcome[]> {
     progress?.stage("populating");
+    const observations = store.listProviderObservations();
     const results = await mapWithConcurrency(
       [...sources],
       async (adapter): Promise<FetchedLane | FailedLane> => {
@@ -656,7 +654,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             ok: true,
             adapter,
             result,
-            existing: existingFor(adapter, result),
+            existing: existingFor(adapter, result, observations),
             pages: new Map(),
             checkedAt: new Map(),
           };
@@ -712,6 +710,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
                 previous,
                 lane.checkedAt.get(record),
               );
+              scene.id = previous?.id ?? scene.id;
               const provenance = [...(previous?.provenance ?? []), ...scene.provenance];
               const unique = new Map(
                 provenance.map((item) => [
@@ -735,7 +734,13 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
                   sceneId: scene.id,
                   studioId: record.providerStudioId ?? record.studioId ?? scene.labelId,
                   studio: record.studio ?? scene.label,
-                  record,
+                  record: withStudioEvidence(
+                    record,
+                    lane.pages.get(record) ?? null,
+                    previous,
+                    now,
+                    record.source === "traxxx.me",
+                  ),
                   fetchedAt: now.toISOString(),
                 });
               });
@@ -751,6 +756,15 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
           // this lane. Absence from `scenes` deletes nothing: a bounded run
           // that checked part of its queue must not remove the rest.
           store.removeProviderRecords(lane.adapter.id, lane.result.excludedSceneIds ?? []);
+          const excluded = new Map<string, string[]>();
+          for (const record of lane.result.excludedRecords ?? []) {
+            excluded.set(record.providerId, [
+              ...(excluded.get(record.providerId) ?? []),
+              record.recordId,
+            ]);
+          }
+          for (const [provider, recordIds] of excluded)
+            store.removeProviderRecords(provider, recordIds);
           recordSourceSuccess(store, lane.adapter, count, now, windowDays, lane.result.labels);
         });
         log.info("sync: source ok", {
@@ -773,8 +787,38 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
   }
 
   /** One bulk read, not one per record: the stored links have to reach the upsert. */
-  function existingFor(adapter: SourceAdapter, result: SourceResult): Map<string, Scene> {
-    return store.getScenesByIds(result.scenes.map((record) => sceneKey(adapter, record)));
+  function existingFor(
+    adapter: SourceAdapter,
+    result: SourceResult,
+    observations: readonly ProviderObservation[],
+  ): Map<string, Scene> {
+    const associations = result.scenes.map((record) => {
+      const provider = record.providerId ?? adapter.id;
+      const studio = record.providerStudioId ?? record.studioId ?? adapter.id;
+      let observation = observations.find(
+        (item) =>
+          item.providerId === provider &&
+          item.studioId === studio &&
+          item.recordId === record.sourceSceneId,
+      );
+      if (!observation && provider.startsWith("tpdb-site-")) {
+        const legacy = observations.filter(
+          (item) =>
+            item.recordId === record.sourceSceneId &&
+            (item.providerId === provider || item.providerId === "tpdb-watchlist"),
+        );
+        if (legacy.length === 1) observation = legacy[0];
+      }
+      const key = sceneKey(adapter, record);
+      return { key, id: observation?.sceneId ?? key };
+    });
+    const scenes = store.getScenesByIds(associations.map((item) => item.id));
+    return new Map(
+      associations.flatMap(({ key, id }) => {
+        const scene = scenes.get(id);
+        return scene ? [[key, scene] as const] : [];
+      }),
+    );
   }
 
   /** The stored scene, minus fields a different studio page supplied. */
@@ -794,6 +838,68 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
   /** True when a studio-supplied field may be carried forward for this record. */
   function studioFieldsRetained(lane: FetchedLane, record: RawScene): boolean {
     return lane.checkedAt.has(record) || record.source === "traxxx.me";
+  }
+
+  function withStudioEvidence(
+    record: RawScene,
+    page: Partial<RawScene> | null,
+    previous: Scene | undefined,
+    now: Date,
+    traxxx: boolean,
+  ): RawScene {
+    if (page) {
+      const fields: NonNullable<RawScene["studioMetadata"]>["fields"] = {};
+      for (const field of [
+        "title",
+        "releaseDate",
+        "performers",
+        "durationSec",
+        "thumbnailUrl",
+        "tags",
+      ] as const) {
+        if (page[field] !== undefined) Object.assign(fields, { [field]: page[field] });
+      }
+      return {
+        ...record,
+        studioMetadata: {
+          fields,
+          provenance: page.provenance,
+          fieldProvenance: page.fieldProvenance,
+          fetchedAt: now.toISOString(),
+        },
+      };
+    }
+    if (previous && lastStudioUrl(previous) && record.releaseUrl !== lastStudioUrl(previous)) {
+      return { ...record, studioMetadata: null };
+    }
+    if (traxxx && previous && Object.values(previous.fieldProvenance).includes("studio-site")) {
+      const fields: NonNullable<RawScene["studioMetadata"]>["fields"] = {};
+      for (const field of [
+        "title",
+        "releaseDate",
+        "performers",
+        "durationSec",
+        "thumbnailUrl",
+        "tags",
+      ] as const) {
+        if (previous.fieldProvenance[field] === "studio-site") {
+          Object.assign(fields, { [field]: previous[field] });
+        }
+      }
+      return {
+        ...record,
+        studioMetadata: {
+          fields,
+          provenance: previous.provenance.find((item) => item.source === "studio-site") ?? {
+            source: "studio-site",
+            ...(previous.releaseUrl ? { recordUrl: previous.releaseUrl } : {}),
+          },
+          fieldProvenance: previous.fieldProvenance,
+          fetchedAt: previous.studioMetadataCheckedAt ?? now.toISOString(),
+        },
+      };
+    }
+    return record;
   }
 
   /** The release page that last supplied studio fields, or undefined. */

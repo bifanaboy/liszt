@@ -193,9 +193,22 @@ test("sync preserves prior studio metadata only for Traxxx records not selected 
         isTraxxx
           ? {
               ...fieldProvenance,
+              ...(scene.releaseUrl ? { releaseUrl: "metadata" } : {}),
               ...(scene.sourceSceneId === "complete" ? { tags: "studio-site" } : {}),
             }
-          : {},
+          : Object.fromEntries(
+              ["title", "releaseDate", "performers", "durationSec", "thumbnailUrl", "releaseUrl"]
+                .filter((field) => {
+                  const value = scene[field as keyof typeof scene];
+                  return (
+                    value !== undefined &&
+                    value !== null &&
+                    value !== "" &&
+                    !(Array.isArray(value) && !value.length)
+                  );
+                })
+                .map((field) => [field, "metadata"]),
+            ),
         scene.sourceSceneId,
       );
       assert.equal(
@@ -502,6 +515,10 @@ test("studio detail lookups are capped at 50 scenes per sync", async () => {
     assert.equal(store.getScene("traxxx-watchlist:tushy:50")?.title, "Old title");
     assert.deepEqual(store.getScene("traxxx-watchlist:tushy:50")?.fieldProvenance, {
       title: "studio-site",
+      releaseDate: "traxxx-watchlist",
+      performers: "traxxx-watchlist",
+      durationSec: "traxxx-watchlist",
+      releaseUrl: "traxxx-watchlist",
     });
   } finally {
     store.close();

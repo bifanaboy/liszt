@@ -37,11 +37,22 @@ export interface RawScene {
   /** Per-field provenance, e.g. `{ durationSec: "studio-site" }`. */
   fieldProvenance?: Record<string, string>;
   metadataPoor?: boolean;
+  /** Verified release-page fields retained beside the provider's original values. */
+  studioMetadata?: StudioEvidence | null;
   /** A sub-label identity, when one source emits several studio labels. */
   studioId?: string;
   studio?: string;
   /** Stable provider-side studio key retained when a feed uses an umbrella label. */
   providerStudioId?: string;
+}
+
+export interface StudioEvidence {
+  fields: Partial<
+    Pick<RawScene, "title" | "releaseDate" | "performers" | "durationSec" | "thumbnailUrl" | "tags">
+  >;
+  provenance?: RawScene["provenance"];
+  fieldProvenance?: Record<string, string>;
+  fetchedAt: string;
 }
 
 /** A provider-native record together with its current canonical association. */
@@ -134,6 +145,8 @@ export interface SourceResult {
    * catalogue, so a bounded or partial run can never delete what it did not read.
    */
   excludedSceneIds?: string[];
+  /** Positively excluded native records when one adapter polls several providers. */
+  excludedRecords?: Array<{ providerId: string; recordId: string }>;
   /**
    * Explicitly true when the source really has no matching records. A result
    * with no scenes and `verifiedEmpty: false` is treated as suspicious and

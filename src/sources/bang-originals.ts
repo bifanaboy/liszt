@@ -76,7 +76,8 @@ function nextPage(html: string, current: string): string | null {
   const currentPage = Number(new URL(current).searchParams.get("page") ?? 1);
   const candidates: string[] = [];
   for (const match of html.matchAll(/href=["']([^"']*page=\d+[^"']*)["']/gi)) {
-    const next = new URL(match[1]!, current);
+    const href = match[1]!.replace(/&amp;/gi, "&");
+    const next = new URL(href, current);
     if (next.hostname.toLowerCase() !== HOST || next.pathname !== "/videos") {
       throw new Error("Bang listing pagination points outside www.bang.com/videos");
     }
