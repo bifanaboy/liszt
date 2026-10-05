@@ -110,7 +110,20 @@ export const Config = z.object({
    */
   fc2RecheckDays: z.coerce.number().int().nonnegative().default(7),
 
-  manyvidsStoreIds: z.array(z.string().regex(/^\d+$/)).default(["1003095958"]),
+  manyvidsStoreIds: z
+    .array(z.string().regex(/^\d+$/))
+    .default([
+      "1003095958",
+      "1009666091",
+      "1002380360",
+      "1000358477",
+      "1003373430",
+      "1002086327",
+      "1007157741",
+      "1001411388",
+      "1000948867",
+      "1007921628",
+    ]),
   manyvidsMinIntervalMs: z.coerce.number().int().min(0).default(400),
   /** Verified JSON-LD listing consumed by the Bang provider adapter. */
   bangListingUrl: z.string().url().default("https://www.bang.com/videos?by=date.desc"),

@@ -26,6 +26,7 @@ import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { FeedDefinition, SourceAdapter, StudioPolicy } from "./types.ts";
 import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
+import { TPDB_ANAL_SITE_IDS } from "./tpdb-anal-watchlist.ts";
 import type { StudioLink } from "./studio-identity.ts";
 import { applyStudioPolicy } from "./studio-policy.ts";
 
@@ -118,7 +119,18 @@ export function createSources({
   // (issue: synthetic aliases create false collision opportunities). Only
   // unambiguous TPDB-derived aliases and the watchlist sources themselves
   // participate in studio matching.
+  const tpdbAnalSiteIds = new Set(TPDB_ANAL_SITE_IDS);
+  // Preserve an existing studio identity if its site is also in the new list.
+  const linkedTpdbSiteIds = new Set(studioLinks.flatMap((link) => link.tpdb?.siteIds ?? []));
   const tpdbStudios: TpdbStudio[] = [
+    ...TPDB_ANAL_SITE_IDS.filter((siteId) => !linkedTpdbSiteIds.has(siteId)).map((siteId) => ({
+      studioId: `tpdb-${siteId}~anal`,
+      studio: `TPDB site ${siteId}`,
+      aliases: [],
+      siteIds: [siteId],
+      tags: ["anal"],
+      useSiteName: true,
+    })),
     ...watchlist.map((source) => ({
       studioId: source.id,
       studio: source.name,
@@ -148,13 +160,21 @@ export function createSources({
   tpdbStudios.push(
     ...studioLinks
       .filter((link) => link.tpdb)
-      .map((link) => ({
-        studioId: link.studioId,
-        studio: link.studio,
-        aliases: [link.studio, ...(link.aliases ?? []), link.tpdb!.name],
-        siteIds: link.tpdb!.siteIds,
-        ...(link.tags?.length ? { tags: link.tags } : {}),
-      })),
+      .map((link) => {
+        const tags = [
+          ...new Set([
+            ...(link.tags ?? []),
+            ...(link.tpdb!.siteIds.some((siteId) => tpdbAnalSiteIds.has(siteId)) ? ["anal"] : []),
+          ]),
+        ];
+        return {
+          studioId: link.studioId,
+          studio: link.studio,
+          aliases: [link.studio, ...(link.aliases ?? []), link.tpdb!.name],
+          siteIds: link.tpdb!.siteIds,
+          ...(tags.length ? { tags } : {}),
+        };
+      }),
   );
 
   if (tpdbApiKey) {

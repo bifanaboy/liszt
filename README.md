@@ -56,6 +56,10 @@ automatically.
 The Dredd defaults group ThePornDB site IDs `50864`, `39697`, and `81939` under
 the Dredd identity, with `DreddXXX` as an alias. Bang! Originals reads the
 verified `www.bang.com/videos` JSON-LD listing and its linked release pages.
+The TPDB watchlist includes its built-in site list and keeps only scenes
+carrying the `anal` tag.
+ManyVids reads the configured public stores and keeps only posts carrying the
+`anal` tag.
 
 ## Playback matching
 
