@@ -6,7 +6,6 @@
  *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, Woodman Casting X
  *                  (minus its XXXX scenes), plus the checked watchlist. No
  *                  auth; TPDB adds a separate authenticated watchlist lane.
-<<<<<<< HEAD
  *  2. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
  *                  Inertia HTML, its detail pages are paced at 8-9 seconds, and
  *                  its candidates' decisions live in `fc2_candidates` so a sync
@@ -14,17 +13,6 @@
  *  3. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
  *  4. ManyVids - public creator store listings, incremental plus weekly full pulls.
  *  5. TPDB - one shared token, exact cleaned-name studio matching.
-=======
- *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
- *                  (traxxx measures no scenes for it; listing is configured).
- *  3. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
- *                  Inertia HTML, its detail pages are paced at 8-9 seconds, and
- *                  its candidates' decisions live in `fc2_candidates` so a sync
- *                  never repays a detail request it already made.
- *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
- *  5. ManyVids - public creator store listings, incremental plus weekly full pulls.
- *  6. TPDB - one shared token, exact cleaned-name studio matching.
->>>>>>> main
  */
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
@@ -36,21 +24,12 @@ import { parseTpdbListingUrl, tpdbListingUrlsToStudios } from "./tpdb-listing-ur
 import { createFanslySource } from "./fansly.ts";
 import { createWoodmanCastingXSource } from "./woodman-casting-x.ts";
 import type { SourceAdapter } from "./types.ts";
-<<<<<<< HEAD
 import type { StudioLink } from "./studio-identity.ts";
-=======
-import { createTpdbWatchlistSource, type TpdbStudio } from "./tpdb-watchlist.ts";
->>>>>>> main
 
 export const RETIRED_SOURCE_IDS: readonly string[] = Object.freeze([
   "tushy",
   "lancelot-styles-evolution",
   "mambo-perv",
-<<<<<<< HEAD
-  "bang-originals",
-  "maximo-garcia",
-=======
->>>>>>> main
 ]);
 
 /** The Asian-language lanes, listed here because the dashboard splits them onto
@@ -84,7 +63,6 @@ export interface RegistryOptions {
   fc2?: Fc2StudioOptions;
   manyvidsStoreIds?: readonly string[];
   manyvidsMinIntervalMs?: number;
-<<<<<<< HEAD
   /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
    * failing every cycle, following the SETUP REQUIRED pattern. */
   tpdbApiKey?: string;
@@ -109,15 +87,6 @@ export interface RegistryOptions {
   fanslyUsernames?: readonly string[];
   /** Minimum spacing between Fansly API requests (default 2000ms). */
   fanslyMinIntervalMs?: number;
-=======
-  /** Undefined leaves the Maximo Garcia lane reporting "not configured". */
-  maximoListingUrl?: string | undefined;
-  /** Hosts the Maximo listing and its video pages may live on. */
-  maximoAllowedHosts?: readonly string[];
-  /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
-   * failing every cycle, following the SETUP REQUIRED pattern. */
-  tpdbApiKey?: string;
->>>>>>> main
 }
 
 /** The complete set of adapters run by the sync, in a stable order. */
@@ -128,21 +97,11 @@ export function createSources({
   fc2 = {},
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
-<<<<<<< HEAD
   tpdbApiKey,
   tpdbListingUrls,
   studioLinks,
   fanslyUsernames,
   fanslyMinIntervalMs,
-=======
-  maximoAllowedHosts = [
-    "sexlikereal.com",
-    "www.sexlikereal.com",
-    "analvids.com",
-    "www.analvids.com",
-  ],
-  tpdbApiKey,
->>>>>>> main
 }: RegistryOptions): SourceAdapter[] {
   const sources = [
     ...[...new Set(manyvidsStoreIds)].map((storeId) =>
@@ -161,7 +120,6 @@ export function createSources({
     ...RETIRED_SOURCE_IDS,
   ]);
   sources.splice(2, 0, ...watchlist, createWoodmanCastingXSource());
-<<<<<<< HEAD
   const declared = studioLinks ?? [];
   // TPDB listing addresses: each becomes a lane scoped to siteId + tag filter.
   // These take precedence over name-derived studios; any Traxxx lane not mentioned
@@ -231,35 +189,5 @@ export function createSources({
     ...tpdbStudiosFromUrls,
   ];
   sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios }));
-=======
-
-  // Build the TPDB studio alias map from watchlist and ManyVids sources.
-  // ManyVids synthetic aliases (manyvids-<id>) are excluded from TPDB matching
-  // because they can never match a TPDB site name — they are silently inert
-  // (issue: synthetic aliases create false collision opportunities). Only
-  // unambiguous TPDB-derived aliases and the watchlist sources themselves
-  // participate in studio matching.
-  const tpdbStudios: TpdbStudio[] = [
-    ...watchlist.map((source) => ({
-      studioId: source.id,
-      studio: source.name,
-      aliases: [source.name, source.id],
-    })),
-  ];
-  // Only add ManyVids studio entries if a TPDB token is configured; this
-  // prevents synthetic manyvids aliases from contaminating the TPDB alias map
-  // when TPDB is not set up (SETUP REQUIRED pattern).
-  if (tpdbApiKey) {
-    tpdbStudios.push(
-      ...[...new Set(manyvidsStoreIds)].map((storeId) => ({
-        studioId: `manyvids-${storeId}`,
-        studio: storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`,
-        aliases: [storeId === "1003095958" ? "Maximo Garcia" : `ManyVids store ${storeId}`],
-      })),
-    );
-  }
-
-  sources.push(createTpdbWatchlistSource({ token: tpdbApiKey, studios: tpdbStudios }));
->>>>>>> main
   return sources;
 }
