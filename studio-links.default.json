@@ -2,16 +2,23 @@
   {
     "studioId": "dredd",
     "studio": "Dredd",
-    "aliases": ["Dredd", "DreddXXX"]
+    "aliases": [
+      "Dredd",
+      "DreddXXX"
+    ]
   },
   {
     "studioId": "tpdb-maximogarcia",
     "studio": "Maximo Garcia",
-    "aliases": ["Maximo Garcia", "MaximoGarcia", "Maximo Garcia Official"],
     "tpdb": {
-      "siteIds": [123456, 234567, 345678],
+      "siteIds": [
+        7875
+      ],
+      "uuid": "72d78735-5301-4b09-9383-71faa812e110",
       "name": "Maximo Garcia",
-      "shortName": "maximogarcia"
+      "shortName": "maximogarcia",
+      "url": "https://maximogarcia.com",
+      "networkId": 4344
     }
   }
 ]
