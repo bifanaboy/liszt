@@ -24,7 +24,7 @@ export function createMaximoGarciaStudio(): SourceAdapter {
           sourceUrl: "https://theporndb.net/studios/maximogarcia",
         },
       }));
-      return { scenes, verifiedEmpty: scenes.length === 0 ? false : fanslyResult.verifiedEmpty };
+      return { scenes, verifiedEmpty: scenes.length === 0 ? true : fanslyResult.verifiedEmpty };
     },
   };
 }

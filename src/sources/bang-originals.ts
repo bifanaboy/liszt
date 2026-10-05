@@ -14,7 +14,7 @@ export function createBangOriginalsStudio(
     matcher: "sxyprn+eporner",
     async fetch(windowStart: string, ctx: SourceContext): Promise<{ scenes: RawScene[]; verifiedEmpty: boolean }> {
       // ponytail: unified emission from single URL feed; full parser upgrade when listing schema is confirmed.
-      if (!listingUrl) return { scenes: [], verifiedEmpty: true };
+      if (!listingUrl) throw new Error("Bang Originals listing URL is not configured");
       const scenes: RawScene[] = [{
         sourceSceneId: "bang-originals-composite",
         studioId: "bang-originals",
