@@ -5,7 +5,6 @@ import type { Config } from "../config.ts";
 import type { RunRecord, SqliteStore } from "../core/store/sqlite.ts";
 import type { Scene, SourceStatus } from "../core/schema.ts";
 import { ASIAN_SOURCE_IDS } from "../sources/registry.ts";
-import { cleanStudioName } from "../sources/tpdb-watchlist.ts";
 
 export interface WindowStats {
   total: number;
@@ -51,81 +50,20 @@ function releaseUrlKey(value: string | undefined): string | null {
 }
 
 function titleKey(value: string): string {
-<<<<<<< HEAD
-  return cleanStudioName(value);
-=======
   return value
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
->>>>>>> main
 }
 
 /** Merge duplicate TPDB/storefront/watchlist records for display, filling only absent metadata. */
 export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
   const output: Scene[] = [];
-<<<<<<< HEAD
-  const contributors = new Map<Scene, Set<string>>();
-  const candidates = new Map<string, Set<Scene>>();
-  const keysFor = (scene: Scene): string[] => {
-    const label = scene.labelId;
-    const url = releaseUrlKey(scene.releaseUrl);
-    const keys = url ? [`url:${label}\0${url}`] : [];
-    if (scene.durationSec)
-      keys.push(
-        `fallback:${label}\0${titleKey(scene.title)}\0${scene.releaseDate}\0${scene.durationSec}`,
-      );
-    return keys;
-  };
-  const index = (scene: Scene) => {
-    for (const key of keysFor(scene)) {
-      const group = candidates.get(key) ?? new Set<Scene>();
-      group.add(scene);
-      candidates.set(key, group);
-    }
-  };
-=======
->>>>>>> main
   for (const scene of scenes) {
     const isProvider =
       scene.sourceId === "tpdb-watchlist" ||
       scene.source.toLowerCase().includes("manyvids") ||
       scene.source.toLowerCase().includes("traxxx");
-<<<<<<< HEAD
-    const url = releaseUrlKey(scene.releaseUrl);
-    const fallbackKey = scene.durationSec
-      ? `fallback:${scene.labelId}\0${titleKey(scene.title)}\0${scene.releaseDate}\0${scene.durationSec}`
-      : "";
-    const match = isProvider
-      ? (() => {
-          const eligible = (prior: Scene) => {
-            const sources = contributors.get(prior) ?? new Set([prior.sourceId]);
-            return (
-              !sources.has(scene.sourceId) &&
-              prior.labelId === scene.labelId &&
-              prior.sourceId !== scene.sourceId
-            );
-          };
-          if (url) {
-            const exact = [...(candidates.get(`url:${scene.labelId}\0${url}`) ?? [])].filter(
-              eligible,
-            );
-            if (exact.length) return exact.length === 1 ? exact[0] : undefined;
-          }
-          const fallback = [...(candidates.get(fallbackKey) ?? [])].filter(
-            (prior) => eligible(prior) && (!url || !releaseUrlKey(prior.releaseUrl)),
-          );
-          return fallback.length === 1 ? fallback[0] : undefined;
-        })()
-      : undefined;
-    if (!match) {
-      output.push(scene);
-      contributors.set(scene, new Set([scene.sourceId]));
-      index(scene);
-      continue;
-    }
-    contributors.get(match)!.add(scene.sourceId);
-=======
     const match = isProvider
       ? output.find((prior) => {
           if (prior.labelId !== scene.labelId || prior.sourceId === scene.sourceId) return false;
@@ -145,7 +83,6 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
       output.push(scene);
       continue;
     }
->>>>>>> main
     const fill = <
       K extends
         | "title"
@@ -176,11 +113,6 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
         (!Array.isArray(incoming) || incoming.length > 0);
       if (empty && present) Object.assign(match, { [field]: incoming });
     };
-<<<<<<< HEAD
-    match.metadataPoor = match.metadataPoor && scene.metadataPoor;
-    const filledProvenance = { ...match.fieldProvenance };
-=======
->>>>>>> main
     for (const field of [
       "title",
       "performers",
@@ -193,20 +125,6 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
       "previewUrl",
       "price",
       "studioCode",
-<<<<<<< HEAD
-    ] as const) {
-      const before = match[field];
-      fill(field);
-      if (before !== match[field] && scene.fieldProvenance[field])
-        filledProvenance[field] = scene.fieldProvenance[field]!;
-    }
-    const samePlaybackWinner = match.videoUrls[0]?.url === scene.videoUrls[0]?.url;
-    const useIncomingVerdict =
-      !match.videoUrls.length ||
-      (samePlaybackWinner &&
-        match.videoMatching?.confidence === "low" &&
-        scene.videoMatching?.confidence === "high");
-=======
     ] as const)
       fill(field);
     match.metadataPoor = match.metadataPoor && scene.metadataPoor;
@@ -215,7 +133,6 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
     if (match.videoMatching === undefined && scene.videoMatching !== undefined) {
       match.videoMatching = scene.videoMatching;
     }
->>>>>>> main
     Object.assign(match, {
       provenance: [
         ...match.provenance,
@@ -226,29 +143,6 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
             ),
         ),
       ],
-<<<<<<< HEAD
-      fieldProvenance: filledProvenance,
-      videoUrls: match.videoUrls.length
-        ? match.videoUrls
-        : scene.videoUrls.filter(
-            (link) => !match.deadVideoUrls.some((dead) => dead.url === link.url),
-          ),
-      deadVideoUrls: [
-        ...match.deadVideoUrls,
-        ...scene.deadVideoUrls.filter(
-          (dead) => !match.deadVideoUrls.some((prior) => prior.url === dead.url),
-        ),
-      ],
-      videoMatching: useIncomingVerdict ? scene.videoMatching : match.videoMatching,
-      videoCheckedAt: useIncomingVerdict ? scene.videoCheckedAt : match.videoCheckedAt,
-      contributingSourceIds: [...contributors.get(match)!],
-    });
-    match.videoUrls = match.videoUrls.filter(
-      (link) => !match.deadVideoUrls.some((dead) => dead.url === link.url),
-    );
-    if (!match.videoUrls.length) match.videoMatching = null;
-    index(match);
-=======
       fieldProvenance: { ...scene.fieldProvenance, ...match.fieldProvenance },
       videoMatching: match.videoMatching,
       videoUrls: [
@@ -264,7 +158,6 @@ export function mergeWatchlistDuplicates(scenes: Scene[]): Scene[] {
         ),
       ],
     });
->>>>>>> main
   }
   return output;
 }
