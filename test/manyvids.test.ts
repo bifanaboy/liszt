@@ -11,7 +11,11 @@ import { fixedClock, type SourceContext } from "../src/sources/types.ts";
 const fixture = JSON.parse(
   readFileSync(new URL("./fixtures/manyvids-store.json", import.meta.url), "utf8"),
 );
-const video = fixture.data[0];
+const taggedFixture = {
+  ...fixture,
+  data: fixture.data.map((item: object) => ({ ...item, tags: ["anal"] })),
+};
+const video = taggedFixture.data[0];
 const page = (data: unknown[], currentPage = 1, nextPage: number | null = null) => ({
   data,
   pagination: { total: data.length, totalPages: nextPage ?? currentPage, currentPage, nextPage },
@@ -46,7 +50,18 @@ function setup(respond: (url: URL) => unknown, store = new SqliteStore(":memory:
 }
 
 test("ManyVids store configuration defaults to Maximo and accepts explicit empty or collaborator lists", () => {
-  assert.deepEqual(loadConfig({}).manyvidsStoreIds, ["1003095958"]);
+  assert.deepEqual(loadConfig({}).manyvidsStoreIds, [
+    "1003095958",
+    "1009666091",
+    "1002380360",
+    "1000358477",
+    "1003373430",
+    "1002086327",
+    "1007157741",
+    "1001411388",
+    "1000948867",
+    "1007921628",
+  ]);
   assert.deepEqual(loadConfig({ LISZT_MANYVIDS_STORE_IDS: "" }).manyvidsStoreIds, []);
   assert.deepEqual(
     loadConfig({ LISZT_MANYVIDS_STORE_IDS: "1003095958,1008105753,1003095958" }).manyvidsStoreIds,
@@ -57,8 +72,8 @@ test("ManyVids store configuration defaults to Maximo and accepts explicit empty
 
 test("ManyVids imports captured metadata and round-trips through SQLite", async () => {
   const { store, adapter, ctx } = setup(() => ({
-    ...fixture,
-    pagination: { ...fixture.pagination, total: 9, totalPages: 1, nextPage: null },
+    ...taggedFixture,
+    pagination: { ...taggedFixture.pagination, total: 9, totalPages: 1, nextPage: null },
   }));
   try {
     const result = await adapter.fetch("2026-07-01", ctx);
@@ -119,8 +134,9 @@ test("ManyVids applies the shared exclusion terms to titles, descriptions, and t
       id: "9900003",
       title: "Anal scene",
       slug: "anal-scene",
-      tags: ["trans"],
+      tags: ["anal", "trans"],
     },
+    { ...video, id: "9900008", tags: undefined },
   ];
   const { store, adapter, ctx } = setup(() => page(candidates));
   try {
@@ -340,6 +356,7 @@ test("captured hour-long videos retain their full runtime in seconds", async () 
   const body = JSON.parse(
     readFileSync(new URL("./fixtures/manyvids-hours-page.json", import.meta.url), "utf8"),
   );
+  body.data = body.data.map((item: object) => ({ ...item, tags: ["anal"] }));
   body.pagination = { total: 9, totalPages: 1, currentPage: 1, nextPage: null };
   const { store, adapter, ctx } = setup(() => body);
   try {
