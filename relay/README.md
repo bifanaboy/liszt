@@ -32,6 +32,11 @@ Do not automatically rotate addresses or countries. If Sxyprn blocks the
 relay, the Hatchable client records a sanitized failure and its circuit breaker
 pauses repeated requests.
 
+Hosting setup and direct relay checks are owner-run. An authorized agent may
+inspect the resulting Hatchable logs through already connected read-only tools,
+following `AGENTS.md`; a successful local test or country lookup alone does not
+verify the live integration.
+
 ## Connect Hatchable
 
 In Hatchable's secret settings, set:

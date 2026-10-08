@@ -6,14 +6,17 @@ field, and saves at most one verified playback link for each release.
 
 ## Run in Hatchable
 
-Liszt is deployed as a Hatchable project. The repository contains its handlers
+Liszt is built to run as a Hatchable project. The repository contains its handlers
 in `api/`, shared JavaScript in `lib/`, database migrations in `migrations/`,
 and the browser app in `public/`. A new project starts with an empty database;
 it does not import data from the former Render service.
 
 Keep the Hatchable project private while setting it up. After a GitHub merge,
 pull the changed files into Hatchable, inspect the draft, and promote it when it
-is ready. A GitHub merge alone does not update the live app.
+is ready. A GitHub merge alone does not update the live app. Importing the files
+also does not prove that refreshes or playback lookups work; complete the
+[launch checks](docs/hatchable-launch-checks.md) before treating the move as
+verified.
 
 The owner configures private values in Hatchable's project settings. The
 optional settings are:
@@ -88,8 +91,7 @@ candidate, the release stays unlinked. Known dead links are not re-added.
 The relay is a separate small Node.js service. Its outgoing country must be
 verified with a real Sxyprn request before use; one successful request from
 Spain has been observed, but a stable host or region has not been selected.
-See [`relay/README.md`](relay/README.md) for the owner's setup and live-check
-steps.
+See [`relay/README.md`](relay/README.md) for setup and live-check steps.
 
 ## Local checks
 

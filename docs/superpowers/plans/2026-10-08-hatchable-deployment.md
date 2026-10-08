@@ -23,7 +23,7 @@
 - Do not rotate relay addresses or countries automatically. If Sxyprn blocks the route, stop requests through the existing spacing and circuit breaker and report the sanitized failure.
 - Do not change Render settings or trigger a Render deployment.
 - Do not provision or deploy the relay or change any hosting settings from this repository workflow. Relay hosting is a separate owner-run step that needs its own provider choice and live verification.
-- Hatchable imports, project settings, live scheduled runs, and live log checks are owner-run steps; this repository plan prepares the files and verification instructions but does not operate the external project.
+- Hatchable imports, project settings, promotion, and manual refreshes are owner-run steps. Authorized agents may inspect existing project state, schedules, and native logs through already connected read-only Hatchable tools; otherwise use owner-provided evidence. Follow section 7 of `AGENTS.md`.
 - Before GitHub visibility changes, remove personal identifiers and secrets from current files and every Git ref; history rewrite changes commit IDs.
 
 ## Review Focus
@@ -161,7 +161,7 @@ The Hatchable project adds `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp
 - [x] Port the existing sync pipeline to await Hatchable's Postgres storage and preserve provider isolation, release merging, playback matching, and link verification.
 - [x] Add a shared hourly/manual queue and a one-shot worker. Hatchable documents roughly 310 seconds for one-shot work; completed database writes survive interruption, and an expired 10-minute lease allows the next hourly or manual attempt to replay the idempotent cycle.
 - [x] Implement the catalogue, progress, status, manual refresh, and hourly scheduler routes.
-- [ ] Verify deployed native function errors and handled provider failures using `view_logs`; owner-run verification remains pending. Search `log_output` rather than assuming the severity filter labels successful requests as errors.
+- [ ] Verify deployed native function errors and handled provider failures using `view_logs`; live verification remains pending; authorized agents may inspect existing logs. Search `log_output` rather than assuming the severity filter labels successful requests as errors.
 - [x] Commit this task as `feat: add scheduled Hatchable refresh`.
 
 ## Task 7: Move the browser experience and remove obsolete runtime claims
@@ -195,8 +195,8 @@ The Hatchable project adds `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp
 - Consumes: Tasks 1–7 and the release sequence in the spec.
 - Produces: verified private Hatchable draft and a public GitHub repository whose current files and rewritten history contain no personal identifiers or secrets.
 
-- [ ] Give the owner exact steps to import the finished branch into a private Hatchable project and check fresh database creation, static UI, manual refresh, hourly scheduling, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has configured their secrets inside Hatchable. Record each result from evidence the owner provides; mark anything not supplied unverified.
-- [ ] After the owner has separately launched the relay in a fixed region and confirmed a real Sxyprn response, the owner adds its URL and secret in Hatchable's secret settings. Verify Hatchable-to-relay authentication and a real Sxyprn search and details lookup without viewing or printing the secret. If this owner-run step has not happened, report the relay integration as pending and do not claim Sxyprn works.
+- [ ] Follow `docs/hatchable-launch-checks.md`: the owner imports current `main` into a private Hatchable project; check fresh database creation, static UI, manual refresh, hourly scheduling, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has configured their secrets inside Hatchable. Record each result from authorized read-only Hatchable observations or owner-provided evidence; mark anything not checked unverified.
+- [ ] After the owner has separately launched the relay in a fixed region and confirmed a real Sxyprn response, the owner adds its URL and secret in Hatchable's secret settings. Verify Hatchable-to-relay authentication and a real Sxyprn search and details lookup without viewing or printing the secret. If the owner has not completed setup and triggered the requests, report the relay integration as pending and do not claim Sxyprn works.
 - [ ] Confirm Hatchable pull creates a reviewable draft and promotion requires a human action. Do not promote or publish the app without the owner's separate decision.
 - [x] Scan tracked release files, reachable Git refs, and Git metadata for known personal-name/domain patterns and common credential formats. Replace the historical personal-domain link and neutralize author/committer metadata in a separate sanitized mirror; preserve commit messages and timestamps.
 - [x] Re-scan the sanitized mirror: no known personal-name/domain patterns or common credential formats remain in reachable files or commit messages. Record the sanitized default-branch tip and warn that existing clones must be recreated.
@@ -204,7 +204,7 @@ The Hatchable project adds `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp
 - [ ] Import the public default branch into Hatchable and verify the app remains private and its database is fresh.
 - [x] Commit all source changes before the history rewrite; do not add a follow-up source commit that reintroduces old author metadata.
 
-**Local release-preparation result:** History cleanup was performed in an isolated mirror to avoid rewriting the shared worktree. No GitHub push, visibility change, Hatchable import, or live verification was performed; repository instructions reserve those actions to the owner.
+**Local release-preparation result:** History cleanup was performed in an isolated mirror to avoid rewriting the shared worktree. No GitHub push, visibility change, Hatchable import, or live verification was performed; imports and hosting changes remain owner-run; current instructions allow separately authorized read-only Hatchable verification.
 
 ## Plan self-review
 

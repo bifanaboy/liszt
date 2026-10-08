@@ -71,7 +71,13 @@ and credential-bearing URLs. Keep ordinary sync status in the application's
 existing run and source state; add no separate error-history store.
 
 Owners review logs in Hatchable. Connected agents review them using Hatchable's
-read-only `view_logs` tool, subject to project access. Hatchable stores function
+read-only `view_logs` tool, subject to separately authorized project access and
+section 7 of `AGENTS.md`. Agents may inspect existing project state, deployments,
+schedules, and logs without triggering work or changing hosting. The owner
+imports, configures, promotes, and runs manual refresh or relay checks. When
+connected access is unavailable, use owner-provided evidence and mark missing
+checks unverified. See `docs/hatchable-launch-checks.md` for the launch checklist.
+Hatchable stores function
 logs, but a retention duration has not been confirmed; do not promise a fixed
 retention period. If a guaranteed retention period becomes necessary, bring
 that back as a separate design decision.
