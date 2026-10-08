@@ -121,8 +121,8 @@ of this design.
 
 ## Known limits
 
-- Hatchable controls native function-log retention; its documented retention
-  duration is unknown.
+- Hatchable prunes older native function logs; the exact retention duration
+  is not stated in the available platform skill.
 - Each launched instance begins without the current Render data. Its catalogue
   and indexes must be rebuilt from feeds.
 - The existing Render service and settings are not inspected or changed here.

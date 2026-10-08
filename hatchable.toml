@@ -1,0 +1,5 @@
+name = "Liszt Compatibility Pilot"
+
+[[cron]]
+path = "/api/heartbeat"
+schedule = "0 * * * *"

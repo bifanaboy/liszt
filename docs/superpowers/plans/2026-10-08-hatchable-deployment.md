@@ -39,20 +39,21 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 
 **Files:**
 - Create: `hatchable.toml`
-- Create: `api/health.js`
+- Create: `api/health.js`, `api/heartbeat.js`, `api/log-check.js`
 - Create: `migrations/0001_pilot.sql`
 - Create: `lib/pilot.js`
+- Create: `public/index.html`
 - Test: `test/hatchable-pilot.test.js`
 
 **Interfaces:**
-- Produces: a documented pilot result showing project import, a JavaScript route, Postgres migration/read/write, static asset delivery, scheduled-job registration, one public no-key feed request, and `view_logs` visibility for owner and authorized agent.
+- Produces: a documented pilot result showing project setup and file upload, a JavaScript route, Postgres migration/read/write, static asset delivery, scheduled-job registration and invocation, one public no-key provider request, and captured logs through `view_logs`. GitHub import is deferred to Task 8 because the repository remains private until its privacy audit passes.
 
-- [ ] Confirm the current Hatchable project layout, database, scheduled handler, HTTP, and logs APIs from Hatchable's own documentation and available in-product tools. Record exact entry points and limits in the pilot test notes; do not infer them from this plan.
-- [ ] Create the smallest private pilot using those documented entry points. It must write and read one disposable database row, return a health response, serve a static page, and log a deliberately handled sample failure without secrets.
-- [ ] Configure a scheduled job and verify that it starts once within Hatchable's confirmed job limits. Use only a public feed that needs no key.
-- [ ] Inspect native logs as the owner and with an already-authorized connected agent; record what each can see and whether retention is stated by the product.
-- [ ] Run the pilot checks in Hatchable. Mark each behavior pass, fail, or unverified with evidence.
-- [ ] Stop before the full port if import, Postgres, scheduling, outbound fetch, or native log access cannot meet the spec; return the specific failure for a scope decision.
+- [x] Confirm the current Hatchable project layout, database, scheduled handler, HTTP, and logs APIs from Hatchable's own documentation and available in-product tools. Record exact entry points and limits in the pilot test notes; do not infer them from this plan.
+- [x] Create the smallest private pilot using those documented entry points. It must write and read one disposable database row, return a health response, serve a static page, and log a deliberately handled sample failure without secrets.
+- [x] Configure the hourly job and confirm Hatchable lists it as active. Invoke the handler as the scheduler through `run_function`; this is Hatchable's documented scheduler verification. Record that one real clock-triggered firing remains for Task 8. Use the public Eporner record endpoint, which needs no key.
+- [x] Inspect native logs through the connected Hatchable `view_logs` tool, verify declared route access, and record whether a separate collaborator role was tested. Do not rely on the severity filter for caught failures: a successful request can be labeled `info` even when `console.error` output is present; verify the structured message is searchable in `log_output`.
+- [x] Run the pilot checks in Hatchable. Mark each behavior pass, fail, or unverified with evidence.
+- [x] Continue: import is deferred to Task 8; Postgres, handler invocation, outbound fetch, route access, static page, and searchable native logs passed. Automatic clock-triggered firing remains unverified until Task 8.
 
 ## Task 2: Port release identity, merge, and matching rules
 
@@ -141,7 +142,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - [ ] Add tests for manual and scheduled invocations sharing the same sync path, bounded continuation, duplicate invocation, one-provider failure with other providers succeeding, and sanitized failure logging.
 - [ ] Implement resumable sync using the confirmed Hatchable job limits; do not assume in-memory timers or a long-running process.
 - [ ] Implement manual refresh, scheduled refresh, status, and catalogue routes with the Hatchable request/response interface verified in Task 1.
-- [ ] Verify native function errors and handled provider failures using `view_logs`; assert keys, headers, credential-bearing URLs, and raw provider bodies are absent.
+- [ ] Verify native function errors and handled provider failures using `view_logs`; assert keys, headers, credential-bearing URLs, and raw provider bodies are absent. For recovered failures, inspect searchable `log_output` rather than assuming the severity filter will label a successful request as an error.
 - [ ] Commit this task as `feat: add scheduled Hatchable refresh`.
 
 ## Task 7: Move the browser experience and remove obsolete runtime claims
@@ -172,7 +173,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Consumes: Tasks 1–7 and the release sequence in the spec.
 - Produces: verified private Hatchable draft and a public GitHub repository whose current files and rewritten history contain no personal identifiers or secrets.
 
-- [ ] Deploy/import the finished branch into a private Hatchable project; check fresh database creation, static UI, manual refresh, hourly scheduling, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has supplied their secrets inside Hatchable. Record the observed outcome for each in-scope provider.
+- [ ] Import the finished public default branch into a fresh personal/private Hatchable project; check fresh database creation, static UI, manual refresh, hourly schedule registration and one real scheduled firing, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has supplied their secrets inside Hatchable. Record the observed outcome for each in-scope provider.
 - [ ] Confirm Hatchable pull creates a reviewable draft and promotion requires a human action. Do not promote or publish the app without the owner's separate decision.
 - [ ] Scan tracked files, ignored/untracked files intended for release, every Git ref, and Git metadata for personal names, email addresses, personal domains, and secrets. Remove matches from current content and history while preserving messages, timestamps, and file content except approved personal-data removals.
 - [ ] Re-scan the rewritten history and current tree; expected: no matches. Record the new default-branch commit and warn that existing clones must be recreated.

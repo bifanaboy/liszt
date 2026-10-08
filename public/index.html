@@ -1,75 +1,14 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#111214">
-  <title>Liszt — Recent releases</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/app.js"></script>
-</head>
-<body>
-  <div class="shell">
-    <header class="topbar">
-      <a class="brand" href="#catalogue" aria-label="Liszt home"><span class="brand-mark">L</span><span>liszt<span class="brand-dot">.</span></span></a>
-      <nav aria-label="Main navigation"><a href="#catalogue" data-nav="catalogue" class="active">Catalogue</a><a href="#asian" data-nav="asian">Asian</a><a href="#sources" data-nav="sources">Sources</a></nav>
-      <div class="top-actions"><span class="live-dot"></span><span class="live-label">PERSONAL CATALOGUE</span><button class="button button-primary" id="refresh" type="button"><span class="refresh-icon">↻</span> Refresh now</button></div>
-    </header>
-
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Liszt Hatchable Pilot</title>
+  </head>
+  <body>
     <main>
-      <section class="hero">
-        <div class="hero-copy"><p class="eyebrow">YOUR LAST 90 DAYS</p><h1>Keep up with<br><em>what’s new.</em></h1><p class="lede">One rolling catalogue of releases, performers and direct source links.</p></div>
-        <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit-core">L</div><span class="orbit-label">LISZT / 001</span></div>
-      </section>
-
-      <section class="stats" aria-label="Catalogue overview">
-        <article class="stat"><span class="stat-label">IN THE WINDOW</span><strong id="stat-scenes">—</strong><span class="stat-note">releases</span></article>
-        <article class="stat"><span class="stat-label">WITH A LINK</span><strong id="stat-linked">—</strong><span class="stat-note" id="link-rate">verified source matches</span></article>
-        <article class="stat"><span class="stat-label">SOURCES</span><strong id="stat-studios">—</strong><span class="stat-note">active sources</span></article>
-        <article class="stat stat-updated"><span class="stat-label">LAST REFRESH</span><strong id="last-checked">—</strong><span class="stat-note" id="refresh-state">Waiting for catalogue</span></article>
-        <div class="progress-row" id="progress-row" hidden>
-          <div class="meter meter--overall">
-            <div class="meter-head"><span class="meter-label">REFRESH</span><span class="meter-note" id="overall-note"></span><span class="meter-elapsed" id="overall-elapsed"></span></div>
-            <div class="meter-track meter-track--split" id="overall-track" role="progressbar" aria-label="Overall refresh progress" aria-valuemin="0" aria-valuemax="100"><span class="meter-half" id="overall-half-sources"><i class="meter-fill" id="overall-fill-sources"></i></span><span class="meter-half" id="overall-half-links"><i class="meter-fill" id="overall-fill-links"></i></span></div>
-          </div>
-          <div class="meter meter--populate">
-            <div class="meter-head"><span class="meter-label">POPULATING</span><span class="meter-note" id="populate-note"></span></div>
-            <div class="meter-track" id="populate-track" role="progressbar" aria-label="Sources polled"><span class="meter-fill" id="populate-fill"></span></div>
-          </div>
-          <div class="meter meter--link">
-            <div class="meter-head"><span class="meter-label">LINKING</span><span class="meter-note" id="link-note"></span></div>
-            <div class="meter-track" id="link-track" role="progressbar" aria-label="Releases checked for a link"><span class="meter-fill" id="link-fill"></span></div>
-            <p class="meter-detail" id="link-detail"></p>
-          </div>
-        </div>
-        <p class="sr-only" id="progress-live" role="status" aria-live="polite"></p>
-      </section>
-
-      <section class="catalogue" id="catalogue">
-        <span class="page-anchor" id="asian" aria-hidden="true"></span>
-        <div class="section-heading"><div><p class="eyebrow" id="catalogue-eyebrow">RELEASE LEDGER</p><h2 id="catalogue-title">Catalogue</h2></div><button class="button button-quiet" id="export">Export CSV <span>↗</span></button></div>
-        <div class="toolbar">
-          <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search title, performer or studio" autocomplete="off"><kbd>⌘ K</kbd></label>
-          <label class="select-wrap"><span class="sr-only">Studio</span><select id="studio"><option value="all">All studios</option></select><span class="select-chevron">⌄</span></label>
-          <label class="select-wrap sort-wrap"><span class="sr-only">Sort by</span><select id="sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select><span class="select-chevron">⌄</span></label>
-          <span class="result-count" id="count">Loading…</span>
-        </div>
-        <div id="notices" aria-live="polite"></div>
-        <div id="list" class="release-list" aria-live="polite"></div>
-        <div id="empty" class="empty-state" hidden><span class="empty-glyph" aria-hidden="true">⌕</span><h3 id="empty-title">Loading catalogue…</h3><p id="empty-message">Waiting for the catalogue response.</p></div>
-      </section>
-
-      <section class="sources" id="sources">
-        <div class="section-heading"><div><p class="eyebrow">INGESTION STATUS</p><h2>Sources</h2></div><p class="section-aside">Each source polls independently.</p></div>
-        <div id="source-summary" class="source-summary"></div>
-        <div id="sources-list" class="source-grid"></div>
-      </section>
-
+      <h1>Liszt Hatchable Pilot</h1>
+      <p>This private pilot contains no catalogue data.</p>
     </main>
-    <footer><a class="brand brand-footer" href="#catalogue"><span class="brand-mark">L</span><span>liszt<span class="brand-dot">.</span></span></a><span>A personal release catalogue · polls on a timer</span></footer>
-  </div>
-</body>
+  </body>
 </html>
