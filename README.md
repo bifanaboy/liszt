@@ -108,7 +108,8 @@ npm run format:check
 
 The tests use local fixtures and do not call provider sites. The `src/` tree is
 kept as a behavior reference for the JavaScript Hatchable implementation and
-for the local maintenance tools.
+for the local maintenance tools. Local TypeScript declarations live in `types/`
+and are not part of the Hatchable runtime folders.
 
 ## Repository notes
 

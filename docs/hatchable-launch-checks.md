@@ -8,7 +8,9 @@ Each new project starts with an empty database; Render data is not transferred.
 ## Owner actions
 
 1. Review the imported files and Hatchable's validation results. Confirm the
-   project remains private and review the draft before promoting it.
+   project remains private and review the draft before promoting it. After a
+   repository update, confirm removed files are also absent from the draft;
+   local `.d.ts` declarations must not remain under `lib/` or `public/`.
 2. Configure `TPDB_API_KEY` privately in project settings if ThePornDB is wanted.
    Do not paste private values into chat, repository files, or logs.
 3. Open the app as an authorized project member and click **Refresh now** once.
