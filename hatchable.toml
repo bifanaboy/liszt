@@ -1,0 +1,5 @@
+name = "Liszt"
+
+[[cron]]
+path = "/api/cron"
+schedule = "0 * * * *"

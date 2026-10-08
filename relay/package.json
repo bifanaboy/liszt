@@ -1,0 +1,14 @@
+{
+  "name": "liszt-sxyprn-relay",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "sxyprn": "0.1.0"
+  }
+}
