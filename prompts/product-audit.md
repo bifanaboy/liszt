@@ -11,6 +11,13 @@ effects through the audited site. The issue-tracker actions required below are
 permitted. If Chrome DevTools MCP is unavailable, say so and do not claim to have
 reviewed the site.
 
+Use separately authorized read-only Hatchable tools, when available, to check
+the deployed version, scheduled runs, and native logs as described in section 7
+of `AGENTS.md`. These checks can support a browser finding but do not replace
+reviewing the interface. Do not invoke functions, run code or SQL, or start a
+refresh. If access is unavailable, use owner-provided evidence or mark the check
+unverified.
+
 Reproduce each suspected problem and record its page, steps, expected result,
 actual result, and useful evidence. File only confirmed problems with Liszt's
 features or behavior. Do not file deployment, hosting, uptime, or infrastructure

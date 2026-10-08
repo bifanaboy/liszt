@@ -6,7 +6,8 @@ Read these before editing this public repository.
 
 Repository access alone does not include private Hatchable or relay-host access,
 credentials, or authority to manage hosting or accounts. Instructions here do
-not grant that access. Hosting setup and live checks are owner-run steps.
+not grant that access. Hosting setup remains owner-run. Separately authorized,
+already connected Hatchable access may be used for read-only live checks.
 
 - Do not request, retrieve, store, rotate, or revoke credentials.
 - Do not access the user's machine configuration or assume authenticated
@@ -124,15 +125,27 @@ Do not invent relationships or create a hierarchy for unrelated work.
 ## 7. Check what actually shipped
 
 Repository access does not grant hosting access. The restrictions in section 1
-still apply. Live Hatchable and relay checks are owner-run. Record results only
-from evidence the owner provides; do not obtain credentials, change hosting,
-or trigger a deployment to do this check.
+still apply. Use separately authorized, already connected Hatchable tools for
+read-only live checks: inspect the project, deployed version and files,
+database schema, registered functions, scheduled jobs, and native function logs.
+Use `view_logs` to inspect both unexpected errors and caught feed failures;
+search structured messages in `log_output` because a successful request can
+still contain a handled failure. Report observed run duration against the
+roughly 310-second one-shot limit and distinguish scheduled-job registration
+from an actual hourly firing.
+
+Do not invoke functions, execute code or SQL, queue refreshes, edit project
+files, change settings, promote drafts, or deploy as part of a read-only audit.
+The owner runs manual refreshes and relay requests; agents can inspect the
+resulting Hatchable logs. Relay-host checks remain owner-run unless separately
+authorized. Do not obtain credentials to perform any check. If connected access
+is unavailable, use owner-provided evidence and mark missing checks unverified.
 
 Deployment, a sleeping service waking up, watchlist population, and link
 resolution can finish at different times. Check the deployed commit before
 judging the feature. Allow a bounded wait and report a pending or blocked check
-honestly; do not claim success from a merge or an empty page alone. If owner
-evidence is unavailable, report the local checks and clearly say deployment was
+honestly; do not claim success from a merge or an empty page alone. If neither connected access nor owner-provided
+evidence is available, report the local checks and clearly say deployment was
 not checked. Inspect the actual UI when a change is visual and access permits.
 
 Reconcile bugs with GitHub issues before filing:
@@ -153,8 +166,8 @@ Reconcile bugs with GitHub issues before filing:
   tests, package scripts, and workflows. Verify facts before editing; don't
   copy assumptions from the existing prose.
 - Treat hosting settings as a separate source of facts. Repository defaults do
-  not prove live Hatchable or relay configuration; use owner-provided evidence
-  for live claims.
+  not prove live Hatchable or relay configuration; use separately authorized
+  read-only Hatchable observations or owner-provided evidence for live claims.
 - Keep agent-only workflows out of the app guide. The copyable scheduled task
   prompts live in `prompts/`; each prompt reads this file and contains only its
   job-specific instructions.
