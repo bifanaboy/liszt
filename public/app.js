@@ -619,11 +619,14 @@ document.addEventListener("keydown", (event) => {
 });
 syncNav(globalThis.location?.hash);
 selectCatalogue(globalThis.location?.hash);
-try {
-  await load();
-} catch (error) {
-  notices.innerHTML = `<div class="notice notice-warning">Catalogue unavailable: ${esc(error.message)}</div>`;
-  refreshState.textContent = "Unable to load catalogue";
-} finally {
-  schedulePoll(refreshing ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+async function initialize() {
+  try {
+    await load();
+  } catch (error) {
+    notices.innerHTML = `<div class="notice notice-warning">Catalogue unavailable: ${esc(error.message)}</div>`;
+    refreshState.textContent = "Unable to load catalogue";
+  } finally {
+    schedulePoll(refreshing ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+  }
 }
+initialize();
