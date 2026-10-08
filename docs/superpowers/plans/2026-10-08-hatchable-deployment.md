@@ -42,7 +42,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Create: `api/health.js`, `api/heartbeat.js`, `api/log-check.js`
 - Create: `migrations/0001_pilot.sql`
 - Create: `lib/pilot.js`
-- Create: `public/index.html`
+- Create: `public/pilot/index.html` (keeps the test page away from Liszt's existing homepage)
 - Test: `test/hatchable-pilot.test.js`
 
 **Interfaces:**
@@ -148,7 +148,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 ## Task 7: Move the browser experience and remove obsolete runtime claims
 
 **Files:**
-- Create: `public/index.html`, `public/app.js`, `public/styles.css`, and only the static assets actually required
+- Create: `public/pilot/index.html` (keeps the test page away from Liszt's existing homepage), `public/app.js`, `public/styles.css`, and only the static assets actually required
 - Modify: `README.md`, `package.json`, `.github/workflows/ci.yml`, and Render-specific tracked configuration/docs after confirming their exact presence and references
 - Test: browser/catalogue tests corresponding to `test/catalogues.test.ts`, `test/read-model-watchlist.test.ts`, `test/source-health.test.ts`, plus `npm run format:check`
 
