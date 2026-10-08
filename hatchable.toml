@@ -1,5 +1,5 @@
-name = "Liszt Compatibility Pilot"
+name = "Liszt"
 
 [[cron]]
-path = "/api/heartbeat"
+path = "/api/cron"
 schedule = "0 * * * *"

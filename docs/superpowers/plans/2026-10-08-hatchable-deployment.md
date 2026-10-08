@@ -138,28 +138,31 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - [ ] Stop before live hosting setup. The owner must choose and launch a host in a fixed region, then perform the live check separately. Spain is the first candidate based on one observed success. Record provider, region, cost, egress address, date, and exact result before cutover; if no candidate passes, Sxyprn remains unavailable.
 - [x] Run the playback parity tests; expected: no unverified match is persisted.
 - [x] Run the relay's local security and behavior tests; expected: authorized allowed lookups work, invalid destinations are rejected, upstream failures are bounded, and no sensitive response content is logged.
-- [ ] Commit this task as `feat: port verified playback lookup`.
+- [x] Commit this task as `feat: port verified playback lookup`.
 
 ## Task 6: Add bounded sync, hourly scheduling, routes, and native failure logs
 
 **Files:**
 - Create: `api/refresh.js`
 - Create: `api/cron.js`
+- Create: `api/worker.js`, `api/scenes.js`, `api/progress.js`
 - Create: `api/status.js`
 - Create: `lib/sync.js`
-- Create: `lib/progress.js`
+- Create: `lib/refresh.js`, `lib/refresh-jobs.js`, `migrations/0002_refresh_jobs.sql`
 - Create: `lib/logging.js`
+- Modify: `lib/config.js`, `hatchable.toml`, `eslint.config.js`
 - Test: port tests from `test/sync.test.ts`, `test/progress.test.ts`, `test/scheduler.test.ts`, and `test/http.test.ts`
 
 **Interfaces:**
 - Consumes: Tasks 1–5.
-- Produces: one refresh flow callable by manual route and hourly scheduled handler; bounded steps persist progress in Postgres and can resume safely. Status and catalogue routes retain current user-facing fields. `logProviderFailure({runId, provider, stage, occurredAt, summary})` writes sanitized structured output to Hatchable's native logs.
+- Produces: one refresh flow callable by manual route and hourly scheduled handler. A persistent job row coalesces duplicate triggers; a Hatchable one-shot worker runs the full idempotent cycle and an expired lease permits replay after interruption. Status and catalogue routes retain current user-facing fields. `logProviderFailure({runId, provider, stage, occurredAt, summary})` writes sanitized structured output to Hatchable's native logs.
 
-- [ ] Add tests for manual and scheduled invocations sharing the same sync path, bounded continuation, duplicate invocation, one-provider failure with other providers succeeding, and sanitized failure logging.
-- [ ] Implement resumable sync using the confirmed Hatchable job limits; do not assume in-memory timers or a long-running process.
-- [ ] Implement manual refresh, scheduled refresh, status, and catalogue routes with the Hatchable request/response interface verified in Task 1.
-- [ ] Verify native function errors and handled provider failures using `view_logs`; assert keys, headers, credential-bearing URLs, and raw provider bodies are absent. For recovered failures, inspect searchable `log_output` rather than assuming the severity filter will label a successful request as an error.
-- [ ] Commit this task as `feat: add scheduled Hatchable refresh`.
+- [x] Add tests for manual and scheduled requests sharing one persistent queued job, duplicate claims, async storage, and sanitized provider failure logging.
+- [x] Port the existing sync pipeline to await Hatchable's Postgres storage and preserve provider isolation, release merging, playback matching, and link verification.
+- [x] Add a shared hourly/manual queue and a one-shot worker. Hatchable documents roughly 310 seconds for one-shot work; completed database writes survive interruption, and an expired 10-minute lease allows the next hourly or manual attempt to replay the idempotent cycle.
+- [x] Implement the catalogue, progress, status, manual refresh, and hourly scheduler routes.
+- [ ] Verify deployed native function errors and handled provider failures using `view_logs`; owner-run verification remains pending. Search `log_output` rather than assuming the severity filter labels successful requests as errors.
+- [x] Commit this task as `feat: add scheduled Hatchable refresh`.
 
 ## Task 7: Move the browser experience and remove obsolete runtime claims
 

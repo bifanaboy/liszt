@@ -52,10 +52,14 @@ unsupported Node.js, TypeScript build, filesystem, and package dependencies
 with supported Hatchable capabilities or plain JavaScript. Keep feed secrets in
 Hatchable's secret setup, never in source files or logs.
 
-An hourly scheduled handler starts a refresh. Work must be saved in bounded,
-resumable steps to fit Hatchable's scheduled-job limits. The manual refresh uses
-the same sync path. The app continues to expose the current catalogue and sync
-status behavior through Hatchable routes and its browser interface.
+The hourly schedule and manual refresh use one persisted job queue and the same
+sync path. A scheduled route queues a one-shot worker, which Hatchable documents
+as having roughly 310 seconds of wall time. Completed source writes remain
+persisted, so an interrupted cycle can safely be replayed after its 10-minute
+lease expires. This is whole-cycle replay, not a saved per-feed cursor; if live
+refreshes exceed the one-shot limit, the worker must be split into smaller
+persisted steps before cutover. The app exposes the catalogue and coarse sync
+status through Hatchable routes and its browser interface.
 
 ## Failure review and privacy
 
@@ -142,8 +146,9 @@ of this design.
 - Before cutover, the chosen relay has a verified outgoing country and a
   successful real Sxyprn response; Hatchable can use it without exposing the
   relay secret in source or logs.
-- Long refresh work resumes safely across bounded scheduled steps; a failed
-  provider does not erase good data from other providers.
+- Interrupted refreshes retain completed writes and are safe to replay; a failed
+  provider does not erase good data from other providers. Per-feed cursor resume
+  is not implemented, so the live run must fit Hatchable's one-shot time limit.
 - Unexpected function errors and caught feed failures are visible in Hatchable's
   native logs, including enough context for the owner and authorized agents to
   identify the failing provider and sync stage.
@@ -161,6 +166,10 @@ of this design.
 
 - Hatchable prunes older native function logs; the exact retention duration
   is not stated in the available platform skill.
+- The full sync runs in one Hatchable one-shot worker (roughly 310 seconds max)
+  and replays from the beginning after an interruption. Its real runtime has not
+  been measured in the private app; if it exceeds the limit, per-feed chunking
+  is required before cutover.
 - Each launched instance begins without the current Render data. Its catalogue
   and indexes must be rebuilt from feeds.
 - The existing Render service and settings are not inspected or changed here.
