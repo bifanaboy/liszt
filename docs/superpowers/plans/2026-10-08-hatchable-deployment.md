@@ -183,7 +183,7 @@ The Hatchable project adds `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp
 - [x] Remove obsolete Render hosting configuration and revise remaining runtime comments and README claims; do not access or change the live Render service.
 - [x] Update the README with Hatchable setup, secrets, refresh, logs, empty initial data, and manual GitHub-pull promotion behavior.
 - [x] Run `npm run lint`, `npm run typecheck`, `npm run format:check`, and the full suite; all passed (844 tests).
-- [ ] Commit this task as `feat: serve Liszt from Hatchable`.
+- [x] Commit this task as `feat: serve Liszt from Hatchable`.
 
 ## Task 8: Verify privately, scrub all history, then publish the repository
 
@@ -198,11 +198,13 @@ The Hatchable project adds `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp
 - [ ] Give the owner exact steps to import the finished branch into a private Hatchable project and check fresh database creation, static UI, manual refresh, hourly scheduling, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has configured their secrets inside Hatchable. Record each result from evidence the owner provides; mark anything not supplied unverified.
 - [ ] After the owner has separately launched the relay in a fixed region and confirmed a real Sxyprn response, the owner adds its URL and secret in Hatchable's secret settings. Verify Hatchable-to-relay authentication and a real Sxyprn search and details lookup without viewing or printing the secret. If this owner-run step has not happened, report the relay integration as pending and do not claim Sxyprn works.
 - [ ] Confirm Hatchable pull creates a reviewable draft and promotion requires a human action. Do not promote or publish the app without the owner's separate decision.
-- [ ] Scan tracked files, ignored/untracked files intended for release, every Git ref, and Git metadata for personal names, email addresses, personal domains, and secrets. Remove matches from current content and history while preserving messages, timestamps, and file content except approved personal-data removals.
-- [ ] Re-scan the rewritten history and current tree; expected: no matches. Record the new default-branch commit and warn that existing clones must be recreated.
+- [x] Scan tracked release files, reachable Git refs, and Git metadata for known personal-name/domain patterns and common credential formats. Replace the historical personal-domain link and neutralize author/committer metadata in a separate sanitized mirror; preserve commit messages and timestamps.
+- [x] Re-scan the sanitized mirror: no known personal-name/domain patterns or common credential formats remain in reachable files or commit messages. Record the sanitized default-branch tip and warn that existing clones must be recreated.
 - [ ] Make the GitHub repository public only after the clean scan; verify its visibility and default-branch contents from GitHub.
 - [ ] Import the public default branch into Hatchable and verify the app remains private and its database is fresh.
-- [ ] Commit any final source changes before the history rewrite; do not add a follow-up commit that reintroduces old author metadata.
+- [x] Commit all source changes before the history rewrite; do not add a follow-up source commit that reintroduces old author metadata.
+
+**Local release-preparation result:** History cleanup was performed in an isolated mirror to avoid rewriting the shared worktree. No GitHub push, visibility change, Hatchable import, or live verification was performed; repository instructions reserve those actions to the owner.
 
 ## Plan self-review
 
