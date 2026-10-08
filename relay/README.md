@@ -42,3 +42,9 @@ In Hatchable's secret settings, set:
 The relay accepts authenticated `POST /v1/search` requests with `{"query":"..."}`
 and `POST /v1/details` requests with a validated Sxyprn post URL. It rejects
 other destinations and does not expose an endpoint for arbitrary fetches.
+
+Search and detail requests share one active package call and a waiting queue of
+at most 32 requests. A full queue returns HTTP 503 (busy). The 15-second request
+limit includes queue time; expired waiting requests are removed before calling
+the package. A running package call keeps its slot until it finishes, even if
+the relay has already returned HTTP 504 (timeout).

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Readable } from "node:stream";
+import { setImmediate } from "node:timers/promises";
 import { createSxyprnRelayApi } from "../lib/tubes/sxyprn-client.js";
 import { createSxyprnRelayHandler } from "../relay/server.js";
 
@@ -271,4 +272,125 @@ test("upstream failures are bounded and their private details are not returned o
   });
   const response = await send(slow, "/v1/search", { query: "a scene" });
   assert.equal(response.status, 504);
+});
+
+test("relay serializes search and detail calls before entering the package", async () => {
+  const first = Promise.withResolvers();
+  const calls = [];
+  const route = createSxyprnRelayHandler({
+    secret: SECRET,
+    api: {
+      videos: {
+        search() {
+          calls.push("search");
+          return first.promise;
+        },
+        details() {
+          calls.push("details");
+          return {};
+        },
+      },
+    },
+  });
+  const search = send(route, "/v1/search", { query: "first" });
+  const details = send(route, "/v1/details", { url: POST_URL });
+  await setImmediate();
+  assert.deepEqual(calls, ["search"]);
+  first.resolve({ videos: [] });
+  assert.deepEqual(
+    (await Promise.all([search, details])).map((r) => r.status),
+    [200, 200],
+  );
+  assert.deepEqual(calls, ["search", "details"]);
+});
+
+test("relay removes expired waiters and holds a timed-out active slot until settlement", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const first = Promise.withResolvers();
+  const calls = [];
+  const route = createSxyprnRelayHandler({
+    secret: SECRET,
+    timeoutMs: 100,
+    api: {
+      videos: {
+        search(query) {
+          calls.push(query);
+          return query === "active" ? first.promise : { videos: [] };
+        },
+        details: async () => ({}),
+      },
+    },
+  });
+  const active = send(route, "/v1/search", { query: "active" });
+  const expired = send(route, "/v1/search", { query: "expired" });
+  await setImmediate();
+  t.mock.timers.tick(100);
+  assert.deepEqual(
+    (await Promise.all([active, expired])).map((r) => r.status),
+    [504, 504],
+  );
+  const fresh = send(route, "/v1/search", { query: "fresh" });
+  await setImmediate();
+  assert.deepEqual(calls, ["active"]);
+  first.reject(new Error("late package failure"));
+  assert.equal((await fresh).status, 200);
+  assert.deepEqual(calls, ["active", "fresh"]);
+});
+
+test("relay checks queued deadlines even when timeout callbacks have not run", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const first = Promise.withResolvers();
+  let calls = 0;
+  const route = createSxyprnRelayHandler({
+    secret: SECRET,
+    timeoutMs: 100,
+    api: {
+      videos: {
+        search() {
+          calls += 1;
+          return first.promise;
+        },
+        details: async () => ({}),
+      },
+    },
+  });
+  const active = send(route, "/v1/search", { query: "active" });
+  const queued = send(route, "/v1/search", { query: "queued" });
+  await setImmediate();
+  t.mock.timers.setTime(101);
+  first.resolve({ videos: [] });
+  await active;
+  assert.equal((await queued).status, 504);
+  assert.equal(calls, 1);
+});
+
+test("relay rejects excess queued requests before calling the package", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const first = Promise.withResolvers();
+  let calls = 0;
+  const route = createSxyprnRelayHandler({
+    secret: SECRET,
+    timeoutMs: 100,
+    api: {
+      videos: {
+        search() {
+          calls += 1;
+          return first.promise;
+        },
+        details: async () => ({}),
+      },
+    },
+  });
+  const admitted = Array.from({ length: 33 }, (_, i) =>
+    send(route, "/v1/search", { query: String(i) }),
+  );
+  await setImmediate();
+  assert.equal((await send(route, "/v1/search", { query: "overflow" })).status, 503);
+  assert.equal(calls, 1);
+  t.mock.timers.tick(100);
+  assert.ok((await Promise.all(admitted)).every((r) => r.status === 504));
+  first.resolve({ videos: [] });
+  await setImmediate();
+  assert.equal((await send(route, "/v1/search", { query: "after expiry" })).status, 200);
+  assert.equal(calls, 2);
 });

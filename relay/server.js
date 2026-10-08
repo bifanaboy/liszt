@@ -6,6 +6,7 @@ import { validSxyprnUrl } from "../lib/tubes/sxyprn.js";
 const MAX_BODY_BYTES = 4096;
 const MAX_RESPONSE_BYTES = 65_536;
 const MAX_QUERY_LENGTH = 200;
+const MAX_QUEUED_REQUESTS = 32;
 const VIDEO_FIELDS = ["url", "title", "durationSeconds", "views", "isExternal", "author"];
 const DETAIL_FIELDS = [...VIDEO_FIELDS, "streamUrl", "uploadDate", "sizeBytes"];
 
@@ -68,31 +69,65 @@ function pickFields(value, fields) {
   return result;
 }
 
-async function withinTimeout(operation, timeoutMs) {
-  let timer;
-  let pending;
-  const deadline = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(Object.assign(new Error("upstream timeout"), { status: 504 })),
-      timeoutMs,
-    );
-  });
-  try {
-    pending = Promise.resolve().then(operation);
-    return await Promise.race([pending, deadline]);
-  } catch (error) {
-    pending?.catch(() => {});
-    if (error?.status === 504) throw error;
-    throw Object.assign(new Error("upstream unavailable"), { status: 502 });
-  } finally {
-    clearTimeout(timer);
+function createOperationQueue(timeoutMs) {
+  const queue = new Set();
+  let active = false;
+
+  function drain() {
+    if (active) return;
+    const job = queue.values().next().value;
+    if (!job) return;
+    queue.delete(job);
+    // A delayed timer must not allow an expired request to enter the package.
+    if (Date.now() >= job.deadline) {
+      job.expire();
+      drain();
+      return;
+    }
+    active = true;
+    Promise.resolve()
+      .then(job.operation)
+      .then(job.resolve, () => {
+        job.reject(Object.assign(new Error("upstream unavailable"), { status: 502 }));
+      })
+      .finally(() => {
+        clearTimeout(job.timer);
+        // The package cannot cancel running calls. Hold its slot even if the
+        // HTTP request timed out, so later calls cannot build up inside it.
+        active = false;
+        drain();
+      });
   }
+
+  return (operation) =>
+    new Promise((resolve, reject) => {
+      if (queue.size >= MAX_QUEUED_REQUESTS) {
+        reject(Object.assign(new Error("upstream busy"), { status: 503 }));
+        return;
+      }
+      const job = {
+        operation,
+        resolve,
+        reject,
+        deadline: Date.now() + timeoutMs,
+        expire() {
+          queue.delete(job);
+          clearTimeout(job.timer);
+          reject(Object.assign(new Error("upstream timeout"), { status: 504 }));
+        },
+      };
+      job.timer = setTimeout(job.expire, timeoutMs);
+      queue.add(job);
+      drain();
+    });
 }
 
 export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {}) {
   if (!secret) throw new Error("SXYPRN_RELAY_SECRET is required");
   if (!api?.videos?.search || !api?.videos?.details)
     throw new Error("Sxyprn package API is unavailable");
+
+  const runOperation = createOperationQueue(timeoutMs);
 
   return async (req, res) => {
     const path = new URL(req.url, "http://relay.local").pathname;
@@ -118,7 +153,7 @@ export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {
           send(res, 400, { error: "invalid search query" });
           return;
         }
-        const page = await withinTimeout(() => api.videos.search(query, { page: 0 }), timeoutMs);
+        const page = await runOperation(() => api.videos.search(query, { page: 0 }));
         if (!Array.isArray(page?.videos)) {
           send(res, 502, { error: "invalid Sxyprn response" });
           return;
@@ -131,7 +166,7 @@ export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {
           send(res, 400, { error: "invalid Sxyprn post URL" });
           return;
         }
-        const detail = await withinTimeout(() => api.videos.details({ url: input.url }), timeoutMs);
+        const detail = await runOperation(() => api.videos.details({ url: input.url }));
         if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
           send(res, 502, { error: "invalid Sxyprn response" });
           return;
@@ -152,16 +187,20 @@ export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {
             ? 400
             : error?.status === 504
               ? 504
-              : 502;
+              : error?.status === 503
+                ? 503
+                : 502;
       send(res, status, {
         error:
           status === 504
             ? "Sxyprn request timed out"
-            : status === 413
-              ? "request too large"
-              : status === 400
-                ? "invalid request"
-                : "Sxyprn unavailable",
+            : status === 503
+              ? "Sxyprn busy"
+              : status === 413
+                ? "request too large"
+                : status === 400
+                  ? "invalid request"
+                  : "Sxyprn unavailable",
       });
     }
   };

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { setImmediate } from "node:timers/promises";
 import { createManyVidsSource } from "../lib/sources/manyvids.js";
 
 const page = JSON.parse(
@@ -18,6 +19,7 @@ test("ManyVids validates a fetched page and persists its snapshot asynchronously
       return saved ?? null;
     },
     async setSourceSnapshot(_id, value) {
+      await setImmediate();
       saved = value;
     },
   };
@@ -59,4 +61,29 @@ test("ManyVids rejects malformed provider pages instead of saving them", async (
     /Schema violation/,
   );
   assert.equal(saved, false);
+});
+
+test("ManyVids propagates snapshot write failures", async () => {
+  const failure = new Error("snapshot write failed");
+  const source = createManyVidsSource({
+    storeId: "1003095958",
+    minIntervalMs: 0,
+    store: {
+      async getSourceSnapshot() {
+        return null;
+      },
+      async setSourceSnapshot() {
+        await setImmediate();
+        throw failure;
+      },
+    },
+  });
+  await assert.rejects(
+    source.fetch("2026-01-01", {
+      now: new Date("2026-10-08T00:00:00Z"),
+      log() {},
+      fetcher: { json: async () => onePage },
+    }),
+    failure,
+  );
 });
