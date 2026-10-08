@@ -18,7 +18,12 @@
 - Keep feed secrets in Hatchable secret settings; never put them in source or logs.
 - Keep the Hatchable project private by default; GitHub merges require manual pull, draft review, and human promotion.
 - Preserve named provider integrations and matching safety unless a pilot proves a platform limit; pause for a scope decision before dropping any integration.
+- Route Sxyprn requests through one small external relay in a fixed, verified country; confirm a real Sxyprn response because IP-country lookups alone do not prove access.
+- The relay only accepts the Sxyprn lookup inputs required by Liszt; it never fetches arbitrary user-supplied destinations and never logs credentials or page bodies.
+- Do not rotate relay addresses or countries automatically. If Sxyprn blocks the route, stop requests through the existing spacing and circuit breaker and report the sanitized failure.
 - Do not change Render settings or trigger a Render deployment.
+- Do not provision or deploy the relay or change any hosting settings from this repository workflow. Relay hosting is a separate owner-run step that needs its own provider choice and live verification.
+- Hatchable imports, project settings, live scheduled runs, and live log checks are owner-run steps; this repository plan prepares the files and verification instructions but does not operate the external project.
 - Before GitHub visibility changes, remove personal identifiers and secrets from current files and every Git ref; history rewrite changes commit IDs.
 
 ## Review Focus
@@ -33,7 +38,7 @@
 
 ## File map
 
-The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp/`, and `public/` files. Existing `src/` and `test/` remain the behavior reference until the Hatchable version is verified; remove the obsolete Node runtime and Render-specific repository setup only in the final port/documentation task. Keep the existing tests and fixtures as the source for parity tests; add focused Hatchable tests alongside them where the SDK allows local testing.
+The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp/`, and `public/` files. A small separate Node HTTP service will handle only Sxyprn lookup traffic because Hatchable's outbound route was region-blocked and its runtime cannot use the current optional package. Existing `src/` and `test/` remain the behavior reference until the Hatchable version is verified; remove the obsolete app Node runtime and Render-specific repository setup only in the final port/documentation task. Keep the existing tests and fixtures as the source for parity tests; add focused Hatchable tests alongside them where the SDK allows local testing.
 
 ## Task 1: Prove the Hatchable project shape in a private pilot
 
@@ -68,10 +73,10 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Consumes: existing behavior and fixtures from the three named tests and `src/pipeline/release-identity.ts`, `src/pipeline/release-merge.ts`, and `src/core/matching.ts`.
 - Produces: plain JavaScript functions with the same input/output behavior as the existing `releaseIdentity`, `mergeRelease`, and matching exports; no Node imports or package dependencies.
 
-- [ ] Port the test cases first and verify they fail against the new files because the exports are absent.
-- [ ] Port only the pure logic needed by the Hatchable app, retaining date, identity, deduplication, and ambiguity rules.
-- [ ] Run the new tests and the existing matching/release tests; expected: all parity assertions pass.
-- [ ] Commit this task as `feat: port release matching rules to Hatchable`.
+- [x] Port the test cases first and verify they fail against the new files because the exports are absent.
+- [x] Port only the pure logic needed by the Hatchable app, retaining date, identity, deduplication, and ambiguity rules.
+- [x] Run the new tests and the existing matching/release tests; expected: all parity assertions pass.
+- [x] Commit this task as `feat: port release matching rules to Hatchable`.
 
 ## Task 3: Add persistent Postgres storage and migrations
 
@@ -86,11 +91,11 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Consumes: Task 1's confirmed Hatchable database API and Task 2's release identity.
 - Produces: store operations matching the current SQLite store responsibilities: source snapshots, provider observations, scenes, source state, run history, pool videos/progress, and FC2 candidates. Use Hatchable's native Postgres access patterns confirmed in Task 1.
 
-- [ ] Translate each current migration in `src/core/store/migrations/` into the smallest equivalent Postgres schema; review constraints and indexes against each current store query.
-- [ ] Write tests for empty initialization, unique scene identity, provider provenance, transaction rollback, refresh progress, and pool/FC2 persistence; confirm failure before implementation.
-- [ ] Implement the store methods used by the app, keeping the established names and behavior where practical.
-- [ ] Run the store and migration parity tests against a fresh pilot database; expected: empty start, writes survive later invocations, and rollback leaves no partial update.
-- [ ] Commit this task as `feat: add Hatchable Postgres storage`.
+- [x] Translate each current migration in `src/core/store/migrations/` into the smallest equivalent Postgres schema; review constraints and indexes against each current store query.
+- [x] Write tests for empty initialization, unique scene identity, provider provenance, transaction rollback, refresh progress, and pool/FC2 persistence; confirm failure before implementation.
+- [x] Implement the store methods used by the app, keeping the established names and behavior where practical.
+- [x] Run the store and migration parity tests against a fresh pilot database; expected: empty start, writes survive later invocations, and rollback leaves no partial update.
+- [x] Commit this task as `feat: add Hatchable Postgres storage`.
 
 ## Task 4: Port feed fetching, configuration, and source adapters
 
@@ -110,21 +115,29 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - [x] Verify adapter behavior with fixtures and the private pilot; report the keyed TPDB provider unverified because no key is configured.
 - [x] Commit this task as `feat: port catalogue source adapters`.
 
-## Task 5: Port playback lookup and link verification
+## Task 5: Port playback lookup and add the Sxyprn relay
 
 **Files:**
 - Create: `lib/tubes/*.js`
+- Create: `relay/package.json`, `relay/server.js`, `relay/README.md`
+- Modify: `eslint.config.js`
 - Test: Port relevant cases from `test/eporner.test.ts`, `test/eporner-pool.test.ts`, `test/fc2-eporner.test.ts`, `test/resolve.test.ts`, `test/reverify.test.ts`, and `test/sxyprn.test.ts`
+- Test: `test/sxyprn-relay.test.js`
 
 **Interfaces:**
 - Consumes: Tasks 2–4 and the current scene/source types.
-- Produces: verified-link behavior for the Eporner trusted pool and FC2 Eporner lookup, plus Sxyprn detail lookup if the pilot confirms a supported implementation path.
+- Produces: verified-link behavior for the Eporner trusted pool and FC2 Eporner lookup; the Hatchable Sxyprn client calls an authenticated, narrowly scoped external relay, which uses the existing Sxyprn package outside Hatchable.
 
-- [ ] Port fixture-backed safety tests first, including ambiguous title/duration and removed or unsafe video cases.
-- [ ] Implement Eporner pool, FC2 lookup, and link re-verification with the existing safety thresholds and no Node-only imports.
-- [ ] Investigate Sxyprn separately: the current implementation dynamically imports an optional npm package, which Hatchable's documented static-import restriction may not support. Test whether a direct supported HTTP implementation can preserve behavior.
-- [ ] If Sxyprn cannot be preserved within confirmed Hatchable limits, stop and ask for a scope decision; do not silently remove or weaken it.
-- [ ] Run the playback parity tests; expected: no unverified match is persisted.
+- [x] Port fixture-backed safety tests first, including ambiguous title/duration and removed or unsafe video cases.
+- [x] Implement Eporner pool, FC2 lookup, and link re-verification with the existing safety thresholds and no Node-only imports.
+- [x] Add failing relay tests for its allowed search and details inputs, required shared secret, invalid Sxyprn URLs, arbitrary destinations, upstream errors, response size and timeout limits, and absence of secrets or page bodies in logs.
+- [x] Implement the smallest Node HTTP relay around the existing `sxyprn` package. It accepts only search text or a validated `https://sxyprn.com/post/...` URL, constructs the upstream request itself, and returns only the fields used by the existing matcher.
+- [x] Add failing Hatchable-client tests proving it calls only the configured relay, sends its secret in an authorization header, and maps a relay block/timeout into the existing failure and circuit-breaker path.
+- [x] Implement the Hatchable Sxyprn client using supported `fetch`; keep the existing 10-second spacing, one request at a time, timeout, and circuit-breaker behavior. Never add geolocation-based country guessing or address rotation.
+- [x] Add a short owner setup note listing the relay's required runtime, start command, fixed-region requirement, endpoint URL, and secret setting name. Do not include credentials or claim a provider is selected.
+- [ ] Stop before live hosting setup. The owner must choose and launch a host in a fixed region, then perform the live check separately. Spain is the first candidate based on one observed success. Record provider, region, cost, egress address, date, and exact result before cutover; if no candidate passes, Sxyprn remains unavailable.
+- [x] Run the playback parity tests; expected: no unverified match is persisted.
+- [x] Run the relay's local security and behavior tests; expected: authorized allowed lookups work, invalid destinations are rejected, upstream failures are bounded, and no sensitive response content is logged.
 - [ ] Commit this task as `feat: port verified playback lookup`.
 
 ## Task 6: Add bounded sync, hourly scheduling, routes, and native failure logs
@@ -178,7 +191,8 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Consumes: Tasks 1–7 and the release sequence in the spec.
 - Produces: verified private Hatchable draft and a public GitHub repository whose current files and rewritten history contain no personal identifiers or secrets.
 
-- [ ] Import the finished public default branch into a fresh personal/private Hatchable project; check fresh database creation, static UI, manual refresh, hourly schedule registration and one real scheduled firing, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has supplied their secrets inside Hatchable. Record the observed outcome for each in-scope provider.
+- [ ] Give the owner exact steps to import the finished branch into a private Hatchable project and check fresh database creation, static UI, manual refresh, hourly scheduling, feed behavior, resumability, and logs. Verify keyed integrations only when the owner has configured their secrets inside Hatchable. Record each result from evidence the owner provides; mark anything not supplied unverified.
+- [ ] After the owner has separately launched the relay in a fixed region and confirmed a real Sxyprn response, the owner adds its URL and secret in Hatchable's secret settings. Verify Hatchable-to-relay authentication and a real Sxyprn search and details lookup without viewing or printing the secret. If this owner-run step has not happened, report the relay integration as pending and do not claim Sxyprn works.
 - [ ] Confirm Hatchable pull creates a reviewable draft and promotion requires a human action. Do not promote or publish the app without the owner's separate decision.
 - [ ] Scan tracked files, ignored/untracked files intended for release, every Git ref, and Git metadata for personal names, email addresses, personal domains, and secrets. Remove matches from current content and history while preserving messages, timestamps, and file content except approved personal-data removals.
 - [ ] Re-scan the rewritten history and current tree; expected: no matches. Record the new default-branch commit and warn that existing clones must be recreated.
@@ -188,8 +202,8 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 
 ## Plan self-review
 
-- **Spec coverage:** pilot and platform limits (Task 1); release/matching behavior (Task 2); persistent data (Task 3); named feeds/secrets (Task 4); named playback integrations and Sxyprn decision gate (Task 5); hourly/manual refresh, progress, logs and routes (Task 6); browser app and hosting documentation (Task 7); private verification, PII/history cleanup and public release (Task 8).
+- **Spec coverage:** pilot and platform limits (Task 1); release/matching behavior (Task 2); persistent data (Task 3); named feeds/secrets (Task 4); playback integrations and constrained Sxyprn relay (Task 5); hourly/manual refresh, progress, logs and routes (Task 6); browser app and hosting documentation (Task 7); private verification, PII/history cleanup and public release (Task 8).
 - **Step clarity:** each task defines files, producer/consumer interfaces, a test or live check, expected outcome, and commit boundary. Hatchable SDK entry points are intentionally verified during Task 1 rather than guessed in advance.
 - **Type/interface consistency:** store and route implementations depend on Task 1's discovered SDK API; later tasks consume normalized source records and persisted progress from earlier tasks. No unverified Hatchable function signature is invented here.
-- **Review focus coverage:** provider errors, interrupted/duplicate refresh, missing secrets, ambiguous playback evidence, and sensitive log content are assigned tests to their owning tasks.
+- **Review focus coverage:** provider errors, interrupted/duplicate refresh, missing secrets, ambiguous playback evidence, relay authorization/destination validation, and sensitive log content are assigned tests to their owning tasks.
 - **Proportion:** eight reviewable stages match the full platform move and release gate; the pilot and privacy release are explicit blockers, not assumed successes.

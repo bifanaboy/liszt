@@ -20,8 +20,10 @@ repository and its Git history before making it public.
   log entries for feed failures that the app handles and continues past.
 - Keep each Hatchable project private by default. Making the GitHub repository
   public does not itself publish the app.
-- Treat Hatchable as the only supported deployment after the move. Do not
-  change or operate the existing Render service as part of this work.
+- Treat Hatchable as the supported application deployment after the move. Keep
+  one small external HTTP relay solely for Sxyprn requests; do not maintain a
+  second copy of the application. Do not change or operate the existing Render
+  service as part of this work.
 - Remove personal names and email addresses from Git author and committer
   metadata, and remove personal-domain references from current files and past
   commits before the repository is made public.
@@ -42,7 +44,8 @@ the configurable Traxxx watchlist (18 default URLs), optional ThePornDB
 (TPDB), configurable ManyVids stores, Maximo Garcia through Fansly, Bang!
 Originals, FC2CMADB, Madouqu, and Woodman Casting X (which reads through
 Traxxx). The playback integrations are the Eporner trusted pool, optional
-Sxyprn detail lookup, and the FC2-specific Eporner lookup. Preserve existing
+Sxyprn detail lookup through the external relay described below, and the
+FC2-specific Eporner lookup. Preserve existing
 externally visible behavior unless a Hatchable limit makes it impossible; do
 not silently drop an integration or weaken a matching safety rule. Replace
 unsupported Node.js, TypeScript build, filesystem, and package dependencies
@@ -68,6 +71,36 @@ read-only `view_logs` tool, subject to project access. Hatchable stores function
 logs, but a retention duration has not been confirmed; do not promise a fixed
 retention period. If a guaranteed retention period becomes necessary, bring
 that back as a separate design decision.
+
+## Sxyprn request relay
+
+Hatchable's current outbound address was blocked by Sxyprn's regional check.
+One Sxyprn page request through a separate web-fetch route succeeded, and that
+route's address was independently located in Spain. This is one observed
+success, not proof that Spain is consistently allowed or that a hosting
+provider will keep its outbound address there.
+
+Use one small external HTTP service only to fetch Sxyprn pages for the existing
+detail lookup. Run it in a fixed country that has been verified with a real
+Sxyprn request before cutover; Spain is the first candidate to test. Hatchable
+calls the relay instead of calling Sxyprn directly. The relay accepts only the
+lookup inputs needed by the app and constructs the destination URL itself; it
+must not become a general-purpose proxy. Keep its address and access secret in
+Hatchable's secret settings, and never write secrets or fetched page contents
+to logs.
+
+Treat a successful Sxyprn response as the measure of route health. An IP
+country lookup is useful diagnostic information, but does not prove Sxyprn will
+accept that address. Verify the relay's actual outgoing address and a real
+Sxyprn response before cutover. During operation, report a regional block as a
+sanitized source failure, stop repeated Sxyprn requests through the existing
+single-request spacing and circuit breaker, and alert through Hatchable's
+native logs. Do not rotate addresses or try a list of countries automatically.
+
+The relay hosting provider, fixed region availability, cost, and continued
+Sxyprn acceptance remain to be tested. If the provider changes the outgoing
+address or Sxyprn blocks it later, Sxyprn detail lookup becomes unavailable
+until a human verifies and updates the relay route.
 
 Before publishing the repository, scan current files and every Git ref for
 personal identifiers and secrets. Remove the known personal-domain reference
@@ -106,6 +139,9 @@ of this design.
   rolling catalogue through hourly and manual refreshes.
 - Existing release identity, provider provenance, link verification, and
   playback matching safety behavior remain intact.
+- Before cutover, the chosen relay has a verified outgoing country and a
+  successful real Sxyprn response; Hatchable can use it without exposing the
+  relay secret in source or logs.
 - Long refresh work resumes safely across bounded scheduled steps; a failed
   provider does not erase good data from other providers.
 - Unexpected function errors and caught feed failures are visible in Hatchable's
@@ -118,6 +154,8 @@ of this design.
   repository visibility changes.
 - Hatchable's Git pull produces a draft for review; promoting that draft is a
   human action.
+- The relay only fetches the Sxyprn pages needed by the app and cannot be used
+  to request arbitrary destinations.
 
 ## Known limits
 
@@ -128,7 +166,11 @@ of this design.
 - The existing Render service and settings are not inspected or changed here.
   Moving the source runtime makes Render an unsupported deployment and may
   affect it if a later repository merge triggers its configured auto-deploy.
+- The Sxyprn relay runs outside Hatchable and adds a small external service to
+  operate. Its provider and cost are not chosen yet; regional success beyond
+  the single Spain observation is unverified.
 - Hatchable's execution time, network, package, and filesystem limits may
   require adapting the named feed and playback integrations. Any integration
   that cannot be preserved within those limits must be surfaced for a scope
-  decision before cutover.
+  decision before cutover. Sxyprn is the approved exception: it uses the
+  constrained external relay above.
