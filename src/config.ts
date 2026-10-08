@@ -54,10 +54,8 @@ export const DEFAULT_MADOUQU_API_BASE = "https://public-api.wordpress.com/wp/v2/
 export const Config = z.object({
   port: z.coerce.number().int().positive().default(3000),
   /**
-   * The bind address. Loopback by design: production is fronted by a Cloudflare
-   * Tunnel, so nothing needs to reach the port directly and nothing should be
-   * able to. Override ONLY for a platform that fronts the process with its own
-   * proxy (see render.yaml).
+   * The retained Node reference server binds to loopback by default. Override
+   * only when a local deployment deliberately exposes it behind a proxy.
    */
   listenAddr: z.string().min(1).default("127.0.0.1"),
   dbPath: z.string().min(1).default("data/liszt.db"),

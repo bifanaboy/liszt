@@ -1,6 +1,6 @@
 /**
- * The composition root. This is the only place concrete implementations are
- * wired to the contracts the pipeline depends on.
+ * Legacy Node reference runtime; Hatchable serves the application. This local
+ * composition root wires concrete implementations to pipeline contracts.
  *
  * The boot order matters and is deliberate:
  *
@@ -35,12 +35,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(HERE, "..", "public");
 
 /**
- * The absolute ceiling on how long shutdown may take, armed at signal receipt.
- *
- * The scheduler's own guard is 30s, so this has to exceed it or the process
- * exits while the cycle it was waiting for is still running. `render.yaml` sets
- * `maxShutdownDelaySeconds: 60`, which must exceed THIS value, or the platform
- * SIGKILLs the process before it has finished waiting.
+ * The local reference server waits up to 45 seconds for an active cycle to stop.
  */
 const SHUTDOWN_BACKSTOP_MS = 45_000;
 

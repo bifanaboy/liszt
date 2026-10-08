@@ -1,7 +1,7 @@
 # Product audit
 
 Read `AGENTS.md` first. Imagine you are an end user and review
-<https://liszt.christownsend.com.au> using the Chrome DevTools MCP.
+the configured Liszt application using the available browser tools.
 
 Explore the main screens and user flows. Look for visible errors, confusing or
 broken interactions, missing or incorrect information, layout problems, and
@@ -10,6 +10,13 @@ private data. Do not submit forms or perform other actions with real-world
 effects through the audited site. The issue-tracker actions required below are
 permitted. If Chrome DevTools MCP is unavailable, say so and do not claim to have
 reviewed the site.
+
+Use separately authorized read-only Hatchable tools, when available, to check
+the deployed version, scheduled runs, and native logs as described in section 7
+of `AGENTS.md`. These checks can support a browser finding but do not replace
+reviewing the interface. Do not invoke functions, run code or SQL, or start a
+refresh. If access is unavailable, use owner-provided evidence or mark the check
+unverified.
 
 Reproduce each suspected problem and record its page, steps, expected result,
 actual result, and useful evidence. File only confirmed problems with Liszt's

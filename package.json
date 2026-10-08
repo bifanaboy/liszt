@@ -2,7 +2,7 @@
   "name": "liszt",
   "version": "1.0.0",
   "private": true,
-  "description": "A long-running personal release watchlist: poll sources, keep a rolling window in SQLite, resolve one verified playback link per scene or none",
+  "description": "A rolling release catalogue with provider provenance and verified playback links",
   "type": "module",
   "engines": {
     "node": ">=24.0.0 <25.0.0"
@@ -10,11 +10,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --test 'test/**/*.test.ts'",
+    "test": "node --test 'test/**/*.test.ts' 'test/**/*.test.js'",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "node --watch --env-file-if-exists=.env src/app.ts",
-    "start": "node --env-file-if-exists=.env src/app.ts",
     "calibrate": "node --env-file-if-exists=.env src/cli/calibrate.ts",
     "discover-uploaders": "node --env-file-if-exists=.env src/cli/uploader-discovery.ts",
     "catalogue-coverage": "node --env-file-if-exists=.env src/cli/catalogue-coverage.ts",
@@ -22,9 +20,6 @@
   },
   "dependencies": {
     "zod": "^4.6.5"
-  },
-  "optionalDependencies": {
-    "sxyprn": "^0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

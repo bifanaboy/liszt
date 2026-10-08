@@ -372,7 +372,10 @@ export async function loadSxyprnClient(
 ): Promise<SxyprnClient | null> {
   let module: { default?: unknown };
   try {
-    module = (await import("sxyprn")) as { default?: unknown };
+    // Resolve at runtime: checking the legacy tools must also work when the
+    // optional client is absent from the Hatchable installation.
+    const packageName: string = "sxyprn";
+    module = (await import(packageName)) as { default?: unknown };
   } catch {
     return null;
   }

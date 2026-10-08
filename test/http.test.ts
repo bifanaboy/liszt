@@ -60,7 +60,7 @@ async function withServer(
 
 test("GET /health is 2xx, JSON, and says nothing about the deployment", async () => {
   const d = deps();
-  assert.equal(HEALTH_PATH, "/health", "Render's healthCheckPath must keep resolving");
+  assert.equal(HEALTH_PATH, "/health", "the local reference health route must stay stable");
   await withServer(d, async (base) => {
     const response = await fetch(`${base}/health`);
     assert.equal(response.status, 200, "a health check that answers non-2xx fails the deploy");

@@ -16,7 +16,8 @@ import {
 // leftover import is a SyntaxError inside the VM, which would fail the whole
 // dashboard suite rather than one case. The bindings they named are supplied as
 // context globals below, which is also what proves the app only uses the
-// exported surface.
+// exported surface. The startup call is awaited inside this test-only wrapper
+// so assertions see the first load and its polling timer after they settle.
 const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8").replace(
   /^import[\s\S]*?from "\.\/[^"]+";\n/gm,
   "",
@@ -116,7 +117,7 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
   const links = navMarkup.map((link) => new NavLink({ nav: link.nav }, link.active));
   const place: { hash: string } = { hash };
   const api = (await runInNewContext(
-    `(async () => { ${source}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow, selectCatalogue }; })()`,
+    `(async () => { ${source.replace(/^initialize\(\);$/m, "await initialize();")}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow, selectCatalogue }; })()`,
     {
       document: {
         querySelector: element,
