@@ -2,7 +2,7 @@ export const access = "admin";
 export const methods = ["POST"];
 
 export default async function (_req, res) {
-  console.error(
+  globalThis.console.error(
     JSON.stringify({
       event: "pilot.handled_failure",
       run_id: "pilot",

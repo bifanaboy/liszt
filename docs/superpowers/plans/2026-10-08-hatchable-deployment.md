@@ -61,6 +61,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Create: `lib/release-identity.js`
 - Create: `lib/release-merge.js`
 - Create: `lib/matching.js`
+- Create: type declarations for those three JavaScript modules, used by the existing TypeScript parity tests
 - Test: Hatchable-compatible tests corresponding to `test/release-identity.test.ts`, `test/release-merge.test.ts`, and `test/matching.test.ts`
 
 **Interfaces:**
@@ -77,6 +78,8 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 **Files:**
 - Create: `migrations/0001_liszt.sql` and later numbered migrations only when needed
 - Create: `lib/store.js`
+- Create: temporary `api/store-check.js` for private-project integration checks; remove it in Task 7
+- Modify: `package.json` so the standard test command includes Hatchable JavaScript tests
 - Test: Hatchable-compatible store and migration tests corresponding to `test/store-migrations.test.ts`, `test/store-transactions.test.ts`, `test/migrations.test.ts`, and `test/fc2-link-persistence.test.ts`
 
 **Interfaces:**
@@ -150,7 +153,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 **Files:**
 - Create: `public/pilot/index.html` (keeps the test page away from Liszt's existing homepage), `public/app.js`, `public/styles.css`, and only the static assets actually required
 - Modify: `hatchable.toml`, `README.md`, `package.json`, `.github/workflows/ci.yml`, and Render-specific tracked configuration/docs after confirming their exact presence and references
-- Delete: pilot-only `api/health.js`, `api/heartbeat.js`, `api/log-check.js`, `lib/pilot.js`, `migrations/0001_pilot.sql`, `public/pilot/index.html`, and `test/hatchable-pilot.test.js` before the final app deployment
+- Delete: pilot-only `api/health.js`, `api/heartbeat.js`, `api/log-check.js`, `api/store-check.js`, `lib/pilot.js`, `migrations/0001_pilot.sql`, `public/pilot/index.html`, and pilot-only tests before the final app deployment
 - Test: browser/catalogue tests corresponding to `test/catalogues.test.ts`, `test/read-model-watchlist.test.ts`, `test/source-health.test.ts`, plus `npm run format:check`
 
 **Interfaces:**
@@ -158,7 +161,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Produces: the current catalogue, source health, sync progress, and manual refresh experience served as Hatchable static assets and routes; documentation describes only verified Hatchable behavior.
 
 - [ ] Port the browser behavior and UI checks, preserving current catalogue grouping and health states.
-- [ ] Remove the pilot-only routes, helper, migration, static page, and test; Task 1 uses a separate project, and these probe files must not ship in the final app.
+- [ ] Remove the pilot-only routes and store-check route, helper, migration, static page, and tests; Task 1 uses a separate project, and these probe files must not ship in the final app.
 - [ ] Remove production reliance on the Node HTTP server, TypeScript build, local filesystem database, and optional runtime package only after all Hatchable behavior is covered.
 - [ ] Remove or revise Render setup and hosting claims in the repository; do not access or change the live Render service.
 - [ ] Update the README with verified Hatchable setup, secrets, refresh, logs, empty initial data, and manual GitHub-pull promotion behavior.
