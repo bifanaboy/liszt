@@ -220,6 +220,7 @@ test("details relay accepts only a real Sxyprn post URL", async () => {
     "https://example.com/post/6ab1a9bec8445.html",
     "https://sxyprn.com.evil.example/post/6ab1a9bec8445.html",
     "http://sxyprn.com/post/6ab1a9bec8445.html",
+    "https://sxyprn.com:444/post/6ab1a9bec8445.html",
     "https://sxyprn.com/post/6ab1a9bec8445.html?redirect=https://example.com",
   ]) {
     const response = await send(handler, "/v1/details", { url });
