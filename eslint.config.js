@@ -23,6 +23,18 @@ export default tseslint.config(
     },
   },
   {
+    files: ["lib/**/*.js", "test/**/*.js"],
+    languageOptions: {
+      globals: {
+        AbortController: "readonly",
+        Response: "readonly",
+        URL: "readonly",
+        clearTimeout: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
+  {
     // Browser globals are not defined in Node, so `no-undef` fires 13 times on
     // correct code in these two files. Turning it off buys a parse: ESLint
     // reports a syntax error here regardless of which rules are enabled, and

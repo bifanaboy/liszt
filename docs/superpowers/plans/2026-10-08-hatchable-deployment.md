@@ -104,11 +104,11 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Consumes: Tasks 1–3.
 - Produces: provider adapters that return the same normalized records and source status expected by the current merge/sync path for Traxxx watchlist, TPDB, ManyVids, Maximo/Fansly, Bang! Originals, FC2CMADB, Madouqu, and Woodman Casting X via Traxxx.
 
-- [ ] Add adapter parity tests from existing fixtures, including malformed responses, no-key providers, and optional-secret absence.
-- [ ] Port the HTTP fetch behavior using Hatchable-supported outbound requests; preserve timeouts, concurrency limits, and retry/error classification only where they are needed to match existing behavior and platform limits.
-- [ ] Wire optional secrets through Hatchable secret settings and confirm missing keys do not appear in errors or logs.
-- [ ] Verify each adapter with fixtures, then use the private pilot for live checks only where credentials are already configured by the owner; report keyed providers as unverified if not configured.
-- [ ] Commit this task as `feat: port catalogue source adapters`.
+- [x] Add adapter parity tests from existing fixtures, including malformed responses, no-key providers, and optional-secret absence.
+- [x] Port the HTTP fetch behavior using Hatchable-supported outbound requests; preserve timeouts, concurrency limits, and retry/error classification only where they are needed to match existing behavior and platform limits.
+- [x] Wire optional secrets through Hatchable secret settings and confirm missing keys do not appear in errors or logs.
+- [x] Verify adapter behavior with fixtures and the private pilot; report the keyed TPDB provider unverified because no key is configured.
+- [x] Commit this task as `feat: port catalogue source adapters`.
 
 ## Task 5: Port playback lookup and link verification
 
