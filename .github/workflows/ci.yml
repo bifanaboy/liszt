@@ -7,7 +7,11 @@ name: ci
 # GitHub's own automation token can merge a PR without starting workflows that
 # listen for pushes. Allow the same checks to be run on the merged
 # commit in that case, so Render still receives a real passing test result.
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
