@@ -149,7 +149,8 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 
 **Files:**
 - Create: `public/pilot/index.html` (keeps the test page away from Liszt's existing homepage), `public/app.js`, `public/styles.css`, and only the static assets actually required
-- Modify: `README.md`, `package.json`, `.github/workflows/ci.yml`, and Render-specific tracked configuration/docs after confirming their exact presence and references
+- Modify: `hatchable.toml`, `README.md`, `package.json`, `.github/workflows/ci.yml`, and Render-specific tracked configuration/docs after confirming their exact presence and references
+- Delete: pilot-only `api/health.js`, `api/heartbeat.js`, `api/log-check.js`, `lib/pilot.js`, `migrations/0001_pilot.sql`, `public/pilot/index.html`, and `test/hatchable-pilot.test.js` before the final app deployment
 - Test: browser/catalogue tests corresponding to `test/catalogues.test.ts`, `test/read-model-watchlist.test.ts`, `test/source-health.test.ts`, plus `npm run format:check`
 
 **Interfaces:**
@@ -157,6 +158,7 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Produces: the current catalogue, source health, sync progress, and manual refresh experience served as Hatchable static assets and routes; documentation describes only verified Hatchable behavior.
 
 - [ ] Port the browser behavior and UI checks, preserving current catalogue grouping and health states.
+- [ ] Remove the pilot-only routes, helper, migration, static page, and test; Task 1 uses a separate project, and these probe files must not ship in the final app.
 - [ ] Remove production reliance on the Node HTTP server, TypeScript build, local filesystem database, and optional runtime package only after all Hatchable behavior is covered.
 - [ ] Remove or revise Render setup and hosting claims in the repository; do not access or change the live Render service.
 - [ ] Update the README with verified Hatchable setup, secrets, refresh, logs, empty initial data, and manual GitHub-pull promotion behavior.
