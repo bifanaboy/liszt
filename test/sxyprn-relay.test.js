@@ -1,9 +1,41 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { EventEmitter } from "node:events";
+import { MessageChannel, Worker } from "node:worker_threads";
 import { Readable } from "node:stream";
 import { setImmediate } from "node:timers/promises";
 import { createSxyprnRelayApi } from "../lib/tubes/sxyprn-client.js";
-import { createSxyprnRelayHandler } from "../relay/server.js";
+import { createSxyprnRelayHandler as createHandler } from "../relay/server.js";
+
+// Model worker messages and independently controlled termination for queue tests.
+function createSxyprnRelayHandler({ api, termination = Promise.resolve(), ...options }) {
+  return createHandler({
+    ...options,
+    createWorker({ method, args }) {
+      const worker = new EventEmitter();
+      let stopped = false;
+      worker.terminate = () => {
+        if (!stopped) {
+          stopped = true;
+          const exit = () => worker.emit("exit", 1);
+          termination.then(exit, exit);
+        }
+        return termination.catch(() => {});
+      };
+      Promise.resolve()
+        .then(() => api.videos[method](...args))
+        .then(
+          (result) => {
+            if (!stopped) worker.emit("message", result);
+          },
+          (error) => {
+            if (!stopped) worker.emit("error", error);
+          },
+        );
+      return worker;
+    },
+  });
+}
 
 const SECRET = "relay-test-secret";
 const POST_URL = "https://sxyprn.com/post/6ab1a9bec8445.html";
@@ -304,13 +336,14 @@ test("relay serializes search and detail calls before entering the package", asy
   assert.deepEqual(calls, ["search", "details"]);
 });
 
-test("relay removes expired waiters and holds a timed-out active slot until settlement", async (t) => {
+test("relay removes expired waiters and holds a timed-out active slot until worker exit", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const first = Promise.withResolvers();
   const calls = [];
   const route = createSxyprnRelayHandler({
     secret: SECRET,
     timeoutMs: 100,
+    termination: first.promise,
     api: {
       videos: {
         search(query) {
@@ -393,4 +426,77 @@ test("relay rejects excess queued requests before calling the package", async (t
   await setImmediate();
   assert.equal((await send(route, "/v1/search", { query: "after expiry" })).status, 200);
   assert.equal(calls, 2);
+});
+
+for (const behavior of ["pending", "busy", "throw", "exit"]) {
+  test(`relay recovers after a real worker ${behavior}`, { timeout: 10_000 }, async (t) => {
+    const workers = [];
+    const events = [];
+    const started = Promise.withResolvers();
+    const route = createHandler({
+      secret: SECRET,
+      timeoutMs: 1000,
+      createWorker(operation) {
+        if (workers.length) assert.equal(events.at(-1), "exit");
+        const { port1, port2 } = new MessageChannel();
+        port1.once("message", () => {
+          started.resolve();
+          port1.close();
+        });
+        t.after(() => port1.close());
+        const worker = new Worker(
+          `
+          const { parentPort, workerData } = require("node:worker_threads");
+          if (workerData.method === "details") {
+            parentPort.postMessage({ url: workerData.args[0].url });
+          } else {
+            workerData.ready.postMessage("started");
+            workerData.ready.close();
+            if (workerData.behavior === "busy") { while (true) {} }
+            if (workerData.behavior === "pending") setInterval(() => {}, 1000);
+            if (workerData.behavior === "throw") throw new Error("private failure");
+          }
+        `,
+          {
+            eval: true,
+            workerData: { ...operation, behavior, ready: port2 },
+            transferList: [port2],
+          },
+        );
+        workers.push(worker);
+        events.push("start");
+        worker.once("exit", () => events.push("exit"));
+        return worker;
+      },
+    });
+    t.after(() => Promise.all(workers.map((worker) => worker.terminate())));
+    const first = send(route, "/v1/search", { query: "hang" });
+    await started.promise;
+    const response = await first;
+    assert.equal(response.status, ["pending", "busy"].includes(behavior) ? 504 : 502);
+    assert.doesNotMatch(response.text, /private failure/);
+    assert.equal((await send(route, "/v1/details", { url: POST_URL })).status, 200);
+    assert.equal(workers.length, 2);
+  });
+}
+
+test("relay recovers after worker construction fails", async () => {
+  let attempts = 0;
+  const route = createHandler({
+    secret: SECRET,
+    createWorker() {
+      attempts += 1;
+      throw new Error("private startup failure");
+    },
+  });
+  const responses = await Promise.all([
+    send(route, "/v1/search", { query: "first" }),
+    send(route, "/v1/details", { url: POST_URL }),
+  ]);
+  assert.deepEqual(
+    responses.map((response) => response.status),
+    [502, 502],
+  );
+  assert.equal(attempts, 2);
+  assert.ok(responses.every((response) => !response.text.includes("private")));
 });

@@ -46,5 +46,6 @@ other destinations and does not expose an endpoint for arbitrary fetches.
 Search and detail requests share one active package call and a waiting queue of
 at most 32 requests. A full queue returns HTTP 503 (busy). The 15-second request
 limit includes queue time; expired waiting requests are removed before calling
-the package. A running package call keeps its slot until it finishes, even if
-the relay has already returned HTTP 504 (timeout).
+the package. Each package call runs in a separate worker. On timeout, the relay
+returns HTTP 504 and terminates the worker. The next call starts only after that
+worker has exited.

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { Worker } from "node:worker_threads";
 import { validSxyprnUrl } from "../lib/tubes/sxyprn.js";
 
 const MAX_BODY_BYTES = 4096;
@@ -69,7 +70,19 @@ function pickFields(value, fields) {
   return result;
 }
 
-function createOperationQueue(timeoutMs) {
+function createPackageWorker(operation) {
+  const worker = new Worker(new URL("./operation-worker.js", import.meta.url), {
+    workerData: operation,
+    stdout: true,
+    stderr: true,
+  });
+  // Package diagnostics may contain private upstream data.
+  worker.stdout.resume();
+  worker.stderr.resume();
+  return worker;
+}
+
+function createOperationQueue(timeoutMs, createWorker) {
   const queue = new Set();
   let active = false;
 
@@ -85,18 +98,32 @@ function createOperationQueue(timeoutMs) {
       return;
     }
     active = true;
-    Promise.resolve()
-      .then(job.operation)
-      .then(job.resolve, () => {
-        job.reject(Object.assign(new Error("upstream unavailable"), { status: 502 }));
-      })
-      .finally(() => {
+    try {
+      job.worker = createWorker(job.operation);
+      job.worker.once("message", (result) => {
+        if (Date.now() >= job.deadline) job.expire();
+        else job.resolve(result);
         clearTimeout(job.timer);
-        // The package cannot cancel running calls. Hold its slot even if the
-        // HTTP request timed out, so later calls cannot build up inside it.
+        job.stop();
+      });
+      job.worker.once("error", () => {
+        job.reject(Object.assign(new Error("upstream unavailable"), { status: 502 }));
+        clearTimeout(job.timer);
+        job.stop();
+      });
+      job.worker.once("exit", () => {
+        clearTimeout(job.timer);
+        // Also reject workers that exit without sending a result.
+        job.reject(Object.assign(new Error("upstream unavailable"), { status: 502 }));
         active = false;
         drain();
       });
+    } catch {
+      clearTimeout(job.timer);
+      job.reject(Object.assign(new Error("upstream unavailable"), { status: 502 }));
+      active = false;
+      drain();
+    }
   }
 
   return (operation) =>
@@ -110,10 +137,15 @@ function createOperationQueue(timeoutMs) {
         resolve,
         reject,
         deadline: Date.now() + timeoutMs,
+        stop() {
+          // Only the exit event releases the slot, including if termination fails.
+          job.worker?.terminate().catch(() => {});
+        },
         expire() {
           queue.delete(job);
           clearTimeout(job.timer);
           reject(Object.assign(new Error("upstream timeout"), { status: 504 }));
+          job.stop();
         },
       };
       job.timer = setTimeout(job.expire, timeoutMs);
@@ -122,12 +154,13 @@ function createOperationQueue(timeoutMs) {
     });
 }
 
-export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {}) {
+export function createSxyprnRelayHandler({
+  secret,
+  createWorker = createPackageWorker,
+  timeoutMs = 15_000,
+} = {}) {
   if (!secret) throw new Error("SXYPRN_RELAY_SECRET is required");
-  if (!api?.videos?.search || !api?.videos?.details)
-    throw new Error("Sxyprn package API is unavailable");
-
-  const runOperation = createOperationQueue(timeoutMs);
+  const runOperation = createOperationQueue(timeoutMs, createWorker);
 
   return async (req, res) => {
     const path = new URL(req.url, "http://relay.local").pathname;
@@ -153,7 +186,7 @@ export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {
           send(res, 400, { error: "invalid search query" });
           return;
         }
-        const page = await runOperation(() => api.videos.search(query, { page: 0 }));
+        const page = await runOperation({ method: "search", args: [query, { page: 0 }] });
         if (!Array.isArray(page?.videos)) {
           send(res, 502, { error: "invalid Sxyprn response" });
           return;
@@ -166,7 +199,7 @@ export function createSxyprnRelayHandler({ secret, api, timeoutMs = 15_000 } = {
           send(res, 400, { error: "invalid Sxyprn post URL" });
           return;
         }
-        const detail = await runOperation(() => api.videos.details({ url: input.url }));
+        const detail = await runOperation({ method: "details", args: [{ url: input.url }] });
         if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
           send(res, 502, { error: "invalid Sxyprn response" });
           return;
@@ -214,9 +247,7 @@ export function createSxyprnRelayServer(options = {}) {
 }
 
 export async function startSxyprnRelay(env = process.env) {
-  const imported = await import("sxyprn");
-  const api = imported.default;
-  const server = createSxyprnRelayServer({ secret: env.SXYPRN_RELAY_SECRET, api });
+  const server = createSxyprnRelayServer({ secret: env.SXYPRN_RELAY_SECRET });
   server.listen(Number(env.PORT) || 10_000, "0.0.0.0");
   return server;
 }
