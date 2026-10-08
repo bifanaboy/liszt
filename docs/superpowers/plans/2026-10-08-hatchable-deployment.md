@@ -38,7 +38,7 @@
 
 ## File map
 
-The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp/`, and `public/` files. A small separate Node HTTP service will handle only Sxyprn lookup traffic because Hatchable's outbound route was region-blocked and its runtime cannot use the current optional package. Existing `src/` and `test/` remain the behavior reference until the Hatchable version is verified; remove the obsolete app Node runtime and Render-specific repository setup only in the final port/documentation task. Keep the existing tests and fixtures as the source for parity tests; add focused Hatchable tests alongside them where the SDK allows local testing.
+The Hatchable project adds `hatchable.toml`, `api/`, `lib/`, `migrations/`, `mcp/`, and `public/` files. A small separate Node HTTP service handles only Sxyprn lookup traffic because Hatchable's outbound route was region-blocked and its runtime cannot use the current optional package. The existing `src/` and `test/` remain as behavior references and local maintenance tools; the Node server and SQLite database are not the deployed runtime. The final port task removes pilot files and obsolete hosting configuration, while retaining parity tests and fixtures.
 
 ## Task 1: Prove the Hatchable project shape in a private pilot
 
@@ -167,8 +167,9 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 ## Task 7: Move the browser experience and remove obsolete runtime claims
 
 **Files:**
-- Create: `public/pilot/index.html` (keeps the test page away from Liszt's existing homepage), `public/app.js`, `public/styles.css`, and only the static assets actually required
-- Modify: `hatchable.toml`, `README.md`, `package.json`, `.github/workflows/ci.yml`, and Render-specific tracked configuration/docs after confirming their exact presence and references
+- Keep: existing `public/index.html`, `public/app.js`, `public/styles.css`, and required static assets
+- Modify: `README.md`, `AGENTS.md`, `.env.example`, `package.json`, `.github/workflows/ci.yml`, local reference comments, and the readme-maintainer prompt
+- Delete: `.github/workflows/ci-gap-guard.yml` and `render.yaml`
 - Delete: pilot-only `api/health.js`, `api/heartbeat.js`, `api/log-check.js`, `api/store-check.js`, `lib/pilot.js`, `migrations/0001_pilot.sql`, `public/pilot/index.html`, and pilot-only tests before the final app deployment
 - Test: browser/catalogue tests corresponding to `test/catalogues.test.ts`, `test/read-model-watchlist.test.ts`, `test/source-health.test.ts`, plus `npm run format:check`
 
@@ -176,12 +177,12 @@ The Hatchable project will add `hatchable.toml`, `api/`, `lib/`, `migrations/`, 
 - Consumes: Tasks 1–6.
 - Produces: the current catalogue, source health, sync progress, and manual refresh experience served as Hatchable static assets and routes; documentation describes only verified Hatchable behavior.
 
-- [ ] Port the browser behavior and UI checks, preserving current catalogue grouping and health states.
-- [ ] Remove the pilot-only routes and store-check route, helper, migration, static page, and tests; Task 1 uses a separate project, and these probe files must not ship in the final app.
-- [ ] Remove production reliance on the Node HTTP server, TypeScript build, local filesystem database, and optional runtime package only after all Hatchable behavior is covered.
-- [ ] Remove or revise Render setup and hosting claims in the repository; do not access or change the live Render service.
-- [ ] Update the README with verified Hatchable setup, secrets, refresh, logs, empty initial data, and manual GitHub-pull promotion behavior.
-- [ ] Run the full remaining test suite and `npm run format:check`; expected: pass, or document each deliberately replaced Node-only test with equivalent Hatchable coverage.
+- [x] Confirm the existing browser behavior is served by Hatchable routes and preserve its current catalogue grouping and health states.
+- [x] Remove the pilot-only routes, helper, migration, static page, and tests; Task 1 uses a separate project, and these probe files must not ship in the final app.
+- [x] Remove production reliance on the Node HTTP server, TypeScript build, local filesystem database, and optional runtime package; retain `src/` as the parity reference and local maintenance tools.
+- [x] Remove obsolete Render hosting configuration and revise remaining runtime comments and README claims; do not access or change the live Render service.
+- [x] Update the README with Hatchable setup, secrets, refresh, logs, empty initial data, and manual GitHub-pull promotion behavior.
+- [x] Run `npm run lint`, `npm run typecheck`, `npm run format:check`, and the full suite; all passed (844 tests).
 - [ ] Commit this task as `feat: serve Liszt from Hatchable`.
 
 ## Task 8: Verify privately, scrub all history, then publish the repository

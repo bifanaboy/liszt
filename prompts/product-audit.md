@@ -1,7 +1,7 @@
 # Product audit
 
 Read `AGENTS.md` first. Imagine you are an end user and review
-<https://liszt.christownsend.com.au> using the Chrome DevTools MCP.
+the configured Liszt application using the available browser tools.
 
 Explore the main screens and user flows. Look for visible errors, confusing or
 broken interactions, missing or incorrect information, layout problems, and

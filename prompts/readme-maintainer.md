@@ -10,10 +10,10 @@ and configuration as evidence of implemented behavior, and tests as supporting
 evidence. Do not assume existing README prose is correct or add details that
 cannot be verified.
 
-For live deployment claims, use only the verified context in `AGENTS.md` or
-separately authorized read-only deployment evidence. `render.yaml` does not
-describe the live service. Do not request credentials, access private machine
-configuration, change hosting, or trigger deployments.
+For live Hatchable claims, use only owner-provided verification evidence. The
+repository files describe the intended project, not its live settings or state.
+Do not request credentials, access private machine configuration, change
+hosting, or trigger deployments.
 
 If the README is accurate, report that and make no changes. If it needs
 correction, make the smallest edits to `README.md` only. Check Markdown with

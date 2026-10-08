@@ -1,14 +1,15 @@
 /**
- * The HTTP surface. Plain `node:http`, no framework: the route table is small.
+ * Legacy local HTTP surface for reference checks. Hatchable serves the app.
+ * Plain `node:http`, no framework: the route table is small.
  *
  * THERE IS NO PERIMETER. Every route below is served to anyone who can reach the
- * port, including `POST /api/refresh`. That is the deliberate shape of this
- * deployment - a disposable public read model with no user accounts or private
+ * port, including `POST /api/refresh`. This local reference surface is a
+ * disposable public read model with no user accounts or private
  * catalogue data. The optional TPDB credential is only used for source requests.
  *
  * `/health` is the one route with a fixed body: a constant, no version, no host,
- * no store state. It is Render's deploy gate, and a health check that leaked
- * anything would leak it to whoever felt like asking.
+ * no store state. A health check that leaked anything would leak it to whoever
+ * felt like asking.
  *
  * All responses are `no-store`, so no edge caches the catalogue, and static
  * serving is path-traversal safe by construction: the resolved target must stay
@@ -23,9 +24,8 @@ import { idleProgress, type SyncProgress } from "../pipeline/progress.ts";
 import type { ReadModel } from "./read-model.ts";
 
 /**
- * Render's deploy gate. Answered before anything else touches store or source
- * state, and the body is a constant: the process is up and serving, which is the
- * entire claim.
+ * Local reference-server health check. The body is constant and reveals no
+ * store or source state.
  */
 export const HEALTH_PATH = "/health";
 
