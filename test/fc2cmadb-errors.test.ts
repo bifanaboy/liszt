@@ -12,11 +12,18 @@ const noSleep = async (): Promise<void> => {};
 
 function makeFetcher(status: number, body: string): Fetcher {
   return {
-    async fetch(url: string): Promise<Response> {
-      return new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+    async fetch(_url: string): Promise<Response> {
+      return new Response(body, {
+        status,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
     },
-    async text(url: string): Promise<string> { return body; },
-    async json<T>(url: string): Promise<T> { return JSON.parse(body) as T; },
+    async text(_url: string): Promise<string> {
+      return body;
+    },
+    async json<T>(_url: string): Promise<T> {
+      return JSON.parse(body) as T;
+    },
   };
 }
 
@@ -41,7 +48,10 @@ test("500 throws Fc2SourceError", async () => {
 });
 
 test("missing Inertia payload throws Fc2ShapeError", async () => {
-  const client = createFc2Client({ fetcher: makeFetcher(200, "<html>no payload</html>") }, { sleep: noSleep });
+  const client = createFc2Client(
+    { fetcher: makeFetcher(200, "<html>no payload</html>") },
+    { sleep: noSleep },
+  );
   await assert.rejects(() => client.listAnalTag(null), Fc2ShapeError);
 });
 

@@ -258,10 +258,7 @@ function pacing(
  */
 export function createFc2Client(
   ctx: { fetcher: Fetcher },
-  {
-    listingMinIntervalMs = 2000,
-    sleep = defaultSleep,
-  }: Fc2ClientOptions = {},
+  { listingMinIntervalMs = 2000, sleep = defaultSleep }: Fc2ClientOptions = {},
 ): Fc2Client {
   const listingGate = { at: 0 };
   const waitListing = pacing(listingGate, listingMinIntervalMs, sleep);
@@ -388,10 +385,7 @@ export interface Fc2StudioOptions extends Fc2ClientOptions {
  * Matcher is sxyprn+eporner (code-based search).
  */
 export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdapter {
-  const {
-    maxListingPages = DEFAULT_FC2_MAX_LISTING_PAGES,
-    ...clientOptions
-  } = options;
+  const { maxListingPages = DEFAULT_FC2_MAX_LISTING_PAGES, ...clientOptions } = options;
 
   return {
     id: FC2CMADB_ID,
