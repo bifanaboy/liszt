@@ -337,8 +337,14 @@ let elapsedTimer = null;
    polling loop for data that only changes once a cycle ends. */
 let runs = [];
 let logsPending = false;
+/** True when the last fetch failed and no snapshot is loaded, so an empty view is shown as an error rather than a real empty. */
+let logsError = false;
 
-/** One run row: when it ran, whether it succeeded, and per-lane failures. */
+/**
+ * Render the run ledger into the Logs page: one card per refresh cycle,
+ * showing whether it succeeded and, per failed lane, the reason. The
+ * errors-only filter shows only cycles whose overall `ok` is false.
+ */
 function renderLogs() {
   const errorsOnly = logsFilter.value === "errors";
   const failed = runs.filter((run) => run.ok === false);
@@ -349,9 +355,11 @@ function renderLogs() {
   logsEmpty.hidden = shown.length > 0;
   if (!shown.length) {
     logsList.innerHTML = "";
-    logsEmptyMessage.textContent = errorsOnly
-      ? "No refresh cycle has failed recently."
-      : "Waiting for the first refresh cycle.";
+    logsEmptyMessage.textContent = logsError
+      ? "Could not load the log. Retrying."
+      : errorsOnly
+        ? "No refresh cycle has failed recently."
+        : "Waiting for the first refresh cycle.";
     return;
   }
   logsList.innerHTML = shown.map((run) => {
@@ -373,16 +381,22 @@ function renderLogs() {
   }).join("");
 }
 
+/** Fetch the recent runs from GET /api/runs and re-render. A failed fetch keeps the last snapshot and flags the error state. */
 async function loadLogs() {
   if (logsPending) return;
   logsPending = true;
   try {
-    const response = await fetch("/api/runs", { cache: "no-store" });
+    // limit=50: the endpoint caps at 50, and the errors-only filter needs the
+    // full history so a failure is not hidden behind 10 later successes.
+    const response = await fetch("/api/runs?limit=50", { cache: "no-store" });
     if (!response.ok) throw new Error(String(response.status));
     const body = await response.json();
     runs = Array.isArray(body.runs) ? body.runs : [];
+    logsError = false;
   } catch {
-    // A failed fetch leaves the last snapshot alone rather than blanking the log.
+    // A failed fetch leaves the last snapshot alone rather than blanking the
+    // log, but flags the state so an empty view is not read as a real empty.
+    logsError = runs.length === 0;
   } finally {
     logsPending = false;
   }
