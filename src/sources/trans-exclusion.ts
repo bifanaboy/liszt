@@ -31,3 +31,63 @@ export function findTransExclusion(text: string): string | null {
   const wordMatch = text.match(TRANS_EXCLUSION_WORD_PATTERN);
   return wordMatch ? wordMatch[2]!.toLowerCase() : null;
 }
+
+// --------------------------------------------------------------- safety terms
+
+/**
+ * The safety exclusion, shared by the FC2 lane and anything else that reads a
+ * title.
+ *
+ * Kept SEPARATE from the trans terms because they answer a different question:
+ * these are the records the lane must never admit whatever the site's badge
+ * says, while the trans terms are the studio's content preference.
+ */
+export const SAFETY_EXCLUSION_TERMS: readonly string[] = Object.freeze([
+  "小学生",
+  "中学生",
+  "高校生",
+  "幼児",
+  "幼女",
+  "児童",
+  "子供",
+  "子ども",
+  "女の子",
+  "未成年",
+  "ロリ",
+  "ペド",
+  "loli",
+  "lolicon",
+  "shota",
+  "underage",
+]);
+
+/** Whole-token Latin alternatives, so an unrelated word cannot satisfy them. */
+const SAFETY_EXCLUSION_WORD_TERMS: readonly string[] = Object.freeze([
+  "child",
+  "children",
+  "teen",
+  "teens",
+  "schoolgirl",
+  "schoolboy",
+  "femboy",
+]);
+
+/** A Latin substring match, so Japanese text cannot accidentally satisfy it. */
+function matchesSafetyWord(haystack: string, term: string): boolean {
+  return new RegExp(
+    `(^|[^0-9a-z])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^0-9a-z]|$)`,
+    "i",
+  ).test(haystack);
+}
+
+/** Return the first safety exclusion present in a title, or null. */
+export function findSafetyExclusion(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const term of SAFETY_EXCLUSION_TERMS) {
+    if (lower.includes(term.toLowerCase())) return term;
+  }
+  for (const term of SAFETY_EXCLUSION_WORD_TERMS) {
+    if (matchesSafetyWord(text, term)) return term;
+  }
+  return null;
+}

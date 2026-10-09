@@ -26,23 +26,18 @@
  */
 import { parseClockDuration } from "../tubes/eporner.ts";
 import type { Fetcher, RawScene, SourceAdapter, SourceContext, SourceResult } from "./types.ts";
-import { findTransExclusion } from "./trans-exclusion.ts";
-export { TRANS_EXCLUSION_TERMS as FC2_TRANS_TERMS } from "./trans-exclusion.ts";
+import { findSafetyExclusion, findTransExclusion } from "./trans-exclusion.ts";
 
 export const FC2CMADB_ID = "fc2cmadb";
 export const FC2CMADB_LANE = "FC2";
 export const FC2CMADB_BASE = "https://fc2cmadb.com";
 
-/** The Japanese anal tag. Every record on this listing pivots on tag id 47. */
+/** The Japanese anal tag, and the only tag this lane reads. */
 export const FC2_ANAL_TAG_NAME = "アナル";
-export const FC2_ANAL_TAG_ID = 47;
 
 export const FC2_LISTING_URL = `${FC2CMADB_BASE}/tags/${encodeURIComponent(FC2_ANAL_TAG_NAME)}`;
 /** Build the public detail URL for a numeric release ID. */
 export const fc2RecordUrl = (videoId: string): string => `${FC2CMADB_BASE}/articles/${videoId}`;
-
-/** The site clamps the page size to 30 and ignores `per_page`. */
-export const FC2_LISTING_PAGE_SIZE = 30;
 
 /** A hard ceiling on listing pages per sync. */
 export const DEFAULT_FC2_MAX_LISTING_PAGES = 40;
@@ -99,11 +94,11 @@ export function extractInertiaPage(html: string): InertiaPage {
   if (!match) throw new Fc2ShapeError("no Inertia page payload");
   const asSent = match[1] as string;
   const unescaped = asSent
-    .replace(/"/g, '"')
+    .replace(/&quot;/g, '"')
     .replace(/&#039;|&apos;/g, "'")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/&/g, "&");
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
   let parsed: unknown;
   try {
     parsed = JSON.parse(asSent);
@@ -406,15 +401,30 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       });
 
       const scenes: RawScene[] = [];
+      const excluded = new Set<string>();
       for (const record of walk.records) {
         if (!withinWindow(record.releaseDate, windowStart, now)) continue;
 
-        // Filter: censored "有" (censored), not_found, trans exclusion in title
-        if (record.censored === "有") continue;
-        if (record.notFound) continue;
+        // Positively excluded records are REPORTED, not merely skipped: sync
+        // deletes only the ids named in `excludedSceneIds`, so a record the site
+        // has since marked censored or removed is taken out of the catalogue
+        // rather than lingering until it leaves the window.
+        if (record.censored === "有") {
+          excluded.add(record.videoId);
+          continue;
+        }
+        if (record.notFound) {
+          excluded.add(record.videoId);
+          continue;
+        }
         if (findTransExclusion(record.title)) continue;
+        if (findSafetyExclusion(record.title)) continue;
 
+        // An image set carries a count ("60枚") rather than a clock, so it has
+        // no playable length and can never match an upload. Dropped here, the
+        // way the detail-walk classifier dropped it.
         const durationSec = record.duration ? parseClockDuration(record.duration) : null;
+        if (durationSec === null || durationSec <= 0) continue;
 
         scenes.push({
           sourceSceneId: record.videoId,
@@ -447,6 +457,7 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
       return {
         scenes,
         verifiedEmpty,
+        ...(excluded.size ? { excludedSceneIds: [...excluded] } : {}),
       };
     },
   };

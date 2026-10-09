@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { extractInertiaPage, FC2_ANAL_TAG_NAME } from "../src/sources/fc2cmadb.ts";
-import { findTransExclusion } from "../src/sources/trans-exclusion.ts";
+import { createFc2CmadbStudio } from "../src/sources/fc2cmadb.ts";
 import type { Fetcher, SourceContext } from "../src/sources/types.ts";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
 const fixture = (name: string): string => readFileSync(join(FIXTURES, name), "utf8");
 const NOW = new Date("2026-10-03T00:00:00Z");
 const WINDOW_START = "2026-07-05";
+const noSleep = async (): Promise<void> => {};
 
 function stubFetcher(
   pages: Record<string, string | ((url: string) => string)>,
@@ -48,94 +48,113 @@ function context(fetcher: Fetcher, now = NOW): SourceContext {
   };
 }
 
-async function simpleFc2Fetch(
-  windowStart: string,
-  ctx: SourceContext,
-): Promise<{
-  scenes: Array<{
-    videoId: string;
-    title: string;
-    releaseDate: string;
-    duration: string;
-    imageUrl: string;
-  }>;
-  verifiedEmpty: boolean;
-}> {
-  const baseUrl = `https://fc2cmadb.com/tags/${encodeURIComponent(FC2_ANAL_TAG_NAME)}`;
-  const boundary = new Date(`${windowStart}T00:00:00Z`).getTime();
-  const scenes: Array<{
-    videoId: string;
-    title: string;
-    releaseDate: string;
-    duration: string;
-    imageUrl: string;
-  }> = [];
-  let cursor: string | null = null;
-
-  for (let page = 1; page <= 40; page++) {
-    const url = cursor ? `${baseUrl}?cursor=${encodeURIComponent(cursor)}` : baseUrl;
-    const html = await ctx.fetcher.text(url);
-    const pageData = extractInertiaPage(html);
-    if (pageData.props.tag_name !== FC2_ANAL_TAG_NAME)
-      throw new Error(`expected ${FC2_ANAL_TAG_NAME} tag listing`);
-    const paginator = pageData.props.articles as {
-      data: Array<Record<string, unknown>>;
-      next_cursor: string | null;
-    };
-    if (!paginator || !Array.isArray(paginator.data)) throw new Error("no articles paginator");
-    const articles = paginator.data;
-    let inWindowCount = 0;
-    for (const article of articles) {
-      const releaseDate = String(article.release_date ?? "");
-      const at = Date.parse(`${releaseDate}T00:00:00Z`);
-      if (Number.isFinite(at) && at >= boundary) {
-        inWindowCount++;
-        if (article.censored === "有") continue;
-        if (article.not_found) continue;
-        if (findTransExclusion(String(article.title ?? ""))) continue;
-        scenes.push({
-          videoId: String(article.video_id),
-          title: String(article.title ?? ""),
-          releaseDate,
-          duration: String(article.duration ?? ""),
-          imageUrl: String(article.image_url ?? ""),
-        });
-      }
-    }
-    if (!inWindowCount) break;
-    const nextCursor = paginator.next_cursor;
-    if (!nextCursor) break;
-    cursor = nextCursor;
-  }
-  return { scenes, verifiedEmpty: scenes.length === 0 };
+/** The real adapter, driven through its own fetch(). */
+async function runLane(fetcher: Fetcher, windowStart = WINDOW_START) {
+  const studio = createFc2CmadbStudio({ sleep: noSleep });
+  return studio.fetch(windowStart, context(fetcher));
 }
 
-test("simple lane: emits scenes, drops censored and trans", async () => {
-  const listingHtml = fixture("fc2-anal-listing-page-1.html");
-  const finalHtml = fixture("fc2-anal-listing-final.html");
+test("the adapter emits scenes and drops censored and trans records", async () => {
   const fetcher = stubFetcher({
-    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": listingHtml,
-    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB?cursor=": finalHtml,
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": fixture(
+      "fc2-anal-listing-page-1.html",
+    ),
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB?cursor=": fixture(
+      "fc2-anal-listing-final.html",
+    ),
   });
-  const result = await simpleFc2Fetch(WINDOW_START, context(fetcher));
-  assert.equal(result.scenes.length, 3);
+  const result = await runLane(fetcher);
+
   assert.equal(result.verifiedEmpty, false);
-  const ids = result.scenes.map((s) => s.videoId).sort();
+  assert.equal(result.scenes.length, 3);
+  const ids = result.scenes.map((scene) => scene.sourceSceneId).sort();
   assert.deepEqual(ids, ["4986048", "4986794", "4986883"]);
-  const first = result.scenes.find((s) => s.videoId === "4986883");
-  assert.ok(first);
-  assert.equal(first.title.includes("托卵実録"), true);
-  assert.equal(first.releaseDate, "2026-10-02");
-  assert.equal(first.duration, "01:02:08");
-  assert.ok(first.imageUrl.includes("contents-thumbnail2.fc2.com"));
+
+  const scene = result.scenes.find((item) => item.sourceSceneId === "4986883");
+  assert.ok(scene);
+  assert.equal(scene.title.includes("托卵実録"), true);
+  assert.equal(scene.releaseDate, "2026-10-02");
+  assert.equal(scene.durationSec, 3728); // 01:02:08
+  assert.deepEqual(scene.tags, []);
+  assert.ok(scene.thumbnailUrl?.includes("contents-thumbnail2.fc2.com"));
+  assert.equal(scene.releaseUrl, "https://fc2cmadb.com/articles/4986883");
+  assert.deepEqual(scene.provenance?.audit, {
+    fc2Censorship: "unmarked",
+    fc2Tag: "アナル",
+  });
 });
 
-test("simple lane: empty window is verified empty", async () => {
-  const oldListing = fixture("fc2-anal-listing-final.html");
+test("the adapter reports a clean empty when the window has nothing", async () => {
   const fetcher = stubFetcher({
-    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": oldListing,
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": fixture("fc2-anal-listing-final.html"),
   });
-  const result = await simpleFc2Fetch(WINDOW_START, context(fetcher));
-  assert.equal(result.scenes.length, 0);
+  const result = await runLane(fetcher);
+  assert.deepEqual(result.scenes, []);
   assert.equal(result.verifiedEmpty, true);
+});
+
+test("the adapter withholds verifiedEmpty at a window edge with a cursor", async () => {
+  const fetcher = stubFetcher({
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": fixture(
+      "fc2-anal-listing-page-1.html",
+    ),
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB?cursor=": fixture(
+      "fc2-anal-listing-edge-page.html",
+    ),
+  });
+  const result = await runLane(fetcher);
+  assert.equal(result.scenes.length, 3);
+  assert.equal(result.verifiedEmpty, false);
+});
+
+test("the adapter drops a safety term found in the title", async () => {
+  // The page-1 fixture with one title rewritten to carry a safety term.
+  const listing = fixture("fc2-anal-listing-page-1.html").replace("【托卵実録】", "【小学生個撮】");
+  const fetcher = stubFetcher({
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": listing,
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB?cursor=": fixture(
+      "fc2-anal-listing-final.html",
+    ),
+  });
+  const result = await runLane(fetcher);
+  assert.equal(result.scenes.length, 2);
+  assert.equal(
+    result.scenes.some((scene) => scene.sourceSceneId === "4986883"),
+    false,
+    "a safety term in the title drops the record",
+  );
+});
+
+test("the adapter drops an image set whose duration is a count, not a clock", async () => {
+  // The page-1 fixture with the first record's duration set to an image count.
+  const listing = fixture("fc2-anal-listing-page-1.html").replace(
+    '"duration": "01:02:08"',
+    '"duration": "60枚"',
+  );
+  const fetcher = stubFetcher({
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": listing,
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB?cursor=": fixture(
+      "fc2-anal-listing-final.html",
+    ),
+  });
+  const result = await runLane(fetcher);
+  assert.equal(result.scenes.length, 2);
+  assert.equal(
+    result.scenes.some((scene) => scene.sourceSceneId === "4986883"),
+    false,
+    "a record with no playable duration is not a scene",
+  );
+});
+
+test("the adapter reports censored and removed records as excluded", async () => {
+  const fetcher = stubFetcher({
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB": fixture(
+      "fc2-anal-listing-page-1.html",
+    ),
+    "https://fc2cmadb.com/tags/%E3%82%A2%E3%83%8A%E3%83%AB?cursor=": fixture(
+      "fc2-anal-listing-final.html",
+    ),
+  });
+  const result = await runLane(fetcher);
+  assert.deepEqual(result.excludedSceneIds, ["4986752"]);
 });

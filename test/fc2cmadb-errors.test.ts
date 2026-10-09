@@ -72,3 +72,23 @@ test("payload with no props throws Fc2ShapeError", async () => {
   const client = createFc2Client({ fetcher: makeFetcher(200, body) }, { sleep: noSleep });
   await assert.rejects(() => client.listAnalTag(null), Fc2ShapeError);
 });
+
+test("an HTML-escaped payload is read through the unescape fallback", async () => {
+  // A proxy or WAF that escapes the script body leaves valid JSON as entities.
+  // The payload is tried as sent first, then unescaped, so this must parse.
+  const escaped = `<script data-page="app" type="application/json">{&quot;component&quot;: &quot;Tags/Show&quot;, &quot;props&quot;: {&quot;tag_name&quot;: &quot;アナル&quot;, &quot;articles&quot;: {&quot;data&quot;: [], &quot;next_cursor&quot;: null}}, &quot;url&quot;: &quot;/tags/アナル&quot;, &quot;version&quot;: &quot;abc123&quot;}</script>`;
+  const client = createFc2Client({ fetcher: makeFetcher(200, escaped) }, { sleep: noSleep });
+  const listing = await client.listAnalTag(null);
+  assert.deepEqual(listing.records, []);
+  assert.equal(listing.nextCursor, null);
+});
+
+test("a title that literally contains &quot; is not rewritten by the fallback", async () => {
+  // The payload is raw script text, so `&quot;` inside a title is five literal
+  // characters. Unescaping first would rewrite the title; unescaping only after
+  // a failed parse cannot.
+  const raw = `<script data-page="app" type="application/json">{"component": "Tags/Show", "props": {"tag_name": "アナル", "articles": {"data": [{"title": "A &quot;quoted&quot; word", "video_id": 123, "release_date": "2026-10-02", "duration": "01:00:00", "censored": null, "not_found": null, "image_url": "https://example.test/x.jpg", "pivot": {"tag_id": 47}}], "next_cursor": null}}, "url": "/tags/アナル", "version": "abc123"}</script>`;
+  const client = createFc2Client({ fetcher: makeFetcher(200, raw) }, { sleep: noSleep });
+  const listing = await client.listAnalTag(null);
+  assert.equal(listing.records[0]?.title, "A &quot;quoted&quot; word");
+});
