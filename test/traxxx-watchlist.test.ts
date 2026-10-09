@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigForTest as loadConfig } from "./test-config.ts";
 import {
   TRAXXX_WATCHLIST,
   createTraxxxLaneIds,
@@ -118,7 +118,10 @@ test("the registry replaces the retired Tushy lane with watchlist lanes", () => 
   for (const id of createTraxxxLaneIds(TRAXXX_WATCHLIST)) {
     assert.equal(ids.filter((sourceId) => sourceId === id).length, 1, id);
   }
-  assert.ok(ids.includes("bang-originals"));
+  assert.ok(
+    ids.some((id) => id.includes("bang")),
+    "Bang comes from its Traxxx network watchlist lane",
+  );
   assert.ok(ids.includes("maximo-garcia"));
   assert.ok(!ids.includes("tpdb-watchlist"), "TPDB stays disabled until an API key is set");
   assert.ok(!ids.includes("tushy"));

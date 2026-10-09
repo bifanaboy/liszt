@@ -30,7 +30,7 @@ async function runFailures(scenes: number): Promise<LoggedFailure[]> {
       matcher: "duration+date",
       creatorStudio: false,
       now: new Date("2026-03-10T00:00:00Z"),
-      poolLookup: async () => {
+      epornerLookup: async () => {
         throw new Error("pool offline");
       },
       sxyprnLookup: async () => {
@@ -54,7 +54,7 @@ async function runFailures(scenes: number): Promise<LoggedFailure[]> {
 test("each rung counts its own failures", async () => {
   const lines = await runFailures(25);
 
-  const pool = lines.filter((line) => line.rung === "eporner-pool");
+  const pool = lines.filter((line) => line.rung === "eporner");
   const sxyprn = lines.filter((line) => line.rung === "sxyprn");
   // Throttled to the first failure and then every tenth, per rung.
   assert.deepEqual(

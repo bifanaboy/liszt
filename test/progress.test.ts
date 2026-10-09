@@ -49,7 +49,7 @@ test("begin() carries the run's identity and the denominators", () => {
   assert.equal(snapshot.active, true);
   assert.equal(snapshot.runId, "cycle-1");
   assert.equal(snapshot.startedAt, START);
-  assert.equal(snapshot.stage, "indexing", "a cycle starts by indexing the pool");
+  assert.equal(snapshot.stage, "populating", "a cycle starts by polling sources");
   assert.equal(snapshot.index.total, 4);
   assert.equal(snapshot.populate.total, 6);
 });
@@ -157,7 +157,7 @@ test("an empty re-verify slice reports a real zero rather than nothing at all", 
   assert.equal(snapshot.link.substage, "verify", "the stage ran, and it ran over nothing");
 });
 
-test("pool index progress tracks the account loop", () => {
+test("legacy index counters remain isolated from source progress", () => {
   const tracker = begun();
   tracker.indexStep(2, 4, "Rafael12021988");
   const snapshot = tracker.snapshot();
@@ -203,7 +203,7 @@ test("begin() resets a run that never finished", () => {
   tracker.begin("cycle-2", "2026-03-10T00:10:00Z", { sources: 6, uploaders: 4 });
   const snapshot = tracker.snapshot();
   assert.equal(snapshot.runId, "cycle-2");
-  assert.equal(snapshot.stage, "indexing");
+  assert.equal(snapshot.stage, "populating");
   assert.equal(snapshot.link.done, 0, "no stale link count from the dead run");
   assert.equal(snapshot.link.total, 0);
   assert.equal(snapshot.link.matched, 0);

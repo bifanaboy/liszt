@@ -11,7 +11,7 @@
  *
  * WHY ONE TRACKER. `createSync` is the only entry point for all three refresh
  * triggers - the boot sync, the interval, and `POST /api/refresh` - because
- * `app.ts` wraps the pool index and the sync in one single-flight runner. A
+ * `app.ts` wraps the sync in one single-flight runner. A
  * second refresh joins the first, so there is only ever one run to describe.
  * `begin()` resets everything, which is what makes that true.
  *
@@ -24,7 +24,7 @@
 export type SyncStage =
   "idle" | "indexing" | "populating" | "linking" | "verifying" | "finishing" | "error";
 
-/** One step per trusted pool account. */
+/** Kept at zero for compatibility with older progress snapshots. */
 export interface IndexProgress {
   done: number;
   total: number;
@@ -66,7 +66,7 @@ export interface ProgressTracker {
   /** Reset every counter and mark the run active. One cycle, one call. */
   begin(runId: string, startedAt: string, totals: { sources: number; uploaders: number }): void;
   stage(stage: Exclude<SyncStage, "idle" | "error">): void;
-  /** One trusted pool account finished, successfully or not. */
+  /** Legacy counter; current cycles do not index uploaders. */
   indexStep(done: number, total: number, uploader: string): void;
   /** A source entered the fan-out. */
   sourceStart(sourceId: string): void;
@@ -141,7 +141,7 @@ export function createProgressTracker(): ProgressTracker {
       state.active = true;
       state.runId = runId;
       state.startedAt = startedAt;
-      state.stage = "indexing";
+      state.stage = "populating";
       state.index.total = denominator(totals.uploaders);
       state.populate.total = denominator(totals.sources);
     },

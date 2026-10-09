@@ -172,6 +172,17 @@ test("the logger writes a line for fields JSON cannot represent", () => {
   assert.deepEqual(entry.nested, { deep: { deeper: [1, 2, { also: "fine" }] } });
 });
 
+test("the logger removes credential query values, authorization headers, and configured secrets", () => {
+  const lines: string[] = [];
+  const log = new JsonLogger({}, (line) => lines.push(line), ["PRIVATE_PASSWORD"]);
+  log.error("request failed", {
+    nested: { message: "https://example.test/path?token=FAKE_SECRET PRIVATE_PASSWORD" },
+    authorization: "Bearer FAKE_BEARER",
+  });
+  const line = lines[0] as string;
+  assert.doesNotMatch(line, /FAKE_SECRET|FAKE_BEARER|PRIVATE_PASSWORD/);
+});
+
 test("a field cannot overwrite the log envelope", () => {
   // `...fields` spread last, so a remote payload carrying `level` or `ts` used
   // to rewrite the envelope - and every log filter keyed on those fields broke.

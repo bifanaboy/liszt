@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigForTest as loadConfig } from "./test-config.ts";
 import { createSources } from "../src/sources/registry.ts";
 import { normaliseScene, createSync } from "../src/pipeline/sync.ts";
 import { NullLogger } from "../src/core/logger.ts";
@@ -191,7 +191,7 @@ test("a successful poll removes previously stored scenes excluded by the shared 
       log: new NullLogger(),
       windowDays: 90,
       fetchConcurrency: 1,
-      lookups: { poolLookup: null, sxyprnLookup: null },
+      lookups: { epornerLookup: null, sxyprnLookup: null },
       resolveEnabled: false,
     });
     await run("excluded-scene");
@@ -283,7 +283,7 @@ test("a verified empty store is successful and keeps last-good watchlist records
       log: new NullLogger(),
       windowDays: 90,
       fetchConcurrency: 1,
-      lookups: { poolLookup: null, sxyprnLookup: null },
+      lookups: { epornerLookup: null, sxyprnLookup: null },
       resolveEnabled: false,
     });
     assert.equal((await run("first")).ok, true);

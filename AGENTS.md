@@ -1,37 +1,36 @@
-# Ponytail, lazy senior dev mode
+# Agent Rules — liszt
 
-You are a lazy senior developer. The best code is the code never written. You solve the whole problem with the least new code. End your reply with one or two lines: what you skipped or did not check, and any risk the user must know.
+Read these before editing this public repository.
 
-## Before you write
+## 1. Scope
 
-Read the task and the code it touches. List every place your change must reach: callers, tests, fixtures, config, exports. Check what your change could break for users: data it would destroy or expose, callers that stop working. That is scope. Extra features are not.
+Repository access alone does not include hosting credentials or authority to
+manage accounts. Hosting setup and deployment remain owner-run. Repository
+deployment files may be edited when a task explicitly asks for those changes.
 
-## The smallest complete change
+- Do not request, retrieve, store, rotate, or revoke credentials.
+- Do not access the user's machine configuration or assume authenticated
+  hosting access exists.
+- Do not trigger deployments, change service settings, provision infrastructure,
+  or perform actions outside repository read/write.
+- Do not place secrets in tracked files, comments, issues, or documentation.
 
-Take the first option that fully works:
+## 2. Matching and release behavior
 
-1. Does it need to exist? Skip features, options and flexibility nobody asked for, and name them in one line. A vague request ("build me X") gets the smallest version that does the core job.
-2. Already in this codebase (a helper, component, service, pattern)? Use it the way the surrounding code does.
-3. Standard library or a platform feature? Use it, unless the project has its own. A house component beats a native widget.
-4. An installed dependency? Use it. Never add a dependency for a few lines.
-5. Can it be one line a reader gets at a glance? One line.
-6. Otherwise: the minimum code that works.
+The [README's Playback matching section](README.md#playback-matching) is the
+maintained plain-language summary. Before changing a matching rule, verify it
+against `src/config.ts`, `src/core/matching.ts`, `src/tubes/resolve.ts`, the tube
+adapters, and `public/app.js`; keep the README aligned with those sources.
 
-- Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests and fixtures your change breaks.
-- No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions.
-- The shortest working diff wins, once you know everything it must touch. A one-liner that needs decoding is not short.
-- Comment only the why the code cannot show, in one line.
-- Bug fix: before you edit, grep every caller of the function you touch, then fix the root cause once in the shared code.
-- Code you move or merge keeps its error handling and validation.
-- Between options of equal size, take the one that is correct on edge cases.
-- Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
-- A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.
+## 3. Deployment context
 
-Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
+The README describes the Node.js app and its VPS, Railway, and Render setup.
+Provider availability, cost, and live performance claims need current evidence.
+Never deploy or change hosted service settings from this repository workflow.
 
 ---
 
-## How to talk to the user
+## 4. How to talk to the user
 
 Assume no coding background and no comfort with jargon. That is not a failing to
 be corrected — it is just the setting.
@@ -57,7 +56,7 @@ be corrected — it is just the setting.
 - **Do the mechanical work.** Handle commands, file edits, and boilerplate
   yourself. Ask only for missing requirements or real decisions.
 
-## Issues people can understand
+## 5. Issues people can understand
 
 Search open and closed issues before creating or editing one. Update an existing
 issue when it covers the same problem; do not create a duplicate.
@@ -105,11 +104,62 @@ parent/child link groups work but does not imply order. Use a blocking
 dependency only when one issue must be completed before another can proceed.
 Do not invent relationships or create a hierarchy for unrelated work.
 
-## Repository documentation and scheduled prompts
+## 6. Start clean and keep it simple
+
+- Check the working tree before starting. Do not discard someone else's work.
+- Fetch GitHub's current main and check the issue and open PRs for newer work.
+  Start each new piece of work on its own branch from current `origin/main`.
+  Do not branch from an unrelated feature branch or reuse an old work branch.
+- When main changes, merge `origin/main` into the work branch. Never rebase or
+  force-push to rewrite shared history. Resolve conflicts and run checks again.
+- Before implementation, ask high-yield questions that clarify the user's
+  intent. Use plain words and explain how each choice changes the finished
+  experience. Recommend a sensible option. Do not ask about facts you can
+  inspect yourself or repeat questions the issue already answers.
+- Keep it simple. Solve the stated problem with the smallest clear change;
+  avoid speculative frameworks, extra settings, and unrelated cleanup.
+
+## 7. Check what actually shipped
+
+Repository access does not grant hosting access. Do not obtain credentials or
+change hosted service settings. If deployment verification is requested, use
+available read-only evidence to inspect the deployed revision, completed
+refreshes, source results, and storage persistence. Mark unavailable checks as
+unverified; a local test does not establish production behavior.
+
+Deployment, a sleeping service waking up, watchlist population, and link
+resolution can finish at different times. Check the deployed commit before
+judging the feature. Allow a bounded wait and report a pending or blocked check
+honestly; do not claim success from a merge or an empty page alone. If neither connected access nor owner-provided
+evidence is available, report the local checks and clearly say deployment was
+not checked. Inspect the actual UI when a change is visual and access permits.
+
+Reconcile bugs with GitHub issues before filing:
+
+- File issues about Liszt's features and behavior. Do not file deployment,
+  hosting, uptime, or infrastructure problems as application issues.
+- Bugs caused by or belonging to the feature just shipped should normally go
+  into one follow-up issue, with each symptom and reproduction step listed.
+- Unrelated bugs get their own individual issues, unless an existing issue
+  already covers them.
+- Keep related and unrelated problems separate. Link the shipped PR and any
+  relevant existing issues, and apply the three label groups above.
+
+## 8. Repository documentation and scheduled prompts
 
 - `README.md` is the user-facing guide to the app. Keep its behavior,
   configuration, commands, and architecture claims aligned with the code,
   tests, package scripts, and workflows. Verify facts before editing; don't
   copy assumptions from the existing prose.
-- Keep agent-only workflows out of the app guide.
-- After each with every PR should include an update to the README.md to make sure it is aligned with the current design of the application.
+- Treat hosting settings as a separate source of facts. Repository defaults do
+  not prove live Railway, Render, or VPS configuration; use owner-provided
+  evidence for live claims.
+- Keep agent-only workflows out of the app guide. The copyable scheduled task
+  prompts live in `prompts/`; each prompt reads this file and contains only its
+  job-specific instructions.
+- A README audit may edit `README.md` only. Verify the Markdown formatting with
+  `npm run format:check`; don't change code to make the documentation fit.
+
+## Persistence
+
+All outbound HTTP from this workspace goes through the standard proxy environment variables (HTTP_PROXY/HTTPS_PROXY, lowercase variants, NO_PROXY for exclusions). Direct egress fails by design with a plain connection error (curl exit 7, HTTP 000) and says nothing about whether the target is reachable. Before reporting any API or resource as unreachable or blocked: route through the proxy, check only relevant non-secret environment settings, and make at least one alternative attempt. Environment keys provided for source APIs (TPDB_API_KEY, STASHDB_API_KEY) may be used directly in requests for live source verification only over certificate-validated HTTPS; never disable certificate verification or print, log or exfiltrate their values. Do not retrieve any other credentials. If a tool ignores the proxy env vars, configure it explicitly. Redact secret values from any command or error output shown. Show the command and full error output, with secret values redacted, for any "cannot reach" claim - a reachability claim without evidence is a task failure. This applies to source APIs (TPDB, StashDB, Traxx) and the GitHub API.

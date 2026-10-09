@@ -37,14 +37,14 @@
  *
  * The residual risk is named rather than hidden: a gated no-match is a MISSING
  * high-confidence link, and the measured cost is stated - over the 115
- * linkable scenes in the calibration corpus, only 7 had any trusted-pool
+ * linkable scenes in the calibration corpus, only 7 had any earlier Eporner index
  * candidate whose title named the performer at all. The terminal fallback now
  * keeps date-and-duration survivors from every tube available as visibly low
  * confidence links, rather than silently dropping every scene outside those 7.
  *
  * THE MMDD PROXY IS GONE. `mmddCode` / `hasDateEvidence` / the
  * `LISZT_POOL_REQUIRE_DATE_EVIDENCE` knob existed only to make identity
- * stricter. They measured as completely inert besides - the trusted pool's
+ * stricter. They measured as completely inert besides - the earlier Eporner index's
  * retitles carry no date code at all - and date already has its own upload
  * window filter. Identity is now a gate again, but that does not make a date
  * token an identity signal.
@@ -63,14 +63,14 @@ const DAY_MS = 86_400_000;
  * Undo a UTF-8 payload that was decoded as Latin-1 on its way to us.
  *
  * MEASURED, NOT SPECULATIVE. The eporner profile listings decode cleanly, but
- * the `video/id` records for the trusted pool store their titles mojibake'd: a
+ * the `video/id` records for the earlier Eporner index store their titles mojibake'd: a
  * mathematical-bold title arrives as the literal characters `ð`, U+009D, U+0090
  * and so on - which are the original UTF-8 bytes F0 9D 90 8B (= U+1D40B, `𝐀`)
  * each widened into one Latin-1 codepoint. A live record read
  * `ðð¢­ð¥ð ð¥ð­ð¢§ð¬ ð°ð¡ð«ð ððð ðððð£ð` and this
  * function returns `𝐏𝐞𝐭𝐢𝐭𝐞 𝐥𝐚𝐧𝐢𝐲𝐬 𝐰𝐡𝐨𝐱𝐞𝐬 𝐋𝐮𝐧𝐚, 𝐄𝐦𝐲, 𝐒𝐚𝐦, 𝐁𝐚𝐛𝐲 & 𝐂𝐡𝐞𝐫𝐫𝐲`.
  *
- * Without this the entire trusted pool is unreadable to `matchTokens`: NFKC on
+ * Without this the entire earlier Eporner index is unreadable to `matchTokens`: NFKC on
  * `ð` yields `ð`, not `p`, so every performer name scores zero identity and the
  * gate degenerates to ranking on views alone. That is precisely the decoy path,
  * and a live calibration measured 20 of 22 pool winners at tier 0 before this
@@ -132,7 +132,7 @@ export function normalizedText(value: string | null | undefined): string {
  *
  * Measured reaching here: the mojibake'd pool titles contain digit runs that
  * parse as `2026-19-07`, which `Date.UTC` turned into `2027-07-07` - and that
- * became the trusted pool's `MAX(added)` watermark, which would have frozen the
+ * became the earlier Eporner index's `MAX(added)` watermark, which would have frozen the
  * incremental index walk at one page. Round-tripping the components back out
  * rejects any rollover.
  */
@@ -248,10 +248,10 @@ export type IdentityTier = 0 | 1 | 2 | 3;
  *  - `2` a full performer name is present, every token of it. Studio-intent
  *      evidence: the uploader named the cast.
  *  - `1` only the first token of a performer is present. This tier earns its
- *      place because the trusted pool's retitles carry only first names for
+ *      place because the earlier Eporner index's retitles carry only first names for
  *      multi-performer scenes - one live title read
  *      `Pennie Laniys Wheres Luna, Emy, Bamy & Cherry` for a five-performer
- *      scene - so a tier-2-only rule would score the whole trusted pool at 0.
+ *      scene - so a tier-2-only rule would score the whole earlier Eporner index at 0.
  *  - `0` nothing. The candidate is still ELIGIBLE; it simply has the weakest
  *      claim, and wins only when nothing better survives.
  *
@@ -561,6 +561,30 @@ function rank(scene: SceneIdentity, left: Scored, right: Scored): number {
   return String(left.candidate.url || "").localeCompare(String(right.candidate.url || ""));
 }
 
+/** Rank already date- and duration-filtered candidates from multiple sources. */
+export function rankMatchedCandidates(
+  scene: SceneIdentity,
+  candidates: readonly { candidate: TubeCandidate; identityTier: IdentityTier }[],
+): Array<{ candidate: TubeCandidate; identityTier: IdentityTier }> {
+  const release = parseTimestamp(scene.releaseDate);
+  const bestByStem = new Map<string, Scored>();
+  for (const { candidate, identityTier: tier } of candidates) {
+    const stem = titleStem(candidate.title);
+    if (!stem || tier <= 0) continue;
+    const uploaded = parseTimestamp(candidate.added);
+    const scored: Scored = {
+      candidate,
+      tier,
+      lag: release === null || uploaded === null ? Number.POSITIVE_INFINITY : uploaded - release,
+    };
+    const current = bestByStem.get(stem);
+    if (!current || rank(scene, scored, current) < 0) bestByStem.set(stem, scored);
+  }
+  return [...bestByStem.values()]
+    .sort((left, right) => rank(scene, left, right))
+    .map(({ candidate, tier }) => ({ candidate, identityTier: tier }));
+}
+
 /**
  * Filter by duration and upload date, then rank what survives.
  *
@@ -660,7 +684,7 @@ export function pickMatch(
  * remove a title that was there all along.
  *
  * The `requireIdentity` check is `tier > 0`, not `tier === 3`. Tier 1 is a
- * first-name-only match, and the trusted pool's retitles routinely carry first
+ * first-name-only match, and the earlier Eporner index's retitles routinely carry first
  * names alone for multi-performer scenes, so requiring the top tier would score
  * the whole pool at zero - the exact failure that got the earlier gate removed.
  * Zero is the only tier that means "nothing in this title identifies the scene".

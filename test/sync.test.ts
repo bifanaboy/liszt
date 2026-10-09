@@ -24,7 +24,7 @@ import { HttpFetcher } from "../src/core/fetcher.ts";
 import { fixedClock } from "../src/sources/types.ts";
 import type { Scene } from "../src/core/schema.ts";
 import { createProgressTracker, type SyncProgress } from "../src/pipeline/progress.ts";
-import type { PoolMatch } from "../src/tubes/eporner-pool.ts";
+import { poolResultAsEpornerMatches, type LegacyPoolMatch } from "./helpers.ts";
 import type { RawScene, SourceAdapter, SourceResult } from "../src/sources/types.ts";
 
 const NOW = "2026-03-10T00:00:00Z";
@@ -73,7 +73,7 @@ function buildSync(
     log: new NullLogger(),
     windowDays,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
 }
@@ -300,7 +300,7 @@ test("sync prefers exact studio metadata and keeps Traxxx values for fields the 
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
   try {
@@ -373,7 +373,7 @@ test("a corrected release URL is read again, even inside the retry interval", as
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
   try {
@@ -439,7 +439,7 @@ test("incomplete studio metadata retries only after 24 hours", async () => {
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
   try {
@@ -494,7 +494,7 @@ test("studio detail lookups are capped at 50 scenes per sync", async () => {
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
   try {
@@ -703,7 +703,6 @@ test("explicit retirement prunes only named source ids and keeps a failing activ
   await sync("outage");
 
   assert.equal(store.getScene("tushy:old"), null);
-  assert.equal(RETIRED_SOURCE_IDS.includes("bang-originals"), false);
   assert.equal(RETIRED_SOURCE_IDS.includes("maximo-garcia"), false);
   assert.ok(store.getScene("active:current"));
   assert.deepEqual(
@@ -736,6 +735,36 @@ test("a source that genuinely has nothing is a clean success", async () => {
   assert.equal(summary.outcomes[0]?.ok, true);
   assert.equal(summary.outcomes[0]?.count, 0);
   store.close();
+});
+
+test("all invalid records fail the source, while valid siblings are retained", async () => {
+  const emptyStore = new SqliteStore(":memory:");
+  emptyStore.migrate();
+  const invalidOnly = buildSync(emptyStore, [
+    adapter("invalid-only", async () => ({
+      scenes: [raw("bad", { title: "" })],
+      verifiedEmpty: false,
+    })),
+  ]);
+  const failed = await invalidOnly("test");
+  assert.equal(failed.outcomes[0]?.ok, false);
+  assert.match(failed.outcomes[0]?.error ?? "", /all records/);
+  assert.equal(emptyStore.listSources()[0]?.lastSuccessAt, null);
+  emptyStore.close();
+
+  const mixedStore = new SqliteStore(":memory:");
+  mixedStore.migrate();
+  const mixed = buildSync(mixedStore, [
+    adapter("mixed", async () => ({
+      scenes: [raw("good"), raw("bad", { title: "" })],
+      verifiedEmpty: false,
+    })),
+  ]);
+  const partial = await mixed("test");
+  assert.equal(partial.outcomes[0]?.ok, true);
+  assert.equal(partial.outcomes[0]?.count, 1);
+  assert.ok(mixedStore.getScene("mixed:good"));
+  mixedStore.close();
 });
 
 test("a failed poll keeps the source's last-good in-window rows", async () => {
@@ -805,7 +834,7 @@ test("a repeat poll preserves resolved links, dead links and the re-verify water
     ],
     videoCheckedAt: "2026-03-05T00:00:00.000Z",
     videoMatching: {
-      lane: "eporner-pool",
+      lane: "eporner",
       matchedAt: "2026-03-05T00:00:00.000Z",
       rule: "duration+window",
       confidence: "high",
@@ -834,7 +863,7 @@ test("a repeat poll preserves resolved links, dead links and the re-verify water
     "2026-03-05T00:00:00.000Z",
     "videoCheckedAt is carried forward, so re-verify still rotates over the genuinely stalest links",
   );
-  assert.equal(after.videoMatching?.lane, "eporner-pool");
+  assert.equal(after.videoMatching?.lane, "eporner");
   store.close();
 });
 
@@ -941,7 +970,7 @@ test("the run ledger states what the slow rung spent, without touching the ladde
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () => null,
+      epornerLookup: async () => null,
       sxyprnLookup: async () => [],
       sxyprnRequests: () => {
         drained += 1;
@@ -988,7 +1017,7 @@ test("the run ledger splits the winners it counted, so a guess is never read as 
   // other counters. These three numbers are the direct reading.
   const store = new SqliteStore(":memory:");
   store.migrate();
-  const named = (over: Partial<PoolMatch>): PoolMatch => ({
+  const named = (over: Partial<LegacyPoolMatch>): LegacyPoolMatch => ({
     url: "https://www.eporner.com/video-abc/",
     embedUrl: "https://www.eporner.com/embed/abc/",
     videoId: "abc",
@@ -1007,7 +1036,6 @@ test("the run ledger splits the winners it counted, so a guess is never read as 
     rejected: null,
     ...over,
   });
-  let posts = 0;
   const sync = buildResolvingSync(
     store,
     [
@@ -1017,39 +1045,32 @@ test("the run ledger splits the winners it counted, so a guess is never read as 
       })),
     ],
     {
-      // Scene 1 is named by the pool. Scenes 2 and 3 are not, so the ladder moves
-      // on: scene 2 is named by the slow rung, scene 3 keeps only an unnamed
-      // survivor and takes the terminal fallback.
-      poolLookup: async (scene) =>
+      // Scene 1 is named by Eporner, scene 2 by Sxyprn, and scene 3 only has an
+      // unnamed survivor for the low-confidence fallback.
+      epornerLookup: async (scene) =>
         scene.id === "pooled:1"
           ? named({})
           : named({ url: "", embedUrl: "", videoId: "", title: "", rejected: "date" }),
-      sxyprnLookup: async () => {
-        posts += 1;
-        const url = `https://sxyprn.com/post/${posts.toString(16).padStart(13, "0")}.html`;
-        return posts === 1
-          ? [
-              {
-                url,
-                identityTier: 2 as const,
-                lagDays: 1,
-                title: "Marfe compilation",
-                duration: 600,
-                added: "2026-03-02T00:00:00.000Z",
-                views: 900,
-              },
-            ]
-          : [
-              {
-                url,
-                identityTier: 0 as const,
-                lagDays: 1,
-                title: "unrelated clip",
-                duration: 600,
-                added: "2026-03-02T00:00:00.000Z",
-                views: 900,
-              },
-            ];
+      sxyprnLookup: async (scene) => {
+        const slug =
+          scene.id === "pooled:1"
+            ? "0000000000001"
+            : scene.id === "pooled:2"
+              ? "0000000000002"
+              : "0000000000003";
+        const url = `https://sxyprn.com/post/${slug}.html`;
+        const named = scene.id === "pooled:2";
+        return [
+          {
+            url,
+            identityTier: named ? (2 as const) : (0 as const),
+            lagDays: 1,
+            title: named ? "Marfe compilation" : "unrelated clip",
+            duration: 600,
+            added: "2026-03-02T00:00:00.000Z",
+            views: 900,
+          },
+        ];
       },
     },
   );
@@ -1058,11 +1079,11 @@ test("the run ledger splits the winners it counted, so a guess is never read as 
   const [run] = store.recentRuns(1);
   const health = run?.resolverHealth ?? {};
   assert.equal(summary.matched, 3, "all three are links, and all three count as matched");
-  assert.equal(health.winnerPool, 1);
+  assert.equal(health.winnerEporner, 1);
   assert.equal(health.winnerSxyprn, 1);
   assert.equal(health.winnerFallback, 1, "the guess is visible as its own number");
   assert.equal(
-    (health.winnerPool ?? 0) + (health.winnerSxyprn ?? 0),
+    (health.winnerEporner ?? 0) + (health.winnerSxyprn ?? 0),
     2,
     "the two named counters separate the rungs, which no other counter on the row does",
   );
@@ -1073,8 +1094,15 @@ test("the run ledger splits the winners it counted, so a guess is never read as 
 function buildResolvingSync(
   store: SqliteStore,
   sources: SourceAdapter[],
-  lookups: Partial<SyncLookups> = {},
+  lookups: Omit<Partial<SyncLookups>, "epornerLookup"> & {
+    epornerLookup?:
+      | ((
+          scene: Parameters<NonNullable<SyncLookups["epornerLookup"]>>[0],
+        ) => Promise<LegacyPoolMatch | null>)
+      | null;
+  } = {},
 ) {
+  const { epornerLookup: legacyLookup, ...otherLookups } = lookups;
   return createSync({
     store,
     sources,
@@ -1084,14 +1112,16 @@ function buildResolvingSync(
     windowDays: 90,
     fetchConcurrency: 2,
     lookups: {
-      poolLookup: null,
       sxyprnLookup: null,
-      ...lookups,
+      ...otherLookups,
+      epornerLookup: legacyLookup
+        ? async (scene) => poolResultAsEpornerMatches(await legacyLookup(scene), scene)
+        : null,
     },
   });
 }
 
-test("a pool match dated outside the window is refused end to end", async () => {
+test("an Eporner result outside the date window is refused end to end", async () => {
   const store = new SqliteStore(":memory:");
   store.migrate();
   // The scene's release date is 2026-03-01. A pool candidate uploaded three
@@ -1101,7 +1131,7 @@ test("a pool match dated outside the window is refused end to end", async () => 
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () => ({
+      epornerLookup: async () => ({
         url: "",
         embedUrl: "",
         videoId: "",
@@ -1123,7 +1153,7 @@ test("a pool match dated outside the window is refused end to end", async () => 
   );
   const summary = await sync("test");
   assert.equal(summary.matched, 0, "nothing was linked");
-  assert.equal(summary.rejections.date, 1, "the rejection is visible, not silent");
+  assert.equal(summary.rejections.noMatch, 1, "the rejected result is not linked");
   const scene = store.getScene("pooled:1");
   assert.ok(scene);
   assert.equal(scene.videoUrls.length, 0, "a missing link beats a wrong one");
@@ -1140,7 +1170,7 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () => ({
+      epornerLookup: async () => ({
         url: "https://www.eporner.com/video-abc/",
         embedUrl: "https://www.eporner.com/embed/abc/",
         videoId: "abc",
@@ -1162,12 +1192,12 @@ test("an in-window pool match IS linked, and the winner's tier drives confidence
   );
   const summary = await sync("test");
   assert.equal(summary.matched, 1);
-  assert.deepEqual(summary.winners, [{ rung: "eporner-pool", tier: 1 }]);
+  assert.deepEqual(summary.winners, [{ rung: "eporner", tier: 1 }]);
   const scene = store.getScene("pooled:1");
   assert.ok(scene, "the scene is still stored, just unlinked");
   assert.equal(scene.videoUrls[0]?.url, "https://www.eporner.com/video-abc/");
   assert.equal(scene.videoMatching?.confidence, "high");
-  assert.equal(scene.videoMatching?.lane, "eporner-pool");
+  assert.equal(scene.videoMatching?.lane, "eporner");
   store.close();
 });
 
@@ -1178,7 +1208,7 @@ test("a tier-0 winner is recorded as LOW CONFIDENCE for eyeballing", async () =>
     store,
     [adapter("pooled", async () => ({ scenes: [raw("1")], verifiedEmpty: false }))],
     {
-      poolLookup: async () => ({
+      epornerLookup: async () => ({
         url: "https://www.eporner.com/video-abc/",
         embedUrl: "https://www.eporner.com/embed/abc/",
         videoId: "abc",
@@ -1217,7 +1247,7 @@ test("a metadata-only lane produces ZERO links after the gate rewrite", async ()
   const store = new SqliteStore(":memory:");
   store.migrate();
   let consulted = 0;
-  const count = async (): Promise<PoolMatch> => {
+  const count = async (): Promise<LegacyPoolMatch> => {
     consulted += 1;
     return {
       url: "https://www.eporner.com/video-abc/",
@@ -1241,7 +1271,7 @@ test("a metadata-only lane produces ZERO links after the gate rewrite", async ()
   const sync = buildResolvingSync(
     store,
     [adapter("madouqu", async () => ({ scenes: [raw("1")], verifiedEmpty: false }), null)],
-    { poolLookup: count },
+    { epornerLookup: count },
   );
   const summary = await sync("test");
   assert.equal(summary.matched, 0, "the metadata-only lane did not link");
@@ -1359,7 +1389,7 @@ function progressSync(store: SqliteStore, over: Partial<Parameters<typeof create
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
     ...over,
   });
@@ -1462,7 +1492,7 @@ test("the resolve stage counts the queue it built, not the whole window", async 
       })),
     ],
     resolveEnabled: true,
-    lookups: { poolLookup: null, sxyprnLookup: null, limit: 2 },
+    lookups: { epornerLookup: null, sxyprnLookup: null, limit: 2 },
     progress: {
       ...tap,
       linkStep: (done, total, matched) => {

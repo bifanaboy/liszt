@@ -115,12 +115,17 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
   // Fresh links per instance: `app.js` marks them, and one test's hash must not
   // leave the next one's page already lit.
   const links = navMarkup.map((link) => new NavLink({ nav: link.nav }, link.active));
-  const place: { hash: string } = { hash };
+  const place: { hash: string; search: string; href: string } = {
+    hash,
+    search: "",
+    href: `http://example.test/${hash}`,
+  };
   const api = (await runInNewContext(
     `(async () => { ${source.replace(/^initialize\(\);$/m, "await initialize();")}\nreturn { renderProgress, applyProgress, pollProgress, apply, render, showRow, selectCatalogue }; })()`,
     {
       document: {
         querySelector: element,
+        createElement: () => new Element(),
         querySelectorAll: (selector: string) => (selector === "[data-nav]" ? links : []),
         addEventListener(name: string, handler: (event: unknown) => void) {
           listeners.set(name, handler);
@@ -130,6 +135,13 @@ async function dashboard(fetch: (url: string) => Promise<unknown>, hash = "") {
         windowListeners.set(name, handler);
       },
       location: place,
+      history: {
+        replaceState: (_state: unknown, _title: string, url: URL) => {
+          place.href = url.href;
+          place.search = url.search;
+          place.hash = url.hash;
+        },
+      },
       URL,
       Option: Element,
       fetch,
@@ -312,7 +324,7 @@ test("the Asian page shows only the Asian lanes, and its figures are its own", a
   assert.match(app.element("#list").innerHTML, /A release/);
 });
 
-test("review disclosure explains missing studio identity without claiming a duration conflict", async () => {
+test("browsing omits review disclosure and uses the three playback statuses", async () => {
   const app = await dashboard(async () =>
     response({
       ...catalogue,
@@ -328,15 +340,14 @@ test("review disclosure explains missing studio identity without claiming a dura
   );
 
   const html = app.element("#list").innerHTML;
-  assert.match(
+  assert.doesNotMatch(
     html,
-    /<details class="review-reasons"><summary class="review-tag">REVIEW<\/summary><p>Studio identity is missing/,
+    /review-reasons|Studio identity is missing|Provider durations disagree/,
   );
-  assert.match(html, /Studio identity is missing/);
-  assert.doesNotMatch(html, /Provider durations disagree/);
+  assert.match(html, /playback-status--missing">Missing/);
 });
 
-test("review disclosure describes duration disagreement and incomplete metadata accurately", async () => {
+test("browsing never exposes review flags for incomplete records", async () => {
   const app = await dashboard(async () =>
     response({
       ...catalogue,
@@ -348,8 +359,11 @@ test("review disclosure describes duration disagreement and incomplete metadata 
   );
 
   const html = app.element("#list").innerHTML;
-  assert.match(html, /<\/summary><p>Provider durations disagree/);
-  assert.match(html, /<\/summary><p>Required release metadata is incomplete/);
+  assert.doesNotMatch(
+    html,
+    /review-reasons|Provider durations disagree|Required release metadata is incomplete/,
+  );
+  assert.match(html, /playback-status--missing">Missing/);
 });
 
 test("a #asian link opens the Asian page before the catalogue arrives", async () => {
@@ -387,7 +401,7 @@ test("cold-start empty state explains rebuilding and possible snapshot lag", asy
       ...catalogue,
       refreshing: true,
       latestRun: null,
-      progress: { ...active, stage: "indexing" },
+      progress: { ...active, stage: "populating" },
     }),
   );
   assert.equal(app.element("#empty").hidden, false);
@@ -765,10 +779,10 @@ test("the last run says how much of its match count was a guess", async () => {
   // to reconstruct it from other counters.
   for (const [resolverHealth, expected] of [
     [{ winnerFallback: 56 }, "Catalogue up to date · 56 low-confidence guesses"],
-    [{ winnerPool: 13, winnerSxyprn: 0, winnerFallback: 0 }, "Catalogue up to date"],
+    [{ winnerEporner: 13, winnerSxyprn: 0, winnerFallback: 0 }, "Catalogue up to date"],
     // A named match is not a verdict either: how much of it was a guess is.
     [
-      { winnerPool: 9, winnerSxyprn: 4, winnerFallback: 1 },
+      { winnerEporner: 9, winnerSxyprn: 4, winnerFallback: 1 },
       "Catalogue up to date · 1 low-confidence guess",
     ],
   ] as const) {

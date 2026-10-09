@@ -10,9 +10,9 @@ and configuration as evidence of implemented behavior, and tests as supporting
 evidence. Do not assume existing README prose is correct or add details that
 cannot be verified.
 
-For live Hatchable claims, use separately authorized read-only Hatchable tools
-or owner-provided verification evidence, following section 7 of `AGENTS.md`. The
-repository files describe the intended project, not its live settings or state.
+For live Railway, Render, or VPS claims, use owner-provided evidence, following
+section 7 of `AGENTS.md`. Repository files describe the intended deployment,
+not its live settings or state.
 Do not request credentials, access private machine configuration, change
 hosting, or trigger deployments.
 

@@ -34,6 +34,7 @@ function deps(over: Partial<HttpDeps> = {}): HttpDeps {
   return {
     store,
     log: new NullLogger(),
+    auth: { username: "owner", password: "test-owner-password" },
     readModel: () =>
       ({ generatedAt: "2026-03-04T00:00:00Z", scenes: [], sources: [], runs: [] }) as never,
     refresh: async () => undefined,
@@ -41,6 +42,17 @@ function deps(over: Partial<HttpDeps> = {}): HttpDeps {
     publicDir: new URL("../public", import.meta.url).pathname,
     ...over,
   };
+}
+
+async function authorizedFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (!headers.has("authorization")) {
+    headers.set(
+      "authorization",
+      `Basic ${Buffer.from("owner:test-owner-password").toString("base64")}`,
+    );
+  }
+  return fetch(input, { ...init, headers });
 }
 
 async function withServer(
@@ -62,7 +74,7 @@ test("GET /health is 2xx, JSON, and says nothing about the deployment", async ()
   const d = deps();
   assert.equal(HEALTH_PATH, "/health", "the local reference health route must stay stable");
   await withServer(d, async (base) => {
-    const response = await fetch(`${base}/health`);
+    const response = await authorizedFetch(`${base}/health`);
     assert.equal(response.status, 200, "a health check that answers non-2xx fails the deploy");
     assert.match(response.headers.get("content-type") ?? "", /application\/json/);
     const body = (await response.json()) as Record<string, unknown>;
@@ -74,12 +86,36 @@ test("GET /health is 2xx, JSON, and says nothing about the deployment", async ()
   d.store.close();
 });
 
+test("the configured app protects pages and data while keeping only /health public", async () => {
+  const d = deps({ auth: { username: "owner", password: "long-test-password" } });
+  await withServer(d, async (base) => {
+    assert.equal((await authorizedFetch(`${base}/health`)).status, 200);
+    assert.equal((await fetch(`${base}/api/scenes`)).status, 401);
+    const authorization = `Basic ${Buffer.from("owner:long-test-password").toString("base64")}`;
+    assert.equal(
+      (await authorizedFetch(`${base}/api/scenes`, { headers: { authorization } })).status,
+      200,
+    );
+    assert.equal((await authorizedFetch(`${base}/`, { headers: { authorization } })).status, 200);
+    assert.equal(
+      (
+        await authorizedFetch(`${base}/api/refresh`, {
+          method: "POST",
+          headers: { authorization, "sec-fetch-site": "cross-site" },
+        })
+      ).status,
+      403,
+    );
+  });
+  d.store.close();
+});
+
 test("HEAD /health answers too, and is not a write primitive", async () => {
   const d = deps();
   await withServer(d, async (base) => {
-    assert.equal((await fetch(`${base}/health`, { method: "HEAD" })).status, 200);
+    assert.equal((await authorizedFetch(`${base}/health`, { method: "HEAD" })).status, 200);
     assert.equal(
-      (await fetch(`${base}/health`, { method: "POST" })).status,
+      (await authorizedFetch(`${base}/health`, { method: "POST" })).status,
       405,
       "only GET and HEAD reach the probe; anything else is a method error",
     );
@@ -90,7 +126,7 @@ test("HEAD /health answers too, and is not a write primitive", async () => {
 test("/api/health is a different route from /health", async () => {
   const d = deps();
   await withServer(d, async (base) => {
-    const stateful = await fetch(`${base}/api/health`);
+    const stateful = await authorizedFetch(`${base}/api/health`);
     assert.equal(stateful.status, 200);
     const body = (await stateful.json()) as Record<string, unknown>;
     assert.equal(body.ok, true);
@@ -104,20 +140,20 @@ test("/api/health is a different route from /health", async () => {
   d.store.close();
 });
 
-test("no route is gated, and nothing sets a cookie", async () => {
+test("authenticated routes do not create session cookies", async () => {
   const d = deps();
   await withServer(d, async (base) => {
     const routes = ["/api/scenes", "/api/sources", "/api/runs", "/api/health", "/"];
     for (const route of routes) {
-      const response = await fetch(`${base}${route}`);
-      assert.equal(response.status, 200, `${route} is served to anyone who can reach the port`);
+      const response = await authorizedFetch(`${base}${route}`);
+      assert.equal(response.status, 200, `${route} is served after authentication`);
       assert.equal(
         response.headers.get("set-cookie"),
         null,
-        `${route} must not set a cookie - the session layer is gone`,
+        `${route} must not set a session cookie`,
       );
     }
-    const refresh = await fetch(`${base}/api/refresh`, { method: "POST" });
+    const refresh = await authorizedFetch(`${base}/api/refresh`, { method: "POST" });
     assert.equal(refresh.status, 202);
     assert.equal(refresh.headers.get("set-cookie"), null);
   });
@@ -139,7 +175,7 @@ test("the deleted auth routes are now plain 404s", async () => {
       ["GET", "/login.css"],
       ["GET", "/login.html"],
     ] as const) {
-      const response = await fetch(`${base}${route}`, { method, redirect: "manual" });
+      const response = await authorizedFetch(`${base}${route}`, { method, redirect: "manual" });
       // A GET on a path with no file behind it is a 404; any other method on an
       // unrouted path is the generic 405. Both mean the same thing here: no
       // route answered. What matters is that neither is a live endpoint.
@@ -167,7 +203,7 @@ test("/api/progress is small, live, and separate from the catalogue", async () =
   tracker.sourceDone("mambo-perv");
   d.progress = () => tracker.snapshot();
   await withServer(d, async (base) => {
-    const response = await fetch(`${base}/api/progress`);
+    const response = await authorizedFetch(`${base}/api/progress`);
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type") ?? "", /application\/json/);
     const body = (await response.json()) as { generatedAt: string; progress: SyncProgress };
@@ -177,7 +213,7 @@ test("/api/progress is small, live, and separate from the catalogue", async () =
     assert.equal(body.progress.populate.done, 1);
     assert.equal(body.progress.populate.total, 6);
     assert.equal(
-      (await fetch(`${base}/api/scenes`)).headers.get("content-type"),
+      (await authorizedFetch(`${base}/api/scenes`)).headers.get("content-type"),
       response.headers.get("content-type"),
       "same origin, same policy",
     );
@@ -225,7 +261,9 @@ test("/api/progress answers an idle tracker rather than 404 or an empty body", a
   // the moment the page loads, long before anybody clicks refresh.
   const d = deps();
   await withServer(d, async (base) => {
-    const body = (await (await fetch(`${base}/api/progress`)).json()) as { progress: SyncProgress };
+    const body = (await (await authorizedFetch(`${base}/api/progress`)).json()) as {
+      progress: SyncProgress;
+    };
     assert.equal(body.progress.active, false);
     assert.equal(body.progress.stage, "idle");
     assert.equal(body.progress.populate.total, 0);
@@ -243,10 +281,10 @@ test("/api/progress is a read, not a trigger", async () => {
     return undefined;
   };
   await withServer(d, async (base) => {
-    assert.equal((await fetch(`${base}/api/progress`, { method: "GET" })).status, 200);
+    assert.equal((await authorizedFetch(`${base}/api/progress`, { method: "GET" })).status, 200);
     for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
       assert.equal(
-        (await fetch(`${base}/api/progress`, { method })).status,
+        (await authorizedFetch(`${base}/api/progress`, { method })).status,
         405,
         `${method} must not reach the route`,
       );
@@ -274,7 +312,7 @@ test("the sessions table is gone after migrating", () => {
       const applied = db.prepare("SELECT version FROM schema_migrations ORDER BY version").all();
       assert.deepEqual(
         applied.map((row) => Number((row as { version: number }).version)),
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         "every migration applied, in filename order",
       );
       // And migrating again is a no-op rather than a second drop attempt.

@@ -1,6 +1,33 @@
 /** Shared test fixtures. Not a `*.test.ts`, so the runner ignores it. */
 import { parseAtBoundary, Scene } from "../src/core/schema.ts";
 import type { MatchScene } from "../src/tubes/types.ts";
+import type { EpornerOpenMatch } from "../src/tubes/eporner.ts";
+import type { IdentityTier } from "../src/core/matching.ts";
+
+export interface LegacyPoolMatch {
+  url: string;
+  embedUrl: string;
+  videoId: string;
+  uploader: string;
+  title: string;
+  identityTier: IdentityTier;
+  lagDays: number | null;
+  candidatesConsidered: number;
+  durationPassed: number;
+  hydrated: number;
+  rejectedByDate: number;
+  unknownDate: number;
+  hydrationCapped: boolean;
+  omittedCandidates: number;
+  fallbackCandidates: Array<{
+    url: string;
+    title: string;
+    duration: number;
+    added: string | null;
+    views: number | string | null;
+  }>;
+  rejected: "duration" | "date" | "none" | "incomplete" | null;
+}
 
 export function makeScene(over: Partial<Scene> & { id: string }): Scene {
   const candidate: Record<string, unknown> = {
@@ -29,6 +56,52 @@ export function makeMatchScene(over: Partial<MatchScene> & { id: string }): Matc
     durationSec: 600,
     ...over,
   };
+}
+
+export function poolResultAsEpornerMatches(
+  result: LegacyPoolMatch | null,
+  scene: MatchScene,
+): EpornerOpenMatch[] {
+  if (!result) return [];
+  const items = [
+    ...(result.url
+      ? [
+          {
+            url: result.url,
+            title: result.title,
+            duration: scene.durationSec ?? 600,
+            added: scene.releaseDate,
+            views: 1_000,
+            tier: result.identityTier,
+          },
+        ]
+      : []),
+    ...result.fallbackCandidates.map((candidate) => ({ ...candidate, tier: 0 as const })),
+  ];
+  return items.map((item) => {
+    const url = String(item.url ?? "");
+    const id = url.match(/video-([^/]+)/)?.[1] ?? "test";
+    const candidate = {
+      url,
+      title: item.title,
+      duration: item.duration,
+      added: item.added,
+      views: item.views,
+    };
+    return {
+      video: {
+        id,
+        url: candidate.url,
+        title: candidate.title,
+        embed: `https://www.eporner.com/embed/${id}/`,
+        length_sec: candidate.duration == null ? undefined : candidate.duration,
+        added: candidate.added ?? undefined,
+        views: candidate.views,
+      },
+      candidate,
+      identityTier: item.tier,
+    };
+  });
 }
 
 /**

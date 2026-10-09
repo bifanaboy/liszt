@@ -54,7 +54,7 @@
  */
 import type { Fc2Status } from "../core/schema.ts";
 import type { Fc2Candidate, SqliteStore } from "../core/store/sqlite.ts";
-import { parseClockDuration } from "../tubes/eporner-pool.ts";
+import { parseClockDuration } from "../tubes/eporner.ts";
 import type { Fetcher, RawScene, SourceAdapter, SourceContext, SourceResult } from "./types.ts";
 import { findTransExclusion } from "./trans-exclusion.ts";
 export { TRANS_EXCLUSION_TERMS as FC2_TRANS_TERMS } from "./trans-exclusion.ts";
@@ -323,9 +323,7 @@ export function parseFc2Detail(page: InertiaPage): Fc2Detail {
   if (!title) throw new Fc2ShapeError(`article ${videoId} has no title`);
   if (
     !Array.isArray(record.tags) ||
-    record.tags.some(
-      (tag) => !tag || typeof tag !== "object" || typeof tag.name !== "string" || !tag.name.trim(),
-    )
+    record.tags.some((tag) => !tag || typeof tag !== "object" || typeof tag.name !== "string")
   )
     throw new Fc2ShapeError(`article ${videoId} has no usable full tag list`);
   const duration = typeof record.duration === "string" ? record.duration : null;

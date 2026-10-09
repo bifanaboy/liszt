@@ -8,14 +8,21 @@
  * bad log field into a failed sync. Such a field is dropped and the entry is
  * still written; if even that fails, the line degrades to a fixed string.
  */
+import { sanitizeErrorMessage } from "./sanitize-error.ts";
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 /** Keys the envelope owns. A field with one of these names is namespaced. */
 const RESERVED_KEYS = ["ts", "level", "message"] as const;
 
 /** Replace values `JSON.stringify` cannot handle: BigInt, cycles, throwing. */
-function toJsonSafe(value: unknown, seen: Set<object>, depth = 0): unknown {
+function toJsonSafe(
+  value: unknown,
+  seen: Set<object>,
+  depth = 0,
+  secrets: readonly string[] = [],
+): unknown {
   if (typeof value === "bigint") return value.toString();
+  if (typeof value === "string") return sanitizeErrorMessage(value, secrets);
   if (value === null || typeof value !== "object") return value;
   if (depth > 6) return "[truncated]";
   if (seen.has(value)) return "[circular]";
@@ -27,14 +34,14 @@ function toJsonSafe(value: unknown, seen: Set<object>, depth = 0): unknown {
     // line exists to prevent.
     const custom = (value as { toJSON?: unknown }).toJSON;
     if (typeof custom === "function") {
-      return toJsonSafe((custom as () => unknown).call(value), seen, depth);
+      return toJsonSafe((custom as () => unknown).call(value), seen, depth, secrets);
     }
     if (Array.isArray(value)) {
-      return value.slice(0, 100).map((entry) => toJsonSafe(entry, seen, depth + 1));
+      return value.slice(0, 100).map((entry) => toJsonSafe(entry, seen, depth + 1, secrets));
     }
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>).slice(0, 100)) {
-      out[key] = toJsonSafe(entry, seen, depth + 1);
+      out[key] = toJsonSafe(entry, seen, depth + 1, secrets);
     }
     return out;
   } catch {
@@ -65,25 +72,31 @@ export interface Logger {
 export class JsonLogger implements Logger {
   private readonly base: Record<string, unknown>;
   private readonly sink: (line: string) => void;
+  private readonly secrets: readonly string[];
 
   constructor(
     base: Record<string, unknown> = {},
     sink: (line: string) => void = (line) => process.stdout.write(`${line}\n`),
+    secrets: readonly string[] = [],
   ) {
     this.base = base;
     this.sink = sink;
+    this.secrets = secrets;
   }
 
   private write(level: LogLevel, message: string, fields?: Record<string, unknown>): void {
     let line: string;
     try {
       const seen = new Set<object>();
-      const safeBase = toJsonSafe(this.base, seen) as Record<string, unknown>;
-      const safeFields = toJsonSafe(withoutReserved(fields ?? {}), seen) as Record<string, unknown>;
+      const safeBase = toJsonSafe(this.base, seen, 0, this.secrets) as Record<string, unknown>;
+      const safeFields = toJsonSafe(withoutReserved(fields ?? {}), seen, 0, this.secrets) as Record<
+        string,
+        unknown
+      >;
       line = JSON.stringify({
         ts: new Date().toISOString(),
         level,
-        message,
+        message: sanitizeErrorMessage(message, this.secrets),
         ...safeBase,
         ...safeFields,
       });
@@ -117,7 +130,7 @@ export class JsonLogger implements Logger {
   }
 
   child(fields: Record<string, unknown>): Logger {
-    return new JsonLogger({ ...this.base, ...fields }, this.sink);
+    return new JsonLogger({ ...this.base, ...fields }, this.sink, this.secrets);
   }
 }
 

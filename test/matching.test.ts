@@ -375,7 +375,7 @@ test("a scene code in the title is tier-3 same-phrasing evidence", () => {
 test("the pool's first-name-only retitles still earn tier 1", () => {
   // A multi-token performer reduced to its first name. Under a full-name-only
   // rule this would score 0 and lose to every decoy, which is precisely how
-  // the trusted pool's obfuscated retitles would all be excluded.
+  // the earlier Eporner index's obfuscated retitles would all be excluded.
   const one = { ...scene, performers: ["Lana Rhoades"] };
   assert.equal(identityTier(one, "Lana Rhoades takes it deep"), 2, "full name");
   assert.equal(identityTier(one, "Lana compilation"), 1, "first name only");
@@ -512,7 +512,7 @@ test("a zone-less timestamp is pinned to UTC, not read as local time", () => {
 test("an impossible calendar date is UNKNOWN, never a rolled-over one", () => {
   // `Date.UTC(2026, 18, 7)` does not fail - it returns July 2027. Measured
   // reaching here: a mojibake'd pool card read `2026-19-07`, and that became
-  // the trusted pool's MAX(added) watermark, which would freeze the
+  // the earlier Eporner index's MAX(added) watermark, which would freeze the
   // incremental index walk at one page. A wrong date is worse than no date.
   assert.equal(toIsoUtc("2026-19-07"), null, "month 19 does not roll into the next year");
   assert.equal(toIsoUtc("2026-13-01"), null);
@@ -531,7 +531,7 @@ test("an impossible calendar date is UNKNOWN, never a rolled-over one", () => {
 });
 
 test("compatibility-glyph titles still tokenise", () => {
-  // A live trusted-pool retitle, in mathematical-bold Unicode. NFKC/NFKD must
+  // A live earlier Eporner index retitle, in mathematical-bold Unicode. NFKC/NFKD must
   // reduce it to plain ASCII or identity would score 0 on every pool title.
   assert.deepEqual(
     matchTokens(
@@ -554,8 +554,8 @@ function mojibake(value: string): string {
 }
 
 test("mojibake'd titles are repaired before tokenising", () => {
-  // The shape the eporner `video/id` API actually serves for the trusted pool.
-  // Without the repair these tokenise to NOTHING and the whole trusted pool
+  // The shape the eporner `video/id` API actually serves for the earlier Eporner index.
+  // Without the repair these tokenise to NOTHING and the whole earlier Eporner index
   // scores identity tier 0, leaving the gate ranking on views alone.
   const bold =
     "\u{1D40F}\u{1D41E}\u{1D42D}\u{1D422}\u{1D42D}\u{1D41E} \u{1D425}\u{1D41A}\u{1D42D}\u{1D422}\u{1D427}\u{1D41A}\u{1D42C} \u{1D430}\u{1D421}\u{1D428}\u{1D42B}\u{1D41E}\u{1D42C} \u{1D40B}\u{1D42E}\u{1D427}\u{1D41A}, \u{1D404}\u{1D426}\u{1D432}, \u{1D412}\u{1D41A}\u{1D426}, \u{1D401}\u{1D41A}\u{1D41B}\u{1D432} & \u{1D402}\u{1D421}\u{1D41E}\u{1D42B}\u{1D42B}\u{1D432}";

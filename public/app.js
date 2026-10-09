@@ -17,6 +17,8 @@ import {
 
 const $ = (selector) => document.querySelector(selector);
 const list = $("#list");
+const loadMoreButton = $("#load-more");
+const searchSuggestions = $("#search-suggestions");
 const empty = $("#empty");
 const emptyTitle = $("#empty-title");
 const emptyMessage = $("#empty-message");
@@ -57,6 +59,7 @@ let statuses = [];
 let refreshing = false;
 let catalogueLoaded = false;
 let latestRun = null;
+let displayLimit = 120;
 
 /** Which catalogue page is showing. The Asian lanes are on their own page (#65). */
 let activeCatalogue = MAIN_CATALOGUE;
@@ -89,7 +92,8 @@ const linksFor = (scene) => {
 /** Render the filtered, sorted catalogue grouped by release month. */
 function render() {
   const query = search.value.trim().toLocaleLowerCase();
-  const filtered = visibleScenes().filter((scene) =>
+  const detailed = Boolean(query || studio.value !== "all");
+  let filtered = visibleScenes().filter((scene) =>
     (studio.value === "all" || scene.labelId === studio.value) &&
     [scene.title, scene.label, ...(scene.performers || [])].join(" ").toLocaleLowerCase().includes(query));
   filtered.sort((a, b) => sort.value === "title"
@@ -98,6 +102,10 @@ function render() {
   count.textContent = `${filtered.length} ${filtered.length === 1 ? "release" : "releases"}`;
   renderEmptyState(filtered.length);
   list.hidden = filtered.length === 0;
+  const totalFiltered = filtered.length;
+  filtered = filtered.slice(0, displayLimit);
+  loadMoreButton.hidden = totalFiltered <= filtered.length;
+  loadMoreButton.textContent = `Load more (${totalFiltered - filtered.length} remaining)`;
   const groups = new Map();
   for (const scene of filtered) {
     const date = new Date(`${scene.releaseDate}T12:00:00Z`);
@@ -122,23 +130,16 @@ function render() {
     }).join("");
     const releaseUrl = safeUrl(scene.releaseUrl);
     const lowConfidence = scene.videoMatching && scene.videoMatching.confidence === "low";
-    const reasons = [];
-    if (scene.durationReview) reasons.push("Provider durations disagree; inspect the release before trusting a playback match.");
-    if (scene.studioIdentityMissing) reasons.push("Studio identity is missing; review before grouping this release under a studio.");
-    if (scene.metadataPoor && !scene.studioIdentityMissing) reasons.push("Required release metadata is incomplete; inspect the release before trusting its details.");
-    const flag = reasons.length ? `<details class="review-reasons"><summary class="review-tag">REVIEW</summary><p>${esc(reasons.join(" "))}</p></details>` : (lowConfidence ? '<span class="review-tag" title="No tube found a title that names this scene. This link was chosen from videos that matched its duration and upload window, using view count only; check it by hand.">LOW CONFIDENCE</span>' : "");
+    const playbackStatus = !links.length ? "Missing" : lowConfidence ? "Guessed" : "Matched";
     const runtime = (value) => `${Math.floor(value / 60)}m ${String(value % 60).padStart(2, "0")}s`;
     const duration = scene.durationRange
       ? `${runtime(scene.durationRange.minSec)}–${runtime(scene.durationRange.maxSec)}`
       : scene.durationSec
         ? `${Math.round(scene.durationSec / 60)} MIN`
         : "";
-    const labels = { title: "Title", releaseDate: "Release date", performers: "Performers", durationSec: "Duration", thumbnailUrl: "Thumbnail", releaseUrl: "Release page" };
-    const sources = Object.entries(scene.fieldProvenance || {}).map(([field, source]) => `${labels[field] || field}: ${source}`);
-    const evidence = sources.length
-      ? `<details class="field-provenance"><summary>Field sources</summary><p>${sources.map(esc).join(" · ")}</p></details>`
-      : "";
-    return `<article class="release-row"><time class="release-date" datetime="${esc(scene.releaseDate)}"><strong>${esc(niceDate(scene.releaseDate).split(" ")[0])}</strong><span>${esc(niceDate(scene.releaseDate).split(" ").slice(1).join(" "))}</span></time><div class="release-thumb">${thumb}</div><div class="release-main"><div class="release-meta"><span class="studio-tag">${esc(scene.label)}</span>${flag}${duration ? `<span>${esc(duration)}</span>` : ""}</div><h4>${esc(scene.title)}</h4><p class="performers">${(scene.performers || []).length ? scene.performers.map(esc).join(" <i>·</i> ") : "Performer information unavailable"}</p>${evidence}</div><div class="release-links">${outbound || '<span class="unlinked">No verified link</span>'}${releaseUrl ? `<a class="release-page" href="${esc(releaseUrl)}" target="_blank" rel="noopener noreferrer">Release page ↗</a>` : ""}</div></article>`;
+    const meta = `${esc(scene.label)}${duration ? ` · ${esc(duration)}` : ""} · ${esc(niceDate(scene.releaseDate))}`;
+    if (detailed) return `<article class="release-row release-row--detail"><div class="release-thumb">${thumb}</div><div class="release-main"><div class="release-meta"><span class="studio-tag">${esc(scene.label)}</span><span class="playback-status playback-status--${playbackStatus.toLowerCase()}">${playbackStatus}</span>${duration ? `<span>${esc(duration)}</span>` : ""}</div><h4>${esc(scene.title)}</h4><p class="performers">${(scene.performers || []).length ? scene.performers.map(esc).join(" <i>·</i> ") : "Performer information unavailable"}</p><time datetime="${esc(scene.releaseDate)}">${esc(niceDate(scene.releaseDate))}</time></div><div class="release-links">${outbound || '<span class="unlinked">No verified link</span>'}${releaseUrl ? `<a class="release-page" href="${esc(releaseUrl)}" target="_blank" rel="noopener noreferrer">Release page ↗</a>` : ""}</div></article>`;
+    return `<article class="release-tile"><div class="tile-image">${thumb}<span class="playback-status playback-status--${playbackStatus.toLowerCase()}">${playbackStatus}</span></div><div class="tile-content"><span class="studio-tag">${esc(scene.label)}</span><h4 title="${esc(scene.title)}">${esc(scene.title)}</h4><p class="performers">${(scene.performers || []).slice(0, 3).map(esc).join(" · ") || "Performer information unavailable"}</p><span class="tile-meta">${meta}</span><div class="release-links">${outbound || '<span class="unlinked">No verified link</span>'}</div></div></article>`;
   }).join("")}</section>`).join("");
 }
 
@@ -219,6 +220,12 @@ function renderCatalogue() {
   studio.replaceChildren(new Option("All studios", "all"));
   studio.insertAdjacentHTML("beforeend", choices.map((item) => `<option value="${esc(item.labelId)}">${esc(item.label)} · ${item.sceneCount}</option>`).join(""));
   studio.value = labels.has(selected) ? selected : "all";
+  const suggestionValues = [...new Set(visibleScenes().flatMap((scene) => [scene.label, ...(scene.performers || [])]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  searchSuggestions.replaceChildren(...suggestionValues.map((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    return option;
+  }));
   render();
 }
 
@@ -342,10 +349,8 @@ const elapsedText = (startedAt) => {
  * below, so they are never parsed as markup either way.
  */
 function stageCaption(progress) {
-  const index = progress.index || {};
   const populate = progress.populate || {};
   const link = progress.link || {};
-  if (progress.stage === "indexing") return `Indexing the trusted pool — ${num(index.done)} of ${num(index.total)} accounts`;
   if (progress.stage === "populating") {
     const inFlight = Array.isArray(populate.current) ? populate.current : [];
     const names = inFlight.slice(0, LIVE_SOURCE_NAMES);
@@ -546,9 +551,22 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) pollProgress();
 });
 
-search.addEventListener("input", render);
+const updateSearchAddress = () => {
+  const url = new URL(globalThis.location.href);
+  if (search.value.trim()) url.searchParams.set("q", search.value.trim());
+  else url.searchParams.delete("q");
+  globalThis.history.replaceState(null, "", url);
+};
+search.value = new URL(globalThis.location.href).searchParams.get("q") || "";
+search.addEventListener("input", () => { displayLimit = 120; updateSearchAddress(); render(); });
 sort.addEventListener("change", render);
 studio.addEventListener("change", render);
+loadMoreButton.addEventListener("click", () => { displayLimit += 120; render(); });
+globalThis.addEventListener("popstate", () => {
+  search.value = new URL(globalThis.location.href).searchParams.get("q") || "";
+  displayLimit = 120;
+  render();
+});
 refreshButton.addEventListener("click", async () => {
   refreshButton.disabled = true;
   refreshButton.classList.add("is-loading");

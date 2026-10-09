@@ -1,11 +1,7 @@
 /**
- * Query construction, used by the sxyprn rung.
- *
- * It was shared with the eporner open-search rung, which is deleted - see
- * `tubes/types.ts` for why that rung could not work. Kept as its own module
- * because the sxyprn rung is not its only plausible caller: a future tube that
- * searches a catalogue rather than walking profiles wants the same cheap-recall
- * queries, and duplicating them per tube is how two rungs drift apart.
+ * Query construction, shared by the equal-ranked Eporner and Sxyprn searches.
+ * Keeping the cheap-recall queries in one module prevents the providers from
+ * drifting apart.
  *
  * Queries are CHEAP RECALL only. The measured gate in `core/matching.ts` is the
  * single admission mechanism, so a query that returns noise costs a rejection

@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigForTest as loadConfig } from "./test-config.ts";
 import { createSources } from "../src/sources/registry.ts";
 import { createSync } from "../src/pipeline/sync.ts";
 import { NullLogger } from "../src/core/logger.ts";
@@ -232,7 +232,7 @@ test("a source failure keeps the last-good records instead of erasing the lane",
       log: new NullLogger(),
       windowDays: 90,
       fetchConcurrency: 1,
-      lookups: { poolLookup: null, sxyprnLookup: null },
+      lookups: { epornerLookup: null, sxyprnLookup: null },
       resolveEnabled: false,
     });
     assert.equal((await run("first")).ok, true);

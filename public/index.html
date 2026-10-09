@@ -52,13 +52,14 @@
         <span class="page-anchor" id="asian" aria-hidden="true"></span>
         <div class="section-heading"><div><p class="eyebrow" id="catalogue-eyebrow">RELEASE LEDGER</p><h2 id="catalogue-title">Catalogue</h2></div><button class="button button-quiet" id="export">Export CSV <span>↗</span></button></div>
         <div class="toolbar">
-          <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search title, performer or studio" autocomplete="off"><kbd>⌘ K</kbd></label>
+          <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search title, performer or studio" autocomplete="off" list="search-suggestions"><datalist id="search-suggestions"></datalist><kbd>⌘ K</kbd></label>
           <label class="select-wrap"><span class="sr-only">Studio</span><select id="studio"><option value="all">All studios</option></select><span class="select-chevron">⌄</span></label>
           <label class="select-wrap sort-wrap"><span class="sr-only">Sort by</span><select id="sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select><span class="select-chevron">⌄</span></label>
           <span class="result-count" id="count">Loading…</span>
         </div>
         <div id="notices" aria-live="polite"></div>
         <div id="list" class="release-list" aria-live="polite"></div>
+        <button id="load-more" class="button button-quiet load-more" type="button" hidden>Load more</button>
         <div id="empty" class="empty-state" hidden><span class="empty-glyph" aria-hidden="true">⌕</span><h3 id="empty-title">Loading catalogue…</h3><p id="empty-message">Waiting for the catalogue response.</p></div>
       </section>
 

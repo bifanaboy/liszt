@@ -53,7 +53,7 @@ test("the status line, hint and badge agree for every source state", () => {
   assert.doesNotMatch(unimplemented, /Sync failing/);
 
   const failing = renderSourceHealth(
-    { sourceId: "bang-originals", labelId: "bang-originals", lastError: "upstream failed" },
+    { sourceId: "legacy-provider", labelId: "legacy-provider", lastError: "upstream failed" },
     [],
   );
   assert.match(failing, /Sync failing/);
@@ -64,8 +64,8 @@ test("the summary counts failing, unconfigured and unimplemented sources apart",
   const sources = [
     { sourceId: "vixen-anal", labelId: "vixen-anal" },
     {
-      sourceId: "bang-originals",
-      labelId: "bang-originals",
+      sourceId: "legacy-provider",
+      labelId: "legacy-provider",
       lastError: "Bang! Originals listing has an unexpected structured response",
     },
     {

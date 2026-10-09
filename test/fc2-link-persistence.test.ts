@@ -9,7 +9,7 @@ import { createFc2EpornerResolver } from "../src/tubes/fc2-eporner.ts";
 import { createSync } from "../src/pipeline/sync.ts";
 import { fixedClock, type Fetcher } from "../src/sources/types.ts";
 import { NullLogger } from "../src/core/logger.ts";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigForTest as loadConfig } from "./test-config.ts";
 import { buildReadModel } from "../src/serving/read-model.ts";
 
 const fixture = (name: string) =>
@@ -91,7 +91,7 @@ test("FC2 multipart evidence survives a full sync, restart and repeat sync", asy
       windowDays: 90,
       fetchConcurrency: 1,
       lookups: {
-        poolLookup: null,
+        epornerLookup: null,
         sxyprnLookup: null,
         fc2Lookup: createFc2EpornerResolver(fetcher, {
           sleep: async () => {},

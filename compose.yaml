@@ -1,0 +1,17 @@
+services:
+  liszt:
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PORT: "3000"
+      LISZT_LISTEN_ADDR: 0.0.0.0
+      LISZT_DB_PATH: /data/liszt.db
+      LISZT_AUTH_USERNAME: ${LISZT_AUTH_USERNAME:?set LISZT_AUTH_USERNAME}
+      LISZT_AUTH_PASSWORD: ${LISZT_AUTH_PASSWORD:?set LISZT_AUTH_PASSWORD}
+    volumes:
+      - liszt-data:/data
+volumes:
+  liszt-data:

@@ -26,7 +26,7 @@ export const DateOnly = z
 
 export const IsoTimestamp = z.string().datetime({ offset: true });
 
-export const VideoLinkSource = z.enum(["sxyprn", "eporner", "eporner-pool"]);
+export const VideoLinkSource = z.enum(["sxyprn", "eporner"]);
 export type VideoLinkSource = z.infer<typeof VideoLinkSource>;
 
 export const VideoLink = z.object({

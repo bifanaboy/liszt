@@ -1,13 +1,12 @@
 /**
- * Legacy Node reference runtime; Hatchable serves the application. This local
- * composition root wires concrete implementations to pipeline contracts.
+ * Supported Node runtime composition root. It wires concrete implementations
+ * to pipeline contracts, then starts the private browser app and refresh loop.
  *
  * The boot order matters and is deliberate:
  *
  *   1. Parse configuration. TPDB remains optional until `TPDB_API_KEY` is set.
  *   2. Open and migrate the store (WAL + busy timeout) before anything reads it.
- *   3. Build the ladder's lookups once: the pool index handle and the optional
- *      lazily-loaded sxyprn client.
+ *   3. Build the Eporner search and optional Sxyprn lookup once.
  *   4. LISTEN FIRST, then run the boot sync in the background, then start the
  *      interval. A slow first sync must not delay the port coming up.
  *   5. All three entry points - boot sync, interval, and `POST /api/refresh` -
@@ -24,7 +23,7 @@ import { systemClock } from "./sources/types.ts";
 import { createSync } from "./pipeline/sync.ts";
 import { createProgressTracker } from "./pipeline/progress.ts";
 import { createScheduler, createSingleFlight } from "./pipeline/scheduler.ts";
-import { createPoolLookup, indexPool } from "./tubes/eporner-pool.ts";
+import { createEpornerOpenLookup, createEpornerOpenSearch } from "./tubes/eporner.ts";
 import { createSxyprnLookup } from "./tubes/sxyprn.ts";
 import { createFc2EpornerResolver } from "./tubes/fc2-eporner.ts";
 import { loadSxyprnClient } from "./tubes/sxyprn-client.ts";
@@ -40,10 +39,11 @@ const PUBLIC_DIR = join(HERE, "..", "public");
 const SHUTDOWN_BACKSTOP_MS = 45_000;
 
 async function main(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig(process.env, { requireAuth: true });
   const log = new JsonLogger(
     { app: "liszt" },
     config.logToStderr ? (line) => process.stderr.write(`${line}\n`) : undefined,
+    [config.authUsername ?? "", config.authPassword ?? "", config.tpdbApiKey ?? ""],
   );
 
   const store = new SqliteStore(config.dbPath);
@@ -61,23 +61,18 @@ async function main(): Promise<void> {
     },
     manyvidsStoreIds: config.manyvidsStoreIds,
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,
-    bangListingUrl: config.bangListingUrl,
     store,
     tpdbApiKey: config.tpdbApiKey,
     studioLinks: config.studioLinks,
   });
 
-  // Rung 2 is optional. A missing package is a calm state, not a crash.
+  // Sxyprn is optional. Eporner search remains available without its package.
   const sxyprnClient = await loadSxyprnClient({ timeoutMs: config.sxyprnTimeoutMs });
-  if (!sxyprnClient) log.info("optional sxyprn client not installed; rung 2 stays disabled");
+  if (!sxyprnClient) log.info("optional sxyprn client not installed; Sxyprn matching is disabled");
 
-  const poolLookup = createPoolLookup({
-    store,
-    fetcher,
-    uploaders: config.trustedUploaders,
+  const epornerLookup = createEpornerOpenLookup(createEpornerOpenSearch({ fetcher }), {
     durationToleranceSec: config.matchDurationToleranceSec,
     dateWindowDays: config.matchDateWindowDays,
-    log: (message, fields) => log.debug(message, fields),
   });
   const sxyprnLookup = sxyprnClient
     ? createSxyprnLookup({
@@ -88,12 +83,12 @@ async function main(): Promise<void> {
     : null;
   const fc2Lookup = createFc2EpornerResolver(fetcher);
 
-  // One tracker for the whole cycle, begun here because the pool index runs
-  // BEFORE `createSync` and is the longest cold-start phase. It is the single
-  // source of progress for all three refresh triggers, because all three go
+  // One tracker for the whole cycle, shared by all three refresh triggers,
+  // because all three go
   // through `runCycle` - a second refresh joins the one already running, so
   // there is only ever one run to describe.
   const progress = createProgressTracker();
+  let stopping = false;
   const sync = createSync({
     store,
     sources,
@@ -105,53 +100,24 @@ async function main(): Promise<void> {
     fetchConcurrency: config.fetchConcurrency,
     traxxx: { minIntervalMs: config.traxxxMinIntervalMs, cacheTtlMs: config.traxxxCacheTtlMs },
     lookups: {
-      poolLookup,
+      epornerLookup,
       sxyprnLookup,
       fc2Lookup,
       ...(sxyprnClient ? { sxyprnRequests: () => sxyprnClient.takeRequests() } : {}),
     },
     progress,
+    secrets: [config.authUsername ?? "", config.authPassword ?? "", config.tpdbApiKey ?? ""],
   });
 
   let inFlight = false;
-  const runCycle = createSingleFlight(async () => {
+  const singleFlightCycle = createSingleFlight(async () => {
     inFlight = true;
     const startedAt = new Date();
     progress.begin(`cycle-${startedAt.getTime()}`, startedAt.toISOString(), {
       sources: sources.length,
-      uploaders: config.trustedUploaders.length,
+      uploaders: 0,
     });
     try {
-      try {
-        const report = await indexPool({
-          store,
-          fetcher,
-          now: new Date(),
-          uploaders: config.trustedUploaders,
-          windowDays: config.windowDays,
-          fullRewalkDays: config.poolFullRewalkDays,
-          log: (message, fields) => log.info(message, fields),
-          onUploader: (done, total, uploader) => progress.indexStep(done, total, uploader),
-        });
-        if (!report.ok) {
-          log.warn("pool index incomplete", {
-            failed: report.uploaders.filter((entry) => entry.error).map((entry) => entry.uploader),
-          });
-        }
-        // A full re-walk that could not reach the end of a listing deletes
-        // nothing, so upstream deletions stay uncorrected until one completes.
-        // It is not an error, but it is also not health - reported here rather
-        // than only as a per-account truncation log line.
-        const skipped = report.uploaders.filter((entry) => entry.pruneSkipped);
-        if (skipped.length) {
-          log.warn("pool index: absence prune withheld", {
-            uploaders: skipped.map((entry) => entry.uploader),
-          });
-        }
-      } catch (error) {
-        // The pool is an optimisation; its failure must not stop the sync.
-        log.warn("pool index failed", { error: (error as Error).message });
-      }
       return await sync("cycle");
     } finally {
       inFlight = false;
@@ -163,6 +129,20 @@ async function main(): Promise<void> {
       if (progress.snapshot().active) progress.finish();
     }
   });
+  let activeCycle: Promise<unknown> | null = null;
+  const runCycle = (): Promise<unknown> => {
+    const current = singleFlightCycle();
+    activeCycle = current;
+    void current.then(
+      () => {
+        if (activeCycle === current) activeCycle = null;
+      },
+      () => {
+        if (activeCycle === current) activeCycle = null;
+      },
+    );
+    return current;
+  };
 
   const server = createHttpServer({
     store,
@@ -176,6 +156,8 @@ async function main(): Promise<void> {
     isBusy: () => inFlight,
     publicDir: PUBLIC_DIR,
     progress: () => progress.snapshot(),
+    auth: { username: config.authUsername!, password: config.authPassword! },
+    acceptingRequests: () => !stopping,
   });
 
   await new Promise<void>((resolve) => {
@@ -200,6 +182,8 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string): void => {
     log.info("shutting down", { signal });
+    stopping = true;
+    const serverClosed = new Promise<void>((resolve) => server.close(() => resolve()));
     // The backstop is armed AT SIGNAL RECEIPT, not inside the `.then()` below.
     // Armed there it could only start once the scheduler had already resolved,
     // so it bounded a slow `server.close` but not the thing its comment claimed
@@ -229,26 +213,15 @@ async function main(): Promise<void> {
         log.error("scheduler stop failed", { error: (error as Error).message });
         return false;
       })
-      .then((clean) => {
-        if (!clean) {
-          log.error("shutdown gave up on an in-flight cycle; leaving the store open", {
-            signal,
-          });
-          // No `server.close()` here, and that is deliberate. This process is
-          // being abandoned: a cycle is still writing, so the store stays open
-          // and the exit is reported as a failure. Calling `server.close()`
-          // first would look like it was draining in-flight requests, but
-          // `process.exit` on the next line kills the process before any
-          // connection could finish - a no-op that misrepresents what happened.
-          clearTimeout(hardExit);
-          process.exit(1);
-          return;
-        }
-        server.close(() => {
-          store.close();
-          clearTimeout(hardExit);
-          process.exit(0);
-        });
+      .then(async () => {
+        await serverClosed;
+        // Scheduler.stop() only knows about timer-triggered work. Boot and
+        // HTTP refreshes use the same single-flight runner, so drain that
+        // shared promise too before closing SQLite.
+        while (activeCycle) await activeCycle.catch(() => undefined);
+        store.close();
+        clearTimeout(hardExit);
+        process.exit(0);
       });
   };
   process.on("SIGINT", () => shutdown("SIGINT"));
