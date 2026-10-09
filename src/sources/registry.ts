@@ -9,9 +9,9 @@
  *  2. Direct URL scrape - Maximo Garcia (traxxx measures no scenes for it;
  *                  its Fansly and ManyVids feeds provide the records).
  *  3. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
- *                  Inertia HTML, its detail pages are paced at 8-9 seconds, and
- *                  its candidates' decisions live in `fc2_candidates` so a sync
- *                  never repays a detail request it already made.
+ *                  Inertia HTML and is the lane's only read: releases are
+ *                  classified from the listing's own fields, so there are no
+ *                  detail requests to pace and no candidate state to carry.
  *  4. madouqu.com - eleven category ids, Mandarin classifier, metadata only.
  *  5. ManyVids - public creator store listings, incremental plus weekly full pulls.
  *  6. TPDB - one shared token, exact cleaned-name studio matching.
@@ -99,7 +99,7 @@ export function createSources({
         storeId === "1003095958" ? maximoPolicy : { mode: "split" },
       ),
     ),
-    createFc2CmadbStudio({ ...fc2, store }),
+    createFc2CmadbStudio({ ...fc2 }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
   const watchlist = createTraxxxWatchlistStudios(traxxxWatchlist, [

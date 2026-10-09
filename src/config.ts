@@ -69,24 +69,9 @@ export const Config = z.object({
   madouquApiBase: z.string().url().default(DEFAULT_MADOUQU_API_BASE),
 
   // FC2 lane (fc2cmadb.com). The site answers slowly and asks to be walked
-  // gently, so both spacings are named here instead of buried in the adapter.
+  // gently, so the listing spacing is named here instead of buried in the adapter.
   /** Minimum spacing between listing pages. The site asks for 2s. */
   fc2ListingMinIntervalMs: z.coerce.number().int().nonnegative().default(2000),
-  /**
-   * Minimum spacing between DETAIL pages, measured safe at 8-9s. It is the
-   * dominant cost of the lane: a 90-day anal-tag window is a few hundred
-   * candidates and each one costs this delay, so the sync is also bounded per
-   * run and resumes on the next one.
-   */
-  fc2DetailMinIntervalMs: z.coerce.number().int().nonnegative().default(8500),
-  /** How many detail pages one sync may read before deferring the rest. */
-  fc2MaxDetailChecksPerSync: z.coerce.number().int().nonnegative().default(20),
-  /**
-   * How long an unmarked censorship badge is retried before the candidate is
-   * retired from pending work undecided. It is never classified as censored and
-   * never accepted; it just stops costing requests.
-   */
-  fc2RecheckDays: z.coerce.number().int().nonnegative().default(7),
 
   manyvidsStoreIds: z
     .array(z.string().regex(/^\d+$/))
@@ -259,9 +244,6 @@ export function loadConfig(
     studioLinks: studioLinksFromEnv(env.LISZT_STUDIO_LINKS) ?? readDefaultStudioLinks(),
     madouquApiBase: env.LISZT_MADOUQU_API_BASE,
     fc2ListingMinIntervalMs: env.LISZT_FC2_LISTING_MIN_INTERVAL_MS,
-    fc2DetailMinIntervalMs: env.LISZT_FC2_DETAIL_MIN_INTERVAL_MS,
-    fc2MaxDetailChecksPerSync: env.LISZT_FC2_MAX_DETAIL_CHECKS_PER_SYNC,
-    fc2RecheckDays: env.LISZT_FC2_RECHECK_DAYS,
     manyvidsStoreIds:
       env.LISZT_MANYVIDS_STORE_IDS === undefined
         ? undefined

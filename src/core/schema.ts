@@ -181,19 +181,6 @@ export type RunOutcome = z.infer<typeof RunOutcome>;
 export const RunKind = z.enum(["sync"]);
 export type RunKind = z.infer<typeof RunKind>;
 
-/**
- * How far the FC2 classifier got with one candidate.
- *
- * THREE values, and `pending` is not a placeholder. fc2cmadb leaves the
- * censorship badge unmarked on most of its anal-tag records, and an unmarked
- * badge is not evidence of anything: accepting it would import releases the
- * lane never verified, and calling it censored would hide real uncensored
- * records from the lane permanently. So it is its own state, retried for a
- * bounded period, and then retired still undecided.
- */
-export const Fc2Status = z.enum(["accepted", "excluded", "pending"]);
-export type Fc2Status = z.infer<typeof Fc2Status>;
-
 /** Parse helper that names the boundary in the error, so failures are legible. */
 export function parseAtBoundary<S extends z.ZodTypeAny>(
   schema: S,

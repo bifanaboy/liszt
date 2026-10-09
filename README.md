@@ -30,7 +30,7 @@ Deployments create a fresh database when no file exists. Liszt does not import a
 
 ## Feeds and matching
 
-Each provider has an adapter for its API, pagination, and record shape. The Traxxx network watchlist includes Bang and keeps records under the studio identities those records report. The ThePornDB watchlist is optional and requires `TPDB_API_KEY`. FC2 detail requests are deliberately paced. Failed feeds retain their last successful catalogue state, while malformed individual records are reported without discarding valid siblings.
+Each provider has an adapter for its API, pagination, and record shape. The Traxxx network watchlist includes Bang and keeps records under the studio identities those records report. The ThePornDB watchlist is optional and requires `TPDB_API_KEY`. The FC2 lane reads only its anal-tag listing and classifies releases from the listing's own fields, with listing reads paced at 2-second spacing. Failed feeds retain their last successful catalogue state, while malformed individual records are reported without discarding valid siblings.
 
 Eporner search and Sxyprn search compete as equal playback sources when the optional Sxyprn client is installed. Duration and release date filter candidates, and shared identity, view-count, and date ranking selects among survivors. A surviving candidate without identity evidence may be shown as **Guessed**. Other live links are **Matched**; releases without a live link are **Missing**.
 
