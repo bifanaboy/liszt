@@ -57,7 +57,7 @@ import {
   type TubeCandidate,
 } from "../core/matching.ts";
 import { mapIsolated } from "../core/concurrency.ts";
-import { createExpiringCache } from "./eporner.ts";
+import { createExpiringCache } from "../core/expiring-cache.ts";
 import { buildQueries, configuredSceneCode } from "./queries.ts";
 import type { MatchScene } from "./types.ts";
 

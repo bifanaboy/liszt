@@ -2,6 +2,7 @@
 import type { Fetcher } from "../sources/types.ts";
 import { pickMatch, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
 import { buildQueries } from "./queries.ts";
+import { createExpiringCache } from "../core/expiring-cache.ts";
 import type { MatchScene } from "./types.ts";
 
 const VIDEO_URL = "https://www.eporner.com/api/v2/video/id/";
@@ -50,31 +51,15 @@ export function epornerEmbedUrl(id: string): string {
   return `https://www.eporner.com/embed/${id}/`;
 }
 
-export function validEpornerUrl(value: unknown): boolean {
-  try {
-    const url = new URL(String(value));
-    if (
-      url.protocol !== "https:" ||
-      !EPORNER_HOSTS.includes(url.hostname) ||
-      (url.port && url.port !== "443")
-    )
-      return false;
-    if (url.username || url.password || url.search || url.hash) return false;
-    // Search rows use `/video-<id>/...`; the id lookup answers `/hd-porn/<id>/...`.
-    return /^\/(?:video-[A-Za-z0-9]+|hd-porn\/[A-Za-z0-9]+)(?:\/[^/]*)?\/?$/.test(url.pathname);
-  } catch {
-    return false;
-  }
-}
-
-export function validEpornerEmbedUrl(value: unknown): boolean {
+/** Validate an eporner URL: fixed watch shape (`/video-<id>`) or embed (`/embed/<id>`). */
+function validEpornerUrlShape(value: unknown, pathPattern: RegExp): boolean {
   try {
     const url = new URL(String(value));
     return (
       url.protocol === "https:" &&
       EPORNER_HOSTS.includes(url.hostname) &&
       (!url.port || url.port === "443") &&
-      /^\/embed\/[A-Za-z0-9]+\/?$/.test(url.pathname) &&
+      pathPattern.test(url.pathname) &&
       !url.username &&
       !url.password &&
       !url.search &&
@@ -83,6 +68,17 @@ export function validEpornerEmbedUrl(value: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+const WATCH_PATH = /^\/(?:video-[A-Za-z0-9]+|hd-porn\/[A-Za-z0-9]+)(?:\/[^/]*)?\/?$/;
+const EMBED_PATH = /^\/embed\/[A-Za-z0-9]+\/?$/;
+
+export function validEpornerUrl(value: unknown): boolean {
+  return validEpornerUrlShape(value, WATCH_PATH);
+}
+
+export function validEpornerEmbedUrl(value: unknown): boolean {
+  return validEpornerUrlShape(value, EMBED_PATH);
 }
 
 /** Extract the eporner video id from any accepted URL shape. */
@@ -174,24 +170,6 @@ export function createEpornerOpenLookup(
       if (match) matches.push({ video, candidate, identityTier: match.identityTier });
     }
     return matches;
-  };
-}
-
-/** Deduplicate concurrent lookups for a short window; evict rejections at once. */
-export function createExpiringCache({ ttlMs = 5 * 60_000, limit = 512 } = {}) {
-  const entries = new Map<string, { createdAt: number; value: Promise<unknown> }>();
-  return function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
-    const now = Date.now();
-    const entry = entries.get(key);
-    if (entry && now - entry.createdAt < ttlMs) return entry.value as Promise<T>;
-    entries.delete(key);
-    const value = Promise.resolve().then(load);
-    entries.set(key, { createdAt: now, value });
-    value.catch(() => {
-      if (entries.get(key)?.value === value) entries.delete(key);
-    });
-    if (entries.size > limit) entries.delete(entries.keys().next().value as string);
-    return value;
   };
 }
 

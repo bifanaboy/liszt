@@ -15,6 +15,12 @@ export const TRANS_EXCLUSION_TERMS: readonly string[] = Object.freeze([
 ]);
 
 const TRANS_EXCLUSION_WORD_TERMS: readonly string[] = Object.freeze(["ts", "trans"]);
+// ponytail: one prebuilt alternation over two static terms; a per-call RegExp
+// per record is pure waste here. Build dynamically if the term list grows.
+const TRANS_EXCLUSION_WORD_PATTERN = new RegExp(
+  `(^|[^0-9a-z])(${TRANS_EXCLUSION_WORD_TERMS.join("|")})([^0-9a-z]|$)`,
+  "i",
+);
 
 /** Return the first matching shared substring or whole-word exclusion term. */
 export function findTransExclusion(text: string): string | null {
@@ -22,9 +28,6 @@ export function findTransExclusion(text: string): string | null {
   for (const term of TRANS_EXCLUSION_TERMS) {
     if (lower.includes(term.toLowerCase())) return term;
   }
-  for (const term of TRANS_EXCLUSION_WORD_TERMS) {
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (new RegExp(`(^|[^0-9a-z])${escaped}([^0-9a-z]|$)`, "i").test(text)) return term;
-  }
-  return null;
+  const wordMatch = text.match(TRANS_EXCLUSION_WORD_PATTERN);
+  return wordMatch ? wordMatch[2]!.toLowerCase() : null;
 }

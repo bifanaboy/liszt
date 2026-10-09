@@ -59,3 +59,13 @@ export function releaseIdentity(raw: Pick<RawScene, "releaseUrl">): string | und
     return url.toLowerCase();
   }
 }
+
+/** Host and path, case- and trailing-slash-insensitive. Unparseable input passes through lowercased. */
+export function normaliseReleaseUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, "").toLowerCase()}`;
+  } catch {
+    return value.toLowerCase();
+  }
+}

@@ -15,14 +15,7 @@
 import { z } from "zod";
 
 /** `YYYY-MM-DD`, no time component, validated as a real calendar date. */
-export const DateOnly = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a date-only value (YYYY-MM-DD)")
-  .refine((value) => {
-    const [y, m, d] = value.split("-").map(Number) as [number, number, number];
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
-  }, "not a real calendar date");
+export const DateOnly = z.iso.date();
 
 export const IsoTimestamp = z.string().datetime({ offset: true });
 

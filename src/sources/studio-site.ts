@@ -29,12 +29,7 @@ export const STUDIO_SITE_RECIPES: Readonly<
   >
 > = Object.freeze({
   "sexlikereal.com": { duration: /["']duration["']\s*:\s*["']([^"']+)["']/i },
-  "www.sexlikereal.com": { duration: /["']duration["']\s*:\s*["']([^"']+)["']/i },
   "analvids.com": {
-    duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
-    performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
-  },
-  "www.analvids.com": {
     duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
     performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
   },
@@ -42,17 +37,7 @@ export const STUDIO_SITE_RECIPES: Readonly<
     duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
     performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
   },
-  "www.pissvids.com": {
-    duration: /(?:duration|runtime)[^>]{0,120}(?:content=["']([^"']+)|>\s*([^<]+))/i,
-    performers: /(?:starring|performers?|models?)[^>]*>\s*([^<]+)/i,
-  },
   "bustyworld.com": {
-    title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
-    releaseDate: /<i\b[^>]*bi-calendar3[^>]*>[\s\S]*?<\/i>\s*([^<]+)/i,
-    performers: /<h1\b[^>]*class=["'][^"']*watch__title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
-    thumbnail: /<video\b[^>]*data-poster=["']([^"']+)/i,
-  },
-  "www.bustyworld.com": {
     title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
     releaseDate: /<i\b[^>]*bi-calendar3[^>]*>[\s\S]*?<\/i>\s*([^<]+)/i,
     performers: /<h1\b[^>]*class=["'][^"']*watch__title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
@@ -65,16 +50,14 @@ export const STUDIO_SITE_RECIPES: Readonly<
     thumbnail: /image:\s*["']([^"']+)["']/i,
     tags: /<a\b[^>]*class=["']tag["'][^>]*>([\s\S]*?)<\/a>/gi,
   },
-  "www.woodmancastingx.com": {
-    title: /<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
-    releaseDate: /<p\b[^>]*>\s*<span[^>]*>Published<\/span>[^\d]*(\d{4}-\d{2}-\d{2})/i,
-    performers: /<span\b[^>]*class=["']name["'][^>]*>([\s\S]*?)<\/span>/gi,
-    thumbnail: /image:\s*["']([^"']+)["']/i,
-    tags: /<a\b[^>]*class=["']tag["'][^>]*>([\s\S]*?)<\/a>/gi,
-  },
 });
 
-const ALLOWED_HOSTS = new Set(Object.keys(STUDIO_SITE_RECIPES).map((host) => host.toLowerCase()));
+/** Hosts are keyed bare; a leading `www.` is normalised away before lookup. */
+const ALLOWED_HOSTS = new Set(Object.keys(STUDIO_SITE_RECIPES));
+/** Lowercase, `www.`-stripped host for recipe lookup. */
+export function bareHost(hostname: string): string {
+  return hostname.toLowerCase().replace(/^www\./, "");
+}
 const MAX_REDIRECTS = 10;
 
 /** True for loopback, private, link-local, multicast, or reserved hosts. */
@@ -111,7 +94,7 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
 export function isUrlAllowed(url: URL): boolean {
   if (url.protocol !== "https:") return false;
   if (url.username || url.password || url.port) return false;
-  const hostname = url.hostname.toLowerCase();
+  const hostname = bareHost(url.hostname);
   if (isPrivateOrReservedHost(hostname)) return false;
   return ALLOWED_HOSTS.has(hostname);
 }
@@ -273,7 +256,7 @@ export function extractStudioMetadata(
 
   let hostname = "";
   try {
-    hostname = new URL(releaseUrl).hostname.toLowerCase();
+    hostname = bareHost(new URL(releaseUrl).hostname);
   } catch {
     /* An unsupported URL simply has no host recipe. */
   }
