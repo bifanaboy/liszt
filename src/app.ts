@@ -55,9 +55,6 @@ async function main(): Promise<void> {
     traxxxWatchlist: config.traxxxWatchlist,
     fc2: {
       listingMinIntervalMs: config.fc2ListingMinIntervalMs,
-      detailMinIntervalMs: config.fc2DetailMinIntervalMs,
-      maxDetailChecksPerSync: config.fc2MaxDetailChecksPerSync,
-      recheckDays: config.fc2RecheckDays,
     },
     manyvidsStoreIds: config.manyvidsStoreIds,
     manyvidsMinIntervalMs: config.manyvidsMinIntervalMs,

@@ -99,7 +99,7 @@ export function createSources({
         storeId === "1003095958" ? maximoPolicy : { mode: "split" },
       ),
     ),
-    createFc2CmadbStudio({ ...fc2, store }),
+    createFc2CmadbStudio({ ...fc2 }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];
   const watchlist = createTraxxxWatchlistStudios(traxxxWatchlist, [
