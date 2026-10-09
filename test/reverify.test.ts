@@ -158,12 +158,27 @@ test("an eporner 200 with real JSON is still authoritative", async () => {
 
   const present = createLinkVerifier({
     fetcher: {
-      fetch: async () => new Response('[{"id":"abc"}]', jsonHeaders),
+      fetch: async () => new Response('[{"id":"abc","title":"A real video"}]', jsonHeaders),
       text: async () => "",
-      json: async <T>() => [{ id: "abc" }] as unknown as T,
+      json: async <T>() => [{ id: "abc", title: "A real video" }] as unknown as T,
     },
   });
   assert.equal((await present(link())).status, "live");
+
+  for (const malformed of [
+    { error: "upstream unavailable" },
+    { id: "other", title: "Other" },
+    {},
+  ]) {
+    const invalid = createLinkVerifier({
+      fetcher: {
+        fetch: async () => new Response(JSON.stringify(malformed), jsonHeaders),
+        text: async () => "",
+        json: async <T>() => malformed as T,
+      },
+    });
+    assert.equal((await invalid(link())).status, "inconclusive");
+  }
 });
 
 test("onProgress reports the slice before the loop, so an empty pass is a real zero", async () => {

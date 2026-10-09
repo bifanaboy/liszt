@@ -46,7 +46,7 @@ function buildSync(store: SqliteStore, sources: SourceAdapter[]) {
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
 }

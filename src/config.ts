@@ -11,39 +11,6 @@ import { DEFAULT_FETCH_CONCURRENCY } from "./core/concurrency.ts";
 import { DEFAULT_TIMEOUT_MS } from "./core/fetcher.ts";
 import { TRAXXX_WATCHLIST } from "./sources/traxxx-watchlist.ts";
 
-/** The default trusted pool. Hand-curated; trust is never inferred. */
-export const DEFAULT_TRUSTED_UPLOADERS = Object.freeze([
-  "BigPussy86",
-  "thor1488",
-  "xdf1xd",
-  "patronp1987",
-  "WherbetAguiar",
-  "trainwrecx",
-  "Chicocunha420",
-  "prehistorique",
-  "mjalucard",
-  "moskvitch",
-  "brethrenm00n015",
-  "Ben670",
-  "wmartos",
-  "diggler888",
-  "rafellino",
-  "rogerrfd",
-  "Rajshot",
-  "strangerdanger13",
-  "avmatome",
-  "Ivel44",
-  "Zoloperno",
-  "Leon99",
-  "XINTERX",
-  "TwitchXX",
-  "McCreepin",
-  "Vovick17",
-  "KJUIUI",
-  "Rafael12021988",
-  "wmrt0s",
-]);
-
 /**
  * madouqu.com is behind a Cloudflare challenge from most egress IPs, so the
  * WordPress.com mirror is the default. A VPS with stable egress can point
@@ -54,11 +21,24 @@ export const DEFAULT_MADOUQU_API_BASE = "https://public-api.wordpress.com/wp/v2/
 export const Config = z.object({
   port: z.coerce.number().int().positive().default(3000),
   /**
-   * The retained Node reference server binds to loopback by default. Override
-   * only when a local deployment deliberately exposes it behind a proxy.
+   * Bind to all container interfaces by default; place public deployments
+   * behind their HTTPS proxy.
    */
-  listenAddr: z.string().min(1).default("127.0.0.1"),
+  listenAddr: z.string().min(1).default("0.0.0.0"),
   dbPath: z.string().min(1).default("data/liszt.db"),
+  authUsername: z
+    .string()
+    .min(1)
+    .refine(
+      (value) =>
+        !value.includes(":") &&
+        ![...value].some(
+          (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+        ),
+      "must not contain a colon or control character",
+    )
+    .optional(),
+  authPassword: z.string().min(12).optional(),
   /** Optional TPDB credential. Never included in logs or HTTP responses. */
   tpdbApiKey: z.string().min(1).optional(),
   windowDays: z.coerce.number().int().positive().default(90),
@@ -123,11 +103,8 @@ export const Config = z.object({
       "1007921628",
     ]),
   manyvidsMinIntervalMs: z.coerce.number().int().min(0).default(400),
-  /** Verified JSON-LD listing consumed by the Bang provider adapter. */
-  bangListingUrl: z.string().url().default("https://www.bang.com/videos?by=date.desc"),
 
   // Tube ladder.
-  trustedUploaders: z.array(z.string().min(1)).default([...DEFAULT_TRUSTED_UPLOADERS]),
   /**
    * Duration gate, applied identically on every rung. Not per-rung.
    *
@@ -144,13 +121,9 @@ export const Config = z.object({
    * The upload window's upper bound. The lower bound is fixed at
    * `release - 1 day` and is not a knob: it is the pre-release-leak margin.
    *
-   * This is a starting point, not a measured optimum - `npm run calibrate`
-   * reports the lag histogram it should be read against. Above roughly three
-   * weeks the rule stops doing useful work and should be deleted rather than
-   * tuned.
+   * This is a starting point for the shared Eporner/Sxyprn date gate.
    */
   matchDateWindowDays: z.coerce.number().int().positive().default(7),
-  poolFullRewalkDays: z.coerce.number().int().positive().default(7),
 
   /** JSON-line logs to stderr. The CLI sets this so stdout stays a result. */
   logToStderr: z.boolean().default(false),
@@ -257,15 +230,19 @@ function readDefaultStudioLinks(): unknown {
 /**
  * Parse configuration from the environment, naming any failing field.
  *
- * There is no credential and no production-only refusal any more. The app has
- * no perimeter: it is a disposable public read model, and the only secret it
- * ever had is gone.
+ * Credentials remain optional for maintenance commands. The app composition
+ * root passes `requireAuth: true`, so a server cannot start without them.
  */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  options: { requireAuth?: boolean } = {},
+): Config {
   const result = Config.safeParse({
     port: env.PORT,
     listenAddr: env.LISZT_LISTEN_ADDR,
     dbPath: env.LISZT_DB_PATH,
+    authUsername: optionalValue(env.LISZT_AUTH_USERNAME),
+    authPassword: optionalValue(env.LISZT_AUTH_PASSWORD),
     tpdbApiKey: optionalValue(env.TPDB_API_KEY),
     windowDays: env.LISZT_WINDOW_DAYS,
     pollIntervalMinutes: env.LISZT_POLL_INTERVAL_MINUTES,
@@ -296,11 +273,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
             ),
           ],
     manyvidsMinIntervalMs: env.LISZT_MANYVIDS_MIN_INTERVAL_MS,
-    bangListingUrl: env.LISZT_BANG_LISTING_URL,
-    trustedUploaders: list(env.LISZT_TRUSTED_UPLOADERS),
     matchDurationToleranceSec: env.LISZT_MATCH_DURATION_TOLERANCE_SEC,
     matchDateWindowDays: env.LISZT_MATCH_DATE_WINDOW_DAYS,
-    poolFullRewalkDays: env.LISZT_POOL_FULL_REWALK_DAYS,
     logToStderr:
       env.LISZT_LOG_STDERR === undefined
         ? undefined
@@ -311,6 +285,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
       .join("; ");
     throw new Error(`Invalid configuration: ${detail}`);
+  }
+  if (options.requireAuth && (!result.data.authUsername || !result.data.authPassword)) {
+    throw new Error(
+      "Invalid configuration: LISZT_AUTH_USERNAME and LISZT_AUTH_PASSWORD are required",
+    );
   }
   // Two studios claiming one TPDB site, or one key, is a configuration error
   // rather than a merge to resolve at runtime: whichever loses would have its

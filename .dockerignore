@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+data
+test
+tools
+lib
+api
+relay
+docs
+prompts
+*.md
+.env*

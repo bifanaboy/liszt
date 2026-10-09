@@ -50,7 +50,7 @@ function sync(store: SqliteStore, sources: SourceAdapter[], fetching = fetcher) 
     log: new NullLogger(),
     windowDays: 90,
     fetchConcurrency: 2,
-    lookups: { poolLookup: null, sxyprnLookup: null },
+    lookups: { epornerLookup: null, sxyprnLookup: null },
     resolveEnabled: false,
   });
 }

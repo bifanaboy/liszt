@@ -5,7 +5,7 @@
  * THE FIXTURES ARE SYNTHETIC, and that is stated in each one. eporner's edge
  * answered this workspace with an HTTP 200 JavaScript challenge rather than JSON
  * or HTML, so no live body was obtainable and nothing here is calibrated against
- * one. The parsers are written to the URL grammar `tubes/eporner-pool.ts` already
+ * one. The parsers are written to the URL grammar `tubes/eporner.ts` already
  * depends on, and every test below is about a RULE rather than about eporner's
  * current markup: what may be admitted, what may be followed, and what may be
  * called a part.
@@ -618,16 +618,16 @@ test("an FC2 scene never enters the ladder, and another lane never enters FC2", 
     id: "lancelot-styles-evolution:1",
     sourceId: "lancelot-styles-evolution",
   });
-  let poolAsked = 0;
+  let epornerAsked = 0;
   let fc2Asked = 0;
   const result = await resolveLinks({
     scenes: [fc2, lse],
     now: NOW,
     mapWithConcurrency: (items, task) => Promise.all(items.map(task)),
     matcherFor: () => ({ matcher: "sxyprn+eporner", creatorStudio: false }),
-    poolLookup: async () => {
-      poolAsked += 1;
-      return null;
+    epornerLookup: async () => {
+      epornerAsked += 1;
+      return [];
     },
     sxyprnLookup: null,
     fc2Lookup: async () => {
@@ -635,7 +635,7 @@ test("an FC2 scene never enters the ladder, and another lane never enters FC2", 
       return lookupResult([{ url: "https://www.eporner.com/video-a/", uploader: "U" }]);
     },
   });
-  assert.equal(poolAsked, 1, "the pool rung is asked about the non-FC2 scene only");
+  assert.equal(epornerAsked, 1, "eporner search is asked about the non-FC2 scene only");
   assert.equal(fc2Asked, 1, "and never about the FC2 one");
   const byId = new Map(result.scenes.map((scene) => [scene.id, scene]));
   assert.equal(byId.get("fc2cmadb:4979341")?.videoUrls.length, 1);

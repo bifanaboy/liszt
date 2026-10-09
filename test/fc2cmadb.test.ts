@@ -26,7 +26,7 @@ import {
   FC2_LISTING_URL,
   type Fc2ListingRecord,
 } from "../src/sources/fc2cmadb.ts";
-import { parseClockDuration } from "../src/tubes/eporner-pool.ts";
+import { parseClockDuration } from "../src/tubes/eporner.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import type { Fetcher, SourceContext } from "../src/sources/types.ts";
 
@@ -1008,6 +1008,19 @@ test("malformed listing records cannot make a walk appear empty", () => {
 test("missing full detail tags cannot silently bypass exclusions", () => {
   const page = extractInertiaPage(fixture("fc2-detail-uncensored.html"));
   delete (page.props.article as Record<string, unknown>).tags;
+  assert.throws(() => parseFc2Detail(page), Fc2ShapeError);
+});
+
+test("empty and whitespace-only FC2 tag names are ignored while malformed entries still fail", () => {
+  const page = extractInertiaPage(fixture("fc2-detail-uncensored.html"));
+  const article = page.props.article as Record<string, unknown>;
+  const tags = article.tags as Array<Record<string, unknown>>;
+  article.tags = [...tags, { name: "" }, { name: "  " }];
+  assert.deepEqual(
+    parseFc2Detail(page).tags,
+    parseFc2Detail(extractInertiaPage(fixture("fc2-detail-uncensored.html"))).tags,
+  );
+  article.tags = [...tags, { name: 42 }];
   assert.throws(() => parseFc2Detail(page), Fc2ShapeError);
 });
 

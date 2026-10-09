@@ -23,7 +23,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["lib/**/*.js", "test/**/*.js", "relay/**/*.js"],
+    files: ["test/**/*.js"],
     languageOptions: {
       globals: {
         AbortSignal: "readonly",
@@ -77,7 +77,7 @@ export default tseslint.config(
     // the CLIs in src/cli, which write to stdout deliberately rather than
     // logging - so `no-console` is off here for the same reason it is off for
     // public/: these files report to a human, not to a log pipeline.
-    files: ["tools/**/*.ts"],
+    files: ["src/cli/**/*.ts"],
     rules: { "no-console": "off" },
   },
 );

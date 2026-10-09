@@ -172,9 +172,7 @@ export function parseFc2EpornerSearch(body: unknown, code: string): Fc2EpornerCa
 /**
  * The uploading account, from a candidate's watch page.
  *
- * Neither the search response nor `video/id` carries an uploader - the reason
- * the trusted-pool rung indexes profiles in the first place. The watch page is
- * where it appears, as a `/profile/<account>/` link. Null means "not read", and
+ * The watch page carries its uploader as a `/profile/<account>/` link. Null means "not read", and
  * null is never a guess: an unknown uploader cannot join a multipart group.
  */
 /**

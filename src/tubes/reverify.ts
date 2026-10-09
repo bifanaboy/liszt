@@ -3,7 +3,7 @@
  * links, cheaply:
  *
  *   - sxyprn links by fetching the watch page; a 404/410 is definitive.
- *   - eporner links (both `eporner` and `eporner-pool`) via the `video/id` API,
+ *   - eporner links via the `video/id` API,
  *     where an EMPTY result is definitive deletion (the API never answers 404).
  *
  * Only a DEFINITIVE non-existence counts as a strike. Timeouts, 403 anti-bot
@@ -121,9 +121,17 @@ export function createLinkVerifier({
     if (Array.isArray(video) && video.length === 0) {
       return { status: "dead", reason: "eporner video/id lookup found no record" };
     }
-    return video && typeof video === "object"
+    const candidate = Array.isArray(video) ? video[0] : video;
+    const record =
+      candidate && typeof candidate === "object" && !Array.isArray(candidate)
+        ? (candidate as Record<string, unknown>)
+        : null;
+    return record && record.id === id
       ? { status: "live" }
-      : { status: "inconclusive", reason: "eporner lookup returned an invalid record" };
+      : {
+          status: "inconclusive",
+          reason: "eporner lookup returned an invalid or mismatched record",
+        };
   };
 }
 

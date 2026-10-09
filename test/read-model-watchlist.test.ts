@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildReadModel } from "../src/serving/read-model.ts";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigForTest as loadConfig } from "./test-config.ts";
 import { SqliteStore } from "../src/core/store/sqlite.ts";
 import type { Scene } from "../src/core/schema.ts";
 

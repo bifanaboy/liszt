@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSources } from "../src/sources/registry.ts";
-import { loadConfig } from "../src/config.ts";
+import { loadConfigForTest as loadConfig } from "./test-config.ts";
 import type { SourceContext } from "../src/sources/types.ts";
 
 test("the TPDB source is omitted when no key is configured", () => {

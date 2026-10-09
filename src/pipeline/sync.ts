@@ -20,6 +20,7 @@
  * snapshot bug this rebuild fixes.
  */
 import { randomUUID } from "node:crypto";
+import { sanitizeErrorMessage } from "../core/sanitize-error.ts";
 import { Scene, parseAtBoundary, type RunOutcome } from "../core/schema.ts";
 import { mapIsolated, mapWithConcurrency } from "../core/concurrency.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
@@ -45,7 +46,7 @@ import {
 import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
 import type { ProgressTracker } from "./progress.ts";
 import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
-import type { PoolMatch } from "../tubes/eporner-pool.ts";
+import type { EpornerOpenMatch } from "../tubes/eporner.ts";
 import { releaseIdentity } from "./release-identity.ts";
 import { mergeRelease } from "./release-merge.ts";
 import type { MatchScene } from "../tubes/types.ts";
@@ -104,6 +105,7 @@ function recordSourceFailure(
   adapter: SourceAdapter,
   message: string,
   windowDays: number,
+  secrets: readonly string[] = [],
 ): void {
   const statuses = store.listSources().filter((status) => status.sourceId === adapter.id);
   const success = statuses.find((status) => status.labelId === adapter.id);
@@ -119,7 +121,7 @@ function recordSourceFailure(
     // A failed poll keeps its prior success timestamp so "last success" stays
     // meaningful rather than being reset by a transient outage.
     lastSuccessAt: success?.lastSuccessAt ?? null,
-    lastError: message,
+    lastError: sanitizeErrorMessage(message, secrets),
     sceneCount: success?.sceneCount ?? 0,
   });
   for (const child of statuses.filter((status) => status.labelId !== adapter.id)) {
@@ -133,7 +135,7 @@ function recordSourceFailure(
       windowDays,
       matcher: adapter.matcher,
       lastSuccessAt: child.lastSuccessAt,
-      lastError: message,
+      lastError: sanitizeErrorMessage(message, secrets),
       sceneCount: child.sceneCount,
     });
   }
@@ -465,7 +467,7 @@ export function mergeStudioMetadata(
 }
 
 export interface SyncLookups {
-  poolLookup: ((scene: MatchScene, now: Date) => Promise<PoolMatch | null>) | null;
+  epornerLookup: ((scene: MatchScene) => Promise<EpornerOpenMatch[]>) | null;
   sxyprnLookup: ((scene: MatchScene) => Promise<SxyprnMatch[]>) | null;
   fc2Lookup?: ((code: string) => Promise<Fc2LookupResult>) | null;
   /** Optional cap on scenes resolved per cycle. */
@@ -504,6 +506,8 @@ export interface SyncOptions {
    * duplicate both and could drift from the ledger row they describe.
    */
   progress?: ProgressTracker;
+  /** Credentials redacted from persisted errors as well as emitted logs. */
+  secrets?: readonly string[];
 }
 
 export interface SyncSummary {
@@ -575,16 +579,16 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const from = dateOnly(new Date(now.getTime() - windowDays * 86_400_000));
     const runId = `sync-${now.getTime()}-${randomUUID().slice(0, 8)}`;
     const startedAt = now.toISOString();
-    // The tracker is CYCLE-scoped and is begun by the composition root, before
-    // the pool index - the index runs first and its progress must survive. A
+    // The tracker is CYCLE-scoped and is begun by the composition root. A
     // direct caller that never began it (a test, or `createSync` used on its
     // own) would otherwise have every emission below dropped as not-active, so
     // the run is begun here instead. `begin()` is not called unconditionally:
-    // doing that would wipe the indexing counters on every cycle.
+    // that would reset the cycle's counters on every cycle.
     if (progress && !progress.snapshot().active) {
       progress.begin(runId, startedAt, { sources: sources.length, uploaders: 0 });
     }
 
+    let runWasRecorded = false;
     try {
       store.recordRun({
         id: runId,
@@ -595,6 +599,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         ok: null,
         error: null,
       });
+      runWasRecorded = true;
       const retiredScenes = store.pruneScenesForUnknownSources(retiredSourceIds);
       if (retiredScenes) {
         log.info("sync: retired source rows removed", {
@@ -616,6 +621,22 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       // The counters stay where they stopped: a failed cycle should still be
       // able to say how far it got before it died.
       progress?.fail();
+      if (runWasRecorded) {
+        const original = sanitizeErrorMessage(error, options.secrets);
+        try {
+          store.recordRun({
+            id: runId,
+            kind: "sync",
+            startedAt,
+            endedAt: clock.now().toISOString(),
+            outcomes: [{ source: "sync", ok: false, count: 0, error: original }],
+            ok: false,
+            error: original,
+          });
+        } catch {
+          // Keep the original pipeline failure if the database cannot record it.
+        }
+      }
       throw error;
     }
   };
@@ -660,8 +681,8 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
             checkedAt: new Map(),
           };
         } catch (error) {
-          const message = (error as Error).message;
-          recordSourceFailure(store, adapter, message, windowDays);
+          const message = sanitizeErrorMessage(error, options.secrets);
+          recordSourceFailure(store, adapter, message, windowDays, options.secrets);
           log.error("sync: source failed, retaining last-good records", {
             source: adapter.id,
             error: message,
@@ -757,6 +778,9 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
               });
             }
           }
+          if (lane.result.scenes.length > 0 && count === 0) {
+            throw new Error("all records from this source failed validation");
+          }
           // Only IDs the source positively excluded are deleted, and only from
           // this lane. Absence from `scenes` deletes nothing: a bounded run
           // that checked part of its queue must not remove the rest.
@@ -779,8 +803,8 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         });
         outcomes.push({ source: lane.adapter.id, ok: true, count });
       } catch (error) {
-        const message = (error as Error).message;
-        recordSourceFailure(store, lane.adapter, message, windowDays);
+        const message = sanitizeErrorMessage(error, options.secrets);
+        recordSourceFailure(store, lane.adapter, message, windowDays, options.secrets);
         log.error("sync: source failed, retaining last-good records", {
           source: lane.adapter.id,
           error: message,
@@ -1013,7 +1037,7 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
         mapWithConcurrency: (items, task) => mapWithConcurrency(items, task, fetchConcurrency),
         matcherFor: (scene) =>
           laneBySource.get(scene.sourceId) ?? { matcher: null, creatorStudio: false },
-        poolLookup: options.lookups.poolLookup,
+        epornerLookup: options.lookups.epornerLookup,
         sxyprnLookup: options.lookups.sxyprnLookup,
         fc2Lookup: options.lookups.fc2Lookup,
         log: options.log,
@@ -1181,11 +1205,11 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
  * rungs' individual contributions, which nothing else on the row separates.
  */
 function winnerSplit(winners: readonly Winner[]): Record<string, number> {
-  const split = { winnerPool: 0, winnerSxyprn: 0, winnerFallback: 0 };
+  const split = { winnerEporner: 0, winnerSxyprn: 0, winnerFallback: 0 };
   for (const winner of winners) {
     if (winner.rung === "fallback") split.winnerFallback += 1;
     else if (winner.rung === "sxyprn") split.winnerSxyprn += 1;
-    else split.winnerPool += 1;
+    else split.winnerEporner += 1;
   }
   return split;
 }

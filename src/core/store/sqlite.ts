@@ -3,8 +3,8 @@
  * migrations applied in a transaction, and typed repository functions.
  *
  * WAL plus a busy timeout are not optional: the server writes on a 30-minute
- * timer while a one-off cycle (a forced `POST /api/refresh`, `npm run calibrate`)
- * runs concurrently against the same file, and both are meant to touch it.
+ * timer while a one-off cycle (a forced `POST /api/refresh`) runs against the
+ * same file.
  */
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -20,7 +20,6 @@ import {
   type RunKind,
   type RunOutcome,
 } from "../schema.ts";
-import { toIsoUtc } from "../matching.ts";
 import type { ProviderObservation, RawScene } from "../../sources/types.ts";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
@@ -35,28 +34,6 @@ export interface RunRecord {
   error: string | null;
   /** Resolver rung counters, separate from metadata-source poll outcomes. */
   resolverHealth?: Record<string, number> | null;
-}
-
-/** One row of the trusted-pool index. */
-export interface PoolVideo {
-  id: string;
-  uploader: string;
-  /** NULL when the profile listing HTML did not expose a title. */
-  title: string | null;
-  /** ISO timestamp, or NULL when the listing HTML did not expose a date. */
-  added: string | null;
-  durationSec: number | null;
-  hydratedAt: string | null;
-  hydrationAttemptedAt?: string | null;
-  /**
-   * View count, or NULL when no source has ever reported one.
-   *
-   * NULL is the honest value for "the source did not say", and it is distinct
-   * from 0. The ranking chain lets a candidate with a KNOWN count outrank one
-   * with none, and falls through to lag when both are NULL, so a fabricated
-   * default here would silently reorder the tiebreak it exists to serve.
-   */
-  views: number | null;
 }
 
 /**
@@ -770,265 +747,6 @@ export class SqliteStore {
     }));
   }
 
-  // ------------------------------------------------------------ pool_videos
-
-  /**
-   * Insert or update one indexed pool video, preserving an existing hydration.
-   *
-   * `added` is normalised to ISO 8601 UTC on the way in. The index window query
-   * is a TEXT range scan, so the column must hold one comparable shape; the raw
-   * value from `video/id` is `YYYY-MM-DD HH:MM:SS`, which does not sort against
-   * an ISO bound.
-   *
-   * `views` is COALESCEd on update, exactly like `duration_sec` and `hydrated_at`
-   * and for the same reason: this path runs on every listing walk, which supplies
-   * a title and a duration but NO view count, so a plain assignment would blank a
-   * count the hydration pass had already paid a network request to learn. A
-   * genuine deletion of the column's value is not a thing any caller needs.
-   */
-  upsertPoolVideo(video: PoolVideo): void {
-    this.db
-      .prepare(
-        `INSERT INTO pool_videos (id, uploader, title, added, duration_sec, hydrated_at, views)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id, uploader) DO UPDATE SET
-           title = COALESCE(excluded.title, pool_videos.title),
-           added = COALESCE(excluded.added, pool_videos.added),
-           duration_sec = COALESCE(excluded.duration_sec, pool_videos.duration_sec),
-           hydrated_at = COALESCE(excluded.hydrated_at, pool_videos.hydrated_at),
-           views = COALESCE(excluded.views, pool_videos.views)`,
-      )
-      .run(
-        video.id,
-        video.uploader,
-        video.title,
-        toIsoUtc(video.added),
-        video.durationSec,
-        video.hydratedAt,
-        video.views,
-      );
-  }
-
-  /**
-   * Indexed rows for an uploader whose upload date is known and inside the
-   * window, newest first.
-   *
-   * `band` narrows the result by the DURATION gate's own arithmetic, in SQL,
-   * with the same tolerance the rung runs and the same "a row with no duration
-   * is still examined" rule. It is the same narrowing already pushed into SQL
-   * for the undated working set, and it changes what the scan has to look at,
-   * not what the gate accepts.
-   */
-  poolVideosInWindow(
-    uploader: string,
-    from: string,
-    to: string,
-    band?: { durationSec: number; toleranceSec: number },
-  ): PoolVideo[] {
-    const sql =
-      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NOT NULL AND added >= ? AND added <= ?" +
-      (band ? " AND (duration_sec IS NULL OR ABS(duration_sec - ?) <= ?)" : "") +
-      " ORDER BY added DESC, hydration_attempted_at ASC, rowid ASC";
-    const rows = band
-      ? this.db.prepare(sql).all(uploader, from, to, band.durationSec, band.toleranceSec)
-      : this.db.prepare(sql).all(uploader, from, to);
-    return (rows as Record<string, unknown>[]).map(rowToPoolVideo);
-  }
-
-  /**
-   * Indexed rows for an uploader whose upload date is still unknown - which is
-   * every row until it has been hydrated, because the profile listing supplies a
-   * title and a duration but no date.
-   *
-   * These cannot be narrowed by the window query, so the pool rung examines them
-   * on the duration band alone and lets hydration supply the date. Dropping them
-   * instead would discard the entire working set, since the window can never be
-   * evaluated without it. See `tubes/eporner-pool.ts`.
-   *
-   * ORDERED AND CAPPED, LEAST-RECENTLY-SCANNED FIRST. The walk inserts
-   * newest-first, so `rowid` order IS newest-first - but that was an accident of
-   * SQLite's scan order with nothing asserting it, and `maxConsidered` in the
-   * rung silently assumed it. With no `ORDER BY` the rows arrived in whatever
-   * order the query plan produced, so the cap cut an arbitrary subset of the
-   * account rather than its oldest videos. `ORDER BY rowid` makes the claim
-   * explicit, and the cap bounds the scan in SQL rather than after materialising
-   * every undated row.
-   *
-   * `undated_scanned_at` advances on pre-filter rejection or hydration attempts.
-   * Rejected rows must rotate too, without claiming a hydration attempt. Rows
-   * deferred by the hydration cap keep their place until actually attempted.
-   * SQLite sorts NULL first on ASC, so untouched rows lead; rowid breaks ties
-   * newest-first. This order must apply BEFORE the SQL limit to reach its tail.
-   */
-  poolVideosUndated(uploader: string, limit?: number): PoolVideo[] {
-    const sql =
-      "SELECT * FROM pool_videos WHERE uploader = ? AND added IS NULL " +
-      "ORDER BY undated_scanned_at ASC, rowid ASC" +
-      (limit === undefined ? "" : " LIMIT ?");
-    const rows = (
-      limit === undefined
-        ? this.db.prepare(sql).all(uploader)
-        : this.db.prepare(sql).all(uploader, Math.max(0, Math.floor(limit)))
-    ) as Record<string, unknown>[];
-    return rows.map(rowToPoolVideo);
-  }
-
-  /** Every indexed video for an uploader, hydrated or not. */
-  poolVideosForUploader(uploader: string): PoolVideo[] {
-    return this.db
-      .prepare("SELECT * FROM pool_videos WHERE uploader = ? ORDER BY added DESC")
-      .all(uploader)
-      .map(rowToPoolVideo);
-  }
-
-  /** True when this video is already indexed. Used for the incremental walk's
-   *  "nothing new on this page" stop, which is the only stop that works while
-   *  the profile listing carries no upload dates. */
-  poolVideoExists(id: string, uploader: string): boolean {
-    const row = this.db
-      .prepare("SELECT 1 AS present FROM pool_videos WHERE id = ? AND uploader = ?")
-      .get(id, uploader) as { present: number } | undefined;
-    return row !== undefined;
-  }
-
-  setPoolDuration(id: string, uploader: string, durationSec: number, hydratedAt: string): void {
-    this.db
-      .prepare(
-        "UPDATE pool_videos SET duration_sec = ?, hydrated_at = ? WHERE id = ? AND uploader = ?",
-      )
-      .run(durationSec, hydratedAt, id, uploader);
-  }
-
-  /**
-   * Persist everything one `video/id` hydration returned.
-   *
-   * This is the single write path for a pool upload date, and it exists so
-   * hydration happens ONCE PER VIDEO rather than once per scene. The date is
-   * the reason the gate cannot be evaluated from the index alone: the profile
-   * listing carries a title and a duration but no date, and the date is half
-   * the gate. Persisting it at hydration time is what keeps rule 2 affordable -
-   * the next scene to consider this video gets the date for free.
-   *
-   * `added` is normalised to ISO 8601 UTC; null means the source did not supply
-   * one, which is a distinct state the gate treats as inadmissible rather than
-   * as a pass.
-   *
-   * `views` is COALESCEd for the same reason `added` is. A hydration is a paid
-   * network request, so whatever it learned about the view count is persisted
-   * for the next scene to use rather than being overwritten by the next listing
-   * walk, which cannot supply one.
-   */
-  setPoolHydration(
-    id: string,
-    uploader: string,
-    durationSec: number,
-    added: string | null,
-    hydratedAt: string,
-    views: number | null = null,
-  ): void {
-    this.db
-      .prepare(
-        `UPDATE pool_videos
-            SET duration_sec = ?, added = COALESCE(?, added), views = COALESCE(?, views),
-                hydrated_at = ?
-          WHERE id = ? AND uploader = ?`,
-      )
-      .run(durationSec, toIsoUtc(added), views, hydratedAt, id, uploader);
-  }
-
-  /** Persist a bounded-search attempt, including a transiently failed request. */
-  markPoolHydrationAttempt(id: string, uploader: string, attemptedAt: string): void {
-    this.db
-      .prepare(
-        "UPDATE pool_videos SET hydration_attempted_at = ?, undated_scanned_at = ? WHERE id = ? AND uploader = ?",
-      )
-      .run(attemptedAt, attemptedAt, id, uploader);
-  }
-
-  /** Advance a rejected undated row without recording a hydration attempt. */
-  markPoolUndatedScan(id: string, uploader: string, scannedAt: string): void {
-    this.db
-      .prepare(
-        "UPDATE pool_videos SET undated_scanned_at = ? WHERE id = ? AND uploader = ? AND added IS NULL",
-      )
-      .run(scannedAt, id, uploader);
-  }
-
-  /** Latest scan or hydration attempt, including rows that now have a date. */
-  latestPoolProgressAt(): string | null {
-    const row = this.db
-      .prepare("SELECT MAX(undated_scanned_at) AS progress_at FROM pool_videos")
-      .get() as { progress_at: string | null };
-    return row.progress_at;
-  }
-
-  /** The incremental watermark: the newest upload date seen for an uploader. */
-  poolWatermark(uploader: string): string | null {
-    const row = this.db
-      .prepare("SELECT MAX(added) AS watermark FROM pool_videos WHERE uploader = ?")
-      .get(uploader) as { watermark: string | null } | undefined;
-    return row?.watermark ?? null;
-  }
-
-  poolVideoCount(): number {
-    return (this.db.prepare("SELECT COUNT(*) AS n FROM pool_videos").get() as { n: number }).n;
-  }
-
-  poolUndatedCount(): number {
-    return (
-      this.db.prepare("SELECT COUNT(*) AS n FROM pool_videos WHERE added IS NULL").get() as {
-        n: number;
-      }
-    ).n;
-  }
-
-  /**
-   * When the last FULL re-walk ran. This is schedule state, not a summary of
-   * the data, so it lives in `pool_meta` rather than being inferred from
-   * `MAX(added)` - which is the incremental watermark and a different thing.
-   */
-  getPoolMeta(key: string): string | null {
-    const row = this.db.prepare("SELECT value FROM pool_meta WHERE key = ?").get(key) as
-      { value: string } | undefined;
-    return row?.value ?? null;
-  }
-
-  setPoolMeta(key: string, value: string): void {
-    this.db
-      .prepare(
-        "INSERT INTO pool_meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-      )
-      .run(key, value);
-  }
-
-  /** Drop an uploader's rows older than `before`; the re-walk corrects drift. */
-  prunePoolUploader(uploader: string, before: string): number {
-    return Number(
-      this.db
-        .prepare("DELETE FROM pool_videos WHERE uploader = ? AND added IS NOT NULL AND added < ?")
-        .run(uploader, before).changes,
-    );
-  }
-
-  /**
-   * Drop the rows a full re-walk did NOT see. The profile listing carries no
-   * upload date, so the date-keyed prune above can never fire; the re-walk is
-   * the only thing that notices an uploader actually deleted a video, and it
-   * notices it by absence.
-   */
-  prunePoolMissing(uploader: string, seen: Set<string>): number {
-    const rows = this.db.prepare("SELECT id FROM pool_videos WHERE uploader = ?").all(uploader) as {
-      id: string;
-    }[];
-    const stale = rows.map((row) => row.id).filter((id) => !seen.has(id));
-    if (!stale.length) return 0;
-    const remove = this.db.prepare("DELETE FROM pool_videos WHERE id = ? AND uploader = ?");
-    this.transaction(() => {
-      for (const id of stale) remove.run(id, uploader);
-    });
-    return stale.length;
-  }
-
   close(): void {
     this.db.close();
   }
@@ -1210,23 +928,6 @@ export class SqliteStore {
     for (const row of rows) if (row.status in counts) counts[row.status] = row.n;
     return counts;
   }
-}
-
-function rowToPoolVideo(row: Record<string, unknown>): PoolVideo {
-  return {
-    id: String(row.id),
-    uploader: String(row.uploader),
-    title: (row.title as string | null) ?? null,
-    added: (row.added as string | null) ?? null,
-    durationSec: row.duration_sec === null ? null : Number(row.duration_sec),
-    hydratedAt: (row.hydrated_at as string | null) ?? null,
-    hydrationAttemptedAt: (row.hydration_attempted_at as string | null) ?? null,
-    // `undefined` means the column is absent, which is what a database created
-    // before migration 0003 reports through some drivers. It is normalised to
-    // NULL rather than left undefined so the two "no count" spellings cannot
-    // diverge in `rank`.
-    views: row.views === null || row.views === undefined ? null : Number(row.views),
-  };
 }
 
 /** Decode a candidate row and its cached scene JSON, preserving nullable timestamps. */

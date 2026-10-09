@@ -6,8 +6,8 @@
  *  1. traxxx.me  - Lancelot Styles Evolution, Mambo Perv, Woodman Casting X
  *                  (minus its XXXX scenes), plus the checked watchlist. No
  *                  auth; TPDB adds a separate authenticated watchlist lane.
- *  2. Direct URL scrape - Bang! Originals (verified parsers) and Maximo Garcia
- *                  (traxxx measures no scenes for it; listing is configured).
+ *  2. Direct URL scrape - Maximo Garcia (traxxx measures no scenes for it;
+ *                  its Fansly and ManyVids feeds provide the records).
  *  3. fc2cmadb.com - the FC2 anal-tag lane. Its listing is cursor-paginated
  *                  Inertia HTML, its detail pages are paced at 8-9 seconds, and
  *                  its candidates' decisions live in `fc2_candidates` so a sync
@@ -19,7 +19,6 @@
 import { createManyVidsSource } from "./manyvids.ts";
 import type { SqliteStore } from "../core/store/sqlite.ts";
 import { createTraxxxWatchlistStudios } from "./traxxx-watchlist.ts";
-import { createBangOriginalsStudio } from "./bang-originals.ts";
 import { createFc2CmadbStudio, FC2CMADB_ID, type Fc2StudioOptions } from "./fc2cmadb.ts";
 import { createMaximoGarciaStudio } from "./maximo-garcia.ts";
 import { createMadouquStudio, MADOUQU_ID } from "./madouqu.ts";
@@ -56,8 +55,6 @@ export interface RegistryOptions {
   fc2?: Fc2StudioOptions;
   manyvidsStoreIds?: readonly string[];
   manyvidsMinIntervalMs?: number;
-  /** Configured listing URL for Bang! Originals (single URL composite feed). */
-  bangListingUrl?: string | undefined;
   /** TPDB API key. When omitted the TPDB watchlist lane is skipped rather than
    * failing every cycle, following the SETUP REQUIRED pattern. */
   tpdbApiKey?: string;
@@ -83,7 +80,6 @@ export function createSources({
   traxxxWatchlist,
   store,
   fc2 = {},
-  bangListingUrl = "https://www.bang.com/videos?by=date.desc",
   manyvidsStoreIds = ["1003095958"],
   manyvidsMinIntervalMs = 400,
   tpdbApiKey,
@@ -103,7 +99,6 @@ export function createSources({
         storeId === "1003095958" ? maximoPolicy : { mode: "split" },
       ),
     ),
-    registerFeed(createBangOriginalsStudio(bangListingUrl), bangListingUrl, { mode: "split" }),
     createFc2CmadbStudio({ ...fc2, store }),
     createMadouquStudio({ apiBase: madouquApiBase }),
   ];

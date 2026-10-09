@@ -14,6 +14,7 @@ test("eporner URL validators accept both watch shapes and the embed shape", () =
   assert.equal(validEpornerUrl("https://evil.example/video-abc123/"), false);
   assert.equal(validEpornerUrl("http://www.eporner.com/video-abc123/"), false);
   assert.equal(validEpornerUrl("https://www.eporner.com/video-abc123/?x=1"), false);
+  assert.equal(validEpornerUrl("https://www.eporner.com:8443/video-abc123/"), false);
   assert.equal(validEpornerEmbedUrl("https://www.eporner.com/embed/abc123/?x=1"), false);
 });
 

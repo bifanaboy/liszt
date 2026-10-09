@@ -51,31 +51,19 @@ export function toMatchScene(scene: Scene): MatchScene {
 }
 
 /**
- * Why a rung did not produce a link. The distinction the plan draws is
- * load-bearing and is recorded, not swallowed:
+ * Why a source did not produce a link. The distinction is recorded, not
+ * swallowed:
  *
  *  - `no-match` is a clean negative. The scene is recorded as checked and
  *    retried on a later cycle.
- *  - `error` means the rung was UNABLE to answer. An error lets the next rung
- *    run and leaves the scene unlinked. A source that errors is not a source
- *    that found nothing.
+ *  - `error` means the source was UNABLE to answer. The other source still
+ *    contributes candidates. An error is not a clean no-match.
  */
 export type RungOutcome =
   | { status: "matched"; url: string; source: string; confidence: "high" | "low" }
   | { status: "no-match" }
   | { status: "error"; error: string };
 
-/**
- * The ordered rungs. Nominal order.
- *
- * `eporner-open` is gone, and the list is the record of that. The eporner v2
- * search API takes no upload date, so a 90-day-old release could only be
- * reached by paginating backwards from `order=latest` with no reliable stop;
- * and the uploader appears in no API response, only in video page markup, so
- * the rung could never tell a trusted repost from an untrusted account's
- * upload. It contributed one link out of 46, and that link belonged to an
- * account outside the trusted pool - so removing it cost that uploader's whole
- * catalogue, not one link. That is the reason the hierarchy exists instead.
- */
-export const RUNGS = ["eporner-pool", "sxyprn"] as const;
+/** The equal-ranked playback sources used by the resolver. */
+export const RUNGS = ["eporner", "sxyprn"] as const;
 export type Rung = (typeof RUNGS)[number];

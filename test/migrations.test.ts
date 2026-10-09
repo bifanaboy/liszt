@@ -43,10 +43,13 @@ for (const existing of ["pool", "runs"]) {
       store.migrate();
       const check = new DatabaseSync(path);
       try {
-        assert.doesNotThrow(() =>
-          check.prepare("SELECT hydration_attempted_at FROM pool_videos").all(),
-        );
         assert.doesNotThrow(() => check.prepare("SELECT resolver_health FROM runs").all());
+        assert.equal(
+          check
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pool_videos'")
+            .get(),
+          undefined,
+        );
       } finally {
         check.close();
       }
@@ -77,7 +80,7 @@ test("observation migration preserves release IDs, playback history, and last-go
   db.close();
 
   // Seed the old schema directly: today's store requires today's migrations.
-  const id = "bang-originals:scene-1";
+  const id = "legacy-provider:scene-1";
   const legacy = new DatabaseSync(path);
   legacy
     .prepare(
@@ -89,9 +92,9 @@ test("observation migration preserves release IDs, playback history, and last-go
     )
     .run(
       id,
-      "bang-originals",
+      "legacy-provider",
       "Bang! Originals",
-      "bang-originals",
+      "legacy-provider",
       "Bang! Originals",
       "Existing release",
       "original-123",
@@ -110,7 +113,7 @@ test("observation migration preserves release IDs, playback history, and last-go
           recordUrl: "https://bang.test/video/1",
         },
       ]),
-      JSON.stringify({ title: "bang-originals" }),
+      JSON.stringify({ title: "legacy-provider" }),
       "2026-10-03T00:00:00.000Z",
       JSON.stringify({
         lane: "trusted-pool",
@@ -154,7 +157,7 @@ test("observation migration preserves release IDs, playback history, and last-go
     assert.equal(stored?.videoCheckedAt, "2026-10-03T00:00:00.000Z");
     assert.equal(stored?.videoMatching?.lane, "trusted-pool");
     const observation = upgraded.listProviderObservations(id)[0];
-    assert.equal(observation?.providerId, "bang-originals");
+    assert.equal(observation?.providerId, "legacy-provider");
     assert.equal(observation?.recordId, "scene-1");
     assert.equal(observation?.sceneId, id);
     assert.equal(observation?.record.studioCode, "original-123");
@@ -167,7 +170,7 @@ test("observation migration preserves release IDs, playback history, and last-go
       store: upgraded,
       sources: [
         {
-          id: "bang-originals",
+          id: "legacy-provider",
           name: "Bang! Originals",
           authority: { name: "Bang! Originals", url: "https://bang.test", role: "test" },
           matcher: null,
@@ -190,17 +193,17 @@ test("observation migration preserves release IDs, playback history, and last-go
       log: new NullLogger(),
       windowDays: 90,
       fetchConcurrency: 1,
-      lookups: { poolLookup: null, sxyprnLookup: null },
+      lookups: { epornerLookup: null, sxyprnLookup: null },
       resolveEnabled: false,
     });
     await sync("source omitted migrated release");
     assert.equal(upgraded.getScene(id)?.studioCode, "original-123");
     assert.equal(upgraded.getScene(id)?.storeId, "12345");
     const updated: ProviderObservation = {
-      providerId: "bang-originals",
+      providerId: "legacy-provider",
       recordId: "scene-1",
       sceneId: id,
-      studioId: "bang-originals",
+      studioId: "legacy-provider",
       studio: "Bang! Originals",
       fetchedAt: "2026-10-04T00:00:00.000Z",
       record: {

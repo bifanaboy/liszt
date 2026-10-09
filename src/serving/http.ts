@@ -1,11 +1,10 @@
 /**
- * Legacy local HTTP surface for reference checks. Hatchable serves the app.
- * Plain `node:http`, no framework: the route table is small.
+ * Private HTTP surface for the supported Node app. Plain `node:http`, no
+ * framework: the route table is small.
  *
- * THERE IS NO PERIMETER. Every route below is served to anyone who can reach the
- * port, including `POST /api/refresh`. This local reference surface is a
- * disposable public read model with no user accounts or private
- * catalogue data. The optional TPDB credential is only used for source requests.
+ * The configured application requires HTTP Basic authentication for every
+ * route except the constant `/health` probe. The composition root refuses to
+ * start without credentials.
  *
  * `/health` is the one route with a fixed body: a constant, no version, no host,
  * no store state. A health check that leaked anything would leak it to whoever
@@ -16,6 +15,7 @@
  * inside `publicDir`.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import type { Logger } from "../core/logger.ts";
@@ -50,6 +50,8 @@ export interface HttpDeps {
   refresh: () => Promise<unknown>;
   isBusy: () => boolean;
   publicDir: string;
+  auth: { username: string; password: string };
+  acceptingRequests?: () => boolean;
   /**
    * The live cycle's progress, for `GET /api/progress`.
    *
@@ -135,6 +137,36 @@ async function handle(
   if (path === HEALTH_PATH && (method === "GET" || method === "HEAD")) {
     send(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
     return;
+  }
+
+  const authorization = request.headers.authorization ?? "";
+  const supplied = authorization.startsWith("Basic ")
+    ? Buffer.from(authorization.slice(6), "base64").toString("utf8")
+    : "";
+  const expected = `${deps.auth.username}:${deps.auth.password}`;
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(expected);
+  const authenticated =
+    suppliedBytes.length === expectedBytes.length && timingSafeEqual(suppliedBytes, expectedBytes);
+  if (!authenticated) {
+    response.writeHead(401, {
+      "www-authenticate": 'Basic realm="Liszt", charset="UTF-8"',
+      "cache-control": "no-store",
+    });
+    response.end("authentication required\n");
+    return;
+  }
+  if (path === "/api/refresh" && method === "POST") {
+    if (deps.acceptingRequests && !deps.acceptingRequests()) {
+      sendJson(response, 503, { error: "shutting down" });
+      return;
+    }
+    const fetchSite = request.headers["sec-fetch-site"];
+    const origin = request.headers.origin;
+    if (fetchSite === "cross-site" || (origin && new URL(origin).host !== request.headers.host)) {
+      sendJson(response, 403, { error: "cross-site request rejected" });
+      return;
+    }
   }
 
   const now = new Date();

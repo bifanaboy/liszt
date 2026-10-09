@@ -6,8 +6,8 @@
  * a datacenter IP sxyprn frequently answers 403 behind Cloudflare, so this rung
  * is the one most likely to be unavailable in production; the client is
  * therefore lazily loaded and circuit-broken in `sxyprn-client.ts`. A failure
- * is recorded, and any trusted-pool survivors already collected remain
- * available to the ladder's cross-tube fallback.
+ * is recorded, while any Eporner candidates remain available to the shared
+ * cross-source ranking.
  *
  * MEASURED, and the reason "most likely to be unavailable" is stated as a
  * concern rather than a fact. From a workstation IP the client answers fine: a
@@ -117,6 +117,7 @@ export function validSxyprnUrl(value: unknown): boolean {
     return (
       url.protocol === "https:" &&
       url.hostname === "sxyprn.com" &&
+      !url.port &&
       /^\/post\/[a-f0-9]{13}\.html$/.test(url.pathname) &&
       !url.username &&
       !url.password &&

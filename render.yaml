@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: liszt
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: liszt-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: LISZT_AUTH_USERNAME
+        sync: false
+      - key: LISZT_AUTH_PASSWORD
+        sync: false
+      - key: LISZT_DB_PATH
+        value: /data/liszt.db
+      - key: LISZT_LISTEN_ADDR
+        value: 0.0.0.0
