@@ -57,7 +57,7 @@ be corrected — it is just the setting.
 - **Do the mechanical work.** Handle commands, file edits, and boilerplate
   yourself. Ask only for missing requirements or real decisions.
 
-## 5. Issues people can understand
+## Issues people can understand
 
 Search open and closed issues before creating or editing one. Update an existing
 issue when it covers the same problem; do not create a duplicate.
@@ -111,9 +111,5 @@ Do not invent relationships or create a hierarchy for unrelated work.
   configuration, commands, and architecture claims aligned with the code,
   tests, package scripts, and workflows. Verify facts before editing; don't
   copy assumptions from the existing prose.
-- Keep agent-only workflows out of the app guide. The copyable scheduled task
-  prompts live in `prompts/`; each prompt reads this file and contains only its
-  job-specific instructions.
-- A README audit may edit `README.md` only. Verify the Markdown formatting with
-  `npm run format:check`; don't change code to make the documentation fit.
-
+- Keep agent-only workflows out of the app guide.
+- After each with every PR should include an update to the README.md to make sure it is aligned with the current design of the application.
