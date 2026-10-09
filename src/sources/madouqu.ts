@@ -437,14 +437,21 @@ export function createMadouquStudio({
 
       for (const category of STUDIO_CATEGORIES) {
         const posts = await fetchCategoryPosts(category, { fetchJson, postsUrl, after, maxPages });
+        // Counted per category, not logged per post: a single cycle rejects
+        // thousands of posts and one line each hit Railway's 500 logs/sec cap,
+        // dropping the error lines that actually matter. The per-post reason is
+        // in the excluded post's own classifier verdict, and the counts below
+        // carry the breakdown.
+        const byReason: Record<string, number> = {};
+        let excluded = 0;
+        let skippedNoIdentity = 0;
         for (const post of posts) {
           if (!categoryEligible(post, category.id)) continue;
           const verdict = classifyScene(post.title?.rendered, post.content?.rendered);
           if (verdict.decision === "excluded") {
-            ctx.log(`madouqu: excluded post ${String(post.id)} (${verdict.reason})`, {
-              category: category.name,
-              matchedTerms: verdict.exclusionKeywords ?? [],
-            });
+            const reason = verdict.reason ?? "unknown";
+            byReason[reason] = (byReason[reason] ?? 0) + 1;
+            excluded += 1;
             continue;
           }
           const scene = parsePost(post, category, verdict, { sourceUrl: postsUrl, base });
@@ -452,9 +459,7 @@ export function createMadouquStudio({
             // No id, no slug and no permalink: there is nothing stable to key
             // this record on, and emitting it would collide with every other
             // keyless post. Skipped, loudly, rather than silently clobbered.
-            ctx.log(`madouqu: skipped a post with no stable identity`, {
-              category: category.name,
-            });
+            skippedNoIdentity += 1;
             continue;
           }
           if (!scene.releaseDate) continue;
@@ -467,6 +472,14 @@ export function createMadouquStudio({
             continue;
           }
           if (!review.has(key) && !admitted.has(key)) admitted.set(key, scene);
+        }
+        if (excluded || skippedNoIdentity) {
+          ctx.log(`madouqu: ${category.name} excluded posts`, {
+            category: category.name,
+            excluded,
+            byReason,
+            skippedNoIdentity,
+          });
         }
       }
       const reviewScenes = includeReview ? [...review.values()] : [];
