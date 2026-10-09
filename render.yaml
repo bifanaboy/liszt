@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: starter
     healthCheckPath: /health
+    maxShutdownDelaySeconds: 60
     disk:
       name: liszt-data
       mountPath: /data
