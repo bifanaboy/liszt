@@ -311,6 +311,12 @@ export function createFanslySource(options: {
       }
 
       const scenes: RawScene[] = [];
+      // Counted, not logged per username: the per-lane summary below carries
+      // the totals, and one line per username would scale with the watchlist
+      // for no diagnostic gain over the counts.
+      let resolved = 0;
+      let notFound = 0;
+      let timelineInaccessible = 0;
 
       for (const [username, studio] of studioMap) {
         // 1. Resolve username -> creator ID
@@ -321,14 +327,14 @@ export function createFanslySource(options: {
             const parsed = AccountResponse.parse(accountData);
             const account = parsed.response[0];
             if (!account) {
-              ctx.log("Fansly: username not found", { username });
+              notFound += 1;
               continue;
             }
             studio.creatorId = account.id;
-            ctx.log("Fansly: resolved creator", { username, creatorId: account.id });
+            resolved += 1;
           } catch (error) {
             if (error instanceof FetchError && error.kind === "definitive") {
-              ctx.log("Fansly: username not found", { username });
+              notFound += 1;
               continue;
             }
             throw error;
@@ -349,7 +355,7 @@ export function createFanslySource(options: {
             timelineData = TimelineResponse.parse(raw);
           } catch (error) {
             if (error instanceof FetchError && error.kind === "definitive") {
-              ctx.log("Fansly: timeline not accessible", { username });
+              timelineInaccessible += 1;
               break;
             }
             throw error;
@@ -464,6 +470,9 @@ export function createFanslySource(options: {
       ctx.log("Fansly fetch complete", {
         usernames: usernames.length,
         scenes: scenes.length,
+        resolved,
+        notFound,
+        timelineInaccessible,
       });
 
       if (scenes.length === 0) return { scenes, verifiedEmpty: true };

@@ -485,10 +485,10 @@ export function createTraxxxStudio(options: TraxxxStudioOptions): SourceAdapter 
           // Second line of defence: a leaked record never lands, even if the
           // total-count guard somehow passed.
           if (!sceneMatchesEntity(record, kind, slug)) {
+            // Counted, not logged: a foreign-record flood would hit the log
+            // rate cap the same way madouqu's per-post lines did. One summary
+            // line per lane carries the count; the ids stay in the guard.
             filtered += 1;
-            ctx.log(`traxxx: ${filter} page ${page} returned a foreign record`, {
-              id: record?.id,
-            });
             continue;
           }
           const releaseDate = parseTraxxxDate(record.date ?? record.effectiveDate);

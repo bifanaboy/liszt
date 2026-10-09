@@ -38,6 +38,11 @@ const refreshState = $("#refresh-state");
 const refreshButton = $("#refresh");
 const sourcesList = $("#sources-list");
 const sourceSummary = $("#source-summary");
+const logsList = $("#logs-list");
+const logsCount = $("#logs-count");
+const logsEmpty = $("#logs-empty");
+const logsEmptyMessage = $("#logs-empty-message");
+const logsFilter = $("#logs-filter");
 const progressRow = $("#progress-row");
 const overallTrack = $("#overall-track");
 const overallSourcesHalf = $("#overall-half-sources");
@@ -324,6 +329,66 @@ let catalogueReloadFailed = false;
 let catalogueReloadPending = false;
 let revealTimer = null;
 let elapsedTimer = null;
+/* ---- Logs -----------------------------------------------------------------
+   The run ledger from GET /api/runs: one entry per refresh cycle, with each
+   lane's outcome and the error text when a lane failed. A passive history
+   view, so it fetches on demand - on opening the Logs page and on changing
+   the filter - rather than on a background timer that would add a second
+   polling loop for data that only changes once a cycle ends. */
+let runs = [];
+let logsPending = false;
+
+/** One run row: when it ran, whether it succeeded, and per-lane failures. */
+function renderLogs() {
+  const errorsOnly = logsFilter.value === "errors";
+  const failed = runs.filter((run) => run.ok === false);
+  const shown = errorsOnly ? failed : runs;
+  logsCount.textContent = shown.length
+    ? `${shown.length} ${shown.length === 1 ? "entry" : "entries"}`
+    : errorsOnly ? "No failed runs" : "No runs yet";
+  logsEmpty.hidden = shown.length > 0;
+  if (!shown.length) {
+    logsList.innerHTML = "";
+    logsEmptyMessage.textContent = errorsOnly
+      ? "No refresh cycle has failed recently."
+      : "Waiting for the first refresh cycle.";
+    return;
+  }
+  logsList.innerHTML = shown.map((run) => {
+    const outcomes = Array.isArray(run.outcomes) ? run.outcomes : [];
+    const lanes = outcomes.filter((outcome) => outcome && outcome.ok === false);
+    const started = run.startedAt ? new Date(run.startedAt) : null;
+    const when = started && !Number.isNaN(started.getTime())
+      ? started.toLocaleString("en", { dateStyle: "medium", timeStyle: "short" })
+      : "Unknown time";
+    const state = run.ok === false ? "error" : "ok";
+    const pill = state === "error" ? "FAILED" : "OK";
+    const laneList = lanes.length
+      ? `<ul class="log-lanes">${lanes.map((outcome) => `<li><span class="log-lane-source">${esc(outcome.source)}</span>${outcome.error ? `<span class="log-lane-error">${esc(outcome.error)}</span>` : ""}</li>`).join("")}</ul>`
+      : `<p class="log-lanes-empty">All lanes succeeded.</p>`;
+    const runError = run.error && run.error !== (lanes[0]?.error ?? "")
+      ? `<p class="log-run-error">${esc(run.error)}</p>`
+      : "";
+    return `<article class="log-card log-card--${state}"><div class="log-card-top"><span class="status-pill"><i></i>${pill}</span><span class="log-card-time">${esc(when)}</span></div><p class="log-card-kind">${esc(run.kind ?? "sync")}${run.endedAt ? "" : " · still running"}</p>${runError}${laneList}</article>`;
+  }).join("");
+}
+
+async function loadLogs() {
+  if (logsPending) return;
+  logsPending = true;
+  try {
+    const response = await fetch("/api/runs", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    const body = await response.json();
+    runs = Array.isArray(body.runs) ? body.runs : [];
+  } catch {
+    // A failed fetch leaves the last snapshot alone rather than blanking the log.
+  } finally {
+    logsPending = false;
+  }
+  renderLogs();
+}
+logsFilter.addEventListener("change", loadLogs);
 let rowShown = false;
 let primed = false;
 let announcedRun = null;
@@ -631,6 +696,7 @@ document.querySelectorAll("[data-nav]").forEach((link) => link.addEventListener(
 globalThis.addEventListener("hashchange", () => {
   syncNav(globalThis.location?.hash);
   selectCatalogue(globalThis.location?.hash);
+  if (globalThis.location?.hash === "#logs") void loadLogs();
 });
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); search.focus(); }
@@ -645,6 +711,7 @@ async function initialize() {
     refreshState.textContent = "Unable to load catalogue";
   } finally {
     schedulePoll(refreshing ? POLL_ACTIVE_MS : POLL_IDLE_MS);
+    if (globalThis.location?.hash === "#logs") void loadLogs();
   }
 }
 initialize();

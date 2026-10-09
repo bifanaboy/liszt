@@ -15,7 +15,7 @@
   <div class="shell">
     <header class="topbar">
       <a class="brand" href="#catalogue" aria-label="Liszt home"><span class="brand-mark">L</span><span>liszt<span class="brand-dot">.</span></span></a>
-      <nav aria-label="Main navigation"><a href="#catalogue" data-nav="catalogue" class="active">Catalogue</a><a href="#asian" data-nav="asian">Asian</a><a href="#sources" data-nav="sources">Sources</a></nav>
+      <nav aria-label="Main navigation"><a href="#catalogue" data-nav="catalogue" class="active">Catalogue</a><a href="#asian" data-nav="asian">Asian</a><a href="#sources" data-nav="sources">Sources</a><a href="#logs" data-nav="logs">Logs</a></nav>
       <div class="top-actions"><span class="live-dot"></span><span class="live-label">PERSONAL CATALOGUE</span><button class="button button-primary" id="refresh" type="button"><span class="refresh-icon">↻</span> Refresh now</button></div>
     </header>
 
@@ -67,6 +67,16 @@
         <div class="section-heading"><div><p class="eyebrow">INGESTION STATUS</p><h2>Sources</h2></div><p class="section-aside">Each source polls independently.</p></div>
         <div id="source-summary" class="source-summary"></div>
         <div id="sources-list" class="source-grid"></div>
+      </section>
+
+      <section class="logs" id="logs">
+        <div class="section-heading"><div><p class="eyebrow">RUN HISTORY</p><h2>Logs</h2></div><p class="section-aside">Each refresh cycle, with why a lane failed.</p></div>
+        <div class="toolbar">
+          <label class="select-wrap"><span class="sr-only">Filter</span><select id="logs-filter"><option value="errors" selected>Errors only</option><option value="all">All runs</option></select><span class="select-chevron">⌄</span></label>
+          <span class="result-count" id="logs-count">Loading…</span>
+        </div>
+        <div id="logs-list" class="logs-list"></div>
+        <div id="logs-empty" class="empty-state" hidden><span class="empty-glyph" aria-hidden="true">≡</span><h3 id="logs-empty-title">No log entries</h3><p id="logs-empty-message">Waiting for the first refresh cycle.</p></div>
       </section>
 
     </main>

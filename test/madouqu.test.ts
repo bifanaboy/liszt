@@ -176,3 +176,46 @@ test("performers stay empty when the download-address terminator is missing", ()
   assert.deepEqual(scene.performers, []);
   assert.equal(scene.fieldProvenance?.performers, undefined);
 });
+
+test("the lane logs one exclusion count per category, not one line per post", async () => {
+  // A single cycle rejects thousands of posts. One log line each hit Railway's
+  // 500 logs/sec cap and dropped the error lines that matter, so the lane must
+  // collapse exclusions into a per-category count with a reason breakdown.
+  const studio = createMadouquStudio({ apiBase: "https://example.test/wp-json", delayMs: 0 });
+  const logs: { message: string; fields: Record<string, unknown> }[] = [];
+  // Every post carries no positive keyword, so all are excluded as
+  // "no-anal-keyword" - the flood the Railway log showed.
+  const posts = [1, 2, 3, 4, 5].map((id) => ({
+    id,
+    categories: [2],
+    title: { rendered: `post ${id}` },
+    content: { rendered: "no keyword here" },
+    date_gmt: "2026-03-04T00:00:00",
+  }));
+  const ctx = {
+    now: new Date("2026-03-05T00:00:00Z"),
+    log: (message: string, fields: Record<string, unknown> = {}) => logs.push({ message, fields }),
+    fetcher: {
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "x-wp-totalpages": "1" }),
+        json: async () => posts,
+      }),
+    },
+  } as unknown as Parameters<typeof studio.fetch>[1];
+
+  await studio.fetch("2026-03-04", ctx);
+
+  const exclusionLines = logs.filter((line) => line.message.includes("excluded posts"));
+  assert.equal(exclusionLines.length, 1, "one count line per category, not one per post");
+  const summary = exclusionLines[0]!;
+  assert.equal(summary.fields.excluded, 5);
+  assert.deepEqual(summary.fields.byReason, { "no-anal-keyword": 5 });
+  // No per-post line survives: the flood is gone.
+  assert.equal(
+    logs.filter((line) => /excluded post \d+/.test(line.message)).length,
+    0,
+    "no per-post exclusion lines may remain",
+  );
+});
