@@ -17,7 +17,9 @@
  *   2. `sceneMatchesEntity` re-checks every individual record's entity slug, so
  *      even a partial filter leak cannot land a foreign record.
  */
+import { setTimeout as delay } from "node:timers/promises";
 import type { Fetcher, RawScene, SourceAdapter, SourceResult } from "./types.ts";
+import { createExpiringCache } from "../core/expiring-cache.ts";
 
 const API_BASE = "https://traxxx.me";
 const SCENES_URL = `${API_BASE}/api/scenes`;
@@ -237,27 +239,6 @@ export function sceneMatchesEntity(
 ): boolean {
   const entity = kind === "network" ? record?.network : record?.channel;
   return String(entity?.slug ?? "").toLowerCase() === slug.toLowerCase();
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function createExpiringCache({ ttlMs, limit = 512 }: { ttlMs: number; limit?: number }) {
-  const entries = new Map<string, { createdAt: number; value: Promise<unknown> }>();
-  return function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
-    const now = Date.now();
-    const entry = entries.get(key);
-    if (entry && now - entry.createdAt < ttlMs) return entry.value as Promise<T>;
-    entries.delete(key);
-    const value = Promise.resolve().then(load);
-    entries.set(key, { createdAt: now, value });
-    value.catch(() => {
-      if (entries.get(key)?.value === value) entries.delete(key);
-    });
-    if (entries.size > limit) entries.delete(entries.keys().next().value as string);
-    return value;
-  };
 }
 
 export interface TraxxxClientOptions {

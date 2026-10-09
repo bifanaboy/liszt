@@ -15,6 +15,7 @@
  */
 import { z } from "zod";
 import { FetchError } from "../core/fetcher.ts";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { RawScene, SourceAdapter } from "./types.ts";
 
 const BASE = "https://apiv3.fansly.com";
@@ -291,7 +292,7 @@ export function createFanslySource(options: {
       let lastRequestAt = 0;
       const fetchJson = async <T = unknown>(url: string): Promise<T> => {
         const wait = minIntervalMs - (Date.now() - lastRequestAt);
-        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+        if (wait > 0) await sleep(wait);
         lastRequestAt = Date.now();
         return ctx.fetcher.json<T>(url);
       };

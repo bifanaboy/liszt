@@ -20,6 +20,7 @@
  * The lane sets `matcher: null`: it is metadata-only and never enters the tube
  * ladder.
  */
+import { setTimeout as sleep } from "node:timers/promises";
 import type { RawScene, SourceAdapter, SourceContext, SourceResult } from "./types.ts";
 
 const DAY_MS = 86_400_000;
@@ -342,7 +343,7 @@ export function createJsonFetcher({
   return async function fetchJson(url: string) {
     for (let attempt = 0; ; attempt += 1) {
       const wait = delayMs - (Date.now() - lastRequest);
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (wait > 0) await sleep(wait);
       lastRequest = Date.now();
       const response = await ctx.fetcher.fetch(url, { headers: { accept: "application/json" } });
       if (response.status === 429 && attempt < maxRetries) {

@@ -1,4 +1,6 @@
-import { scrapeStudioSite, STUDIO_SITE_RECIPES } from "./studio-site.ts";
+import { DateOnly } from "../core/schema.ts";
+import { normaliseReleaseUrl } from "../pipeline/release-identity.ts";
+import { scrapeStudioSite, STUDIO_SITE_RECIPES, bareHost } from "./studio-site.ts";
 import { scrapeVixenMetadata, vixenSiteCodeFor } from "./vixen-site.ts";
 import type { Fetcher, RawScene } from "./types.ts";
 
@@ -69,10 +71,12 @@ export function getStudioMetadataProfile(value: string): StudioMetadataProfile |
   }
   if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
   const host = url.hostname.toLowerCase();
+  // Vixen hosts are keyed exact (www. is part of the registered host); only the
+  // studio-page recipes are bare-keyed, so only those strip www. before lookup.
   if (vixenSiteCodeFor(host) && /^\/videos\/[a-z0-9-]+\/?$/i.test(url.pathname)) {
     return VIXEN_PROFILE;
   }
-  return PAGE_PROFILES.get(host) ?? null;
+  return PAGE_PROFILES.get(bareHost(host)) ?? null;
 }
 
 /** List supported metadata fields with values other than null, undefined, or empty strings/arrays. */
@@ -87,26 +91,12 @@ function populatedFields(raw: Partial<RawScene>): (keyof RawScene)[] {
 
 /** A date-only value the scene schema accepts, or null. */
 function calendarDate(value: string): string | null {
-  const [year, month, day] = value.split("-").map(Number) as [number, number, number];
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-    ? value
-    : null;
+  return DateOnly.safeParse(value).success ? value : null;
 }
 
 /** Compare two release URLs the way a page's canonical link claims one. */
 function sameRelease(left: string, right: string): boolean {
-  const normalise = (value: string) => {
-    try {
-      const url = new URL(value);
-      return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, "").toLowerCase()}`;
-    } catch {
-      return value.toLowerCase();
-    }
-  };
-  return normalise(left) === normalise(right);
+  return normaliseReleaseUrl(left) === normaliseReleaseUrl(right);
 }
 
 /** Fill metadata from one known studio release page; unsupported URLs are never fetched. */

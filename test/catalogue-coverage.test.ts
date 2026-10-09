@@ -73,7 +73,7 @@ test("missing duration or empty titles cannot establish cross-provider identity"
   assert.throws(() => catalogueCoverage({ tpdb: [record("x", { title: "" })] }), /title/);
   assert.throws(
     () => catalogueCoverage({ tpdb: [record("x", { releaseDate: "2026-02-30" })] }),
-    /calendar/,
+    /releaseDate: Invalid ISO date/,
   );
 });
 

@@ -54,6 +54,7 @@
  */
 import type { Fc2Status } from "../core/schema.ts";
 import type { Fc2Candidate, SqliteStore } from "../core/store/sqlite.ts";
+import { setTimeout as sleepTimer } from "node:timers/promises";
 import { parseClockDuration } from "../tubes/eporner.ts";
 import type { Fetcher, RawScene, SourceAdapter, SourceContext, SourceResult } from "./types.ts";
 import { findTransExclusion } from "./trans-exclusion.ts";
@@ -520,10 +521,10 @@ export interface Fc2ClientOptions {
  * "unsettled top-level await", stops, and the lane never finishes a page. The
  * server keeps the loop alive in production, which is exactly why it would have
  * shipped as a latent bug: it only drops the walk in a probe, a CLI, or a test
- * that uses the real sleep.
+ * that uses the real sleep. `setTimeout` from `node:timers/promises` keeps the
+ * loop alive by design, which is the behaviour wanted here.
  */
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const defaultSleep = (ms: number): Promise<void> => sleepTimer(ms);
 
 export interface Fc2Client {
   /** One cursor page of the anal tag listing. */
