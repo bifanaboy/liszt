@@ -351,7 +351,7 @@ function renderLogs() {
   const shown = errorsOnly ? failed : runs;
   logsCount.textContent = shown.length
     ? `${shown.length} ${shown.length === 1 ? "entry" : "entries"}`
-    : errorsOnly ? "No failed runs" : "No runs yet";
+    : logsError ? "Could not load the log." : errorsOnly ? "No failed runs" : "No runs yet";
   logsEmpty.hidden = shown.length > 0;
   if (!shown.length) {
     logsList.innerHTML = "";
