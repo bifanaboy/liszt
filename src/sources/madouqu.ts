@@ -442,14 +442,16 @@ export function createMadouquStudio({
         // dropping the error lines that actually matter. The per-post reason is
         // in the excluded post's own classifier verdict, and the counts below
         // carry the breakdown.
-        const excludedByReason = new Map<string, number>();
+        const byReason: Record<string, number> = {};
+        let excluded = 0;
         let skippedNoIdentity = 0;
         for (const post of posts) {
           if (!categoryEligible(post, category.id)) continue;
           const verdict = classifyScene(post.title?.rendered, post.content?.rendered);
           if (verdict.decision === "excluded") {
             const reason = verdict.reason ?? "unknown";
-            excludedByReason.set(reason, (excludedByReason.get(reason) ?? 0) + 1);
+            byReason[reason] = (byReason[reason] ?? 0) + 1;
+            excluded += 1;
             continue;
           }
           const scene = parsePost(post, category, verdict, { sourceUrl: postsUrl, base });
@@ -471,11 +473,11 @@ export function createMadouquStudio({
           }
           if (!review.has(key) && !admitted.has(key)) admitted.set(key, scene);
         }
-        if (excludedByReason.size || skippedNoIdentity) {
+        if (excluded || skippedNoIdentity) {
           ctx.log(`madouqu: ${category.name} excluded posts`, {
             category: category.name,
-            excluded: [...excludedByReason.values()].reduce((a, b) => a + b, 0),
-            byReason: Object.fromEntries(excludedByReason),
+            excluded,
+            byReason,
             skippedNoIdentity,
           });
         }

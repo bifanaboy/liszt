@@ -349,19 +349,22 @@ function renderLogs() {
   const errorsOnly = logsFilter.value === "errors";
   const failed = runs.filter((run) => run.ok === false);
   const shown = errorsOnly ? failed : runs;
-  logsCount.textContent = shown.length
-    ? `${shown.length} ${shown.length === 1 ? "entry" : "entries"}`
-    : logsError ? "Could not load the log." : errorsOnly ? "No failed runs" : "No runs yet";
   logsEmpty.hidden = shown.length > 0;
   if (!shown.length) {
     logsList.innerHTML = "";
-    logsEmptyMessage.textContent = logsError
-      ? "Could not load the log. Retrying."
-      : errorsOnly
-        ? "No refresh cycle has failed recently."
-        : "Waiting for the first refresh cycle.";
+    if (logsError) {
+      logsCount.textContent = "Could not load the log.";
+      logsEmptyMessage.textContent = "Could not load the log. Retrying.";
+    } else if (errorsOnly) {
+      logsCount.textContent = "No failed runs";
+      logsEmptyMessage.textContent = "No refresh cycle has failed recently.";
+    } else {
+      logsCount.textContent = "No runs yet";
+      logsEmptyMessage.textContent = "Waiting for the first refresh cycle.";
+    }
     return;
   }
+  logsCount.textContent = `${shown.length} ${shown.length === 1 ? "entry" : "entries"}`;
   logsList.innerHTML = shown.map((run) => {
     const outcomes = Array.isArray(run.outcomes) ? run.outcomes : [];
     const lanes = outcomes.filter((outcome) => outcome && outcome.ok === false);
@@ -374,10 +377,9 @@ function renderLogs() {
     const laneList = lanes.length
       ? `<ul class="log-lanes">${lanes.map((outcome) => `<li><span class="log-lane-source">${esc(outcome.source)}</span>${outcome.error ? `<span class="log-lane-error">${esc(outcome.error)}</span>` : ""}</li>`).join("")}</ul>`
       : `<p class="log-lanes-empty">All lanes succeeded.</p>`;
-    const runError = run.error && run.error !== (lanes[0]?.error ?? "")
-      ? `<p class="log-run-error">${esc(run.error)}</p>`
-      : "";
-    return `<article class="log-card log-card--${state}"><div class="log-card-top"><span class="status-pill"><i></i>${pill}</span><span class="log-card-time">${esc(when)}</span></div><p class="log-card-kind">${esc(run.kind ?? "sync")}${run.endedAt ? "" : " · still running"}</p>${runError}${laneList}</article>`;
+    // No run-level error line: sync.ts derives run.error as the first failing
+    // outcome's error, which is already the first lane shown above.
+    return `<article class="log-card log-card--${state}"><div class="log-card-top"><span class="status-pill"><i></i>${pill}</span><span class="log-card-time">${esc(when)}</span></div><p class="log-card-kind">sync${run.endedAt ? "" : " · still running"}</p>${laneList}</article>`;
   }).join("");
 }
 
