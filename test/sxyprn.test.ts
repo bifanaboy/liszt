@@ -1,812 +1,138 @@
 /**
- * The sxyprn rung, asserted at the client boundary.
+ * The sxyprn rung, asserted at the search boundary.
  *
- * These are the properties the rung's correctness rests on, and each one is a
- * way the rung can be silently dead rather than loudly wrong:
+ * MEASURED 2026-10-10 against the live site, and these are the properties the
+ * rung's correctness rests on - each one is a way the rung can be silently
+ * dead rather than loudly wrong:
  *
- *  - `details()` must forward `uploadDate` and `views`. It is the ONLY pass that
- *    carries a real date; drop either field at the boundary and the date half
- *    of the gate cannot run, so the rung admits nothing and reports no error.
- *  - a rendered `HH:MM:SS` duration must not be dropped for want of a numeric
- *    field, or the duration half fails the same way.
- *  - the circuit break must not be permanent. sxyprn answering 403 from a
- *    datacenter IP is a transient condition, and a break with no cooldown means
- *    a recovered source stays out of the ladder until a restart.
- *  - "the source is down" and "the gate rejected everything" are different
- *    answers, and only the first may abort the ladder.
+ *  - the search URL is the single-slug form `https://sxyprn.com/<slug>.html`,
+ *    because a multi-token query is IGNORED by the site past its first token.
+ *  - the title lives in the anchor's `title=` attribute, not the text body.
+ *  - the duration is the rendered `MM:SS` / `HH:MM:SS` clock on the card; a
+ *    card with no readable clock is DROPPED, never guessed.
+ *  - views are rendered as `1,234 views` and normalised to a number.
+ *  - the lookup filters on duration and ranks on identity, with no date gate -
+ *    cards carry no structured date.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSxyprnClient, durationStringToSeconds } from "../src/tubes/sxyprn-client.ts";
 import {
+  createSxyprnSearch,
   createSxyprnLookup,
-  type SxyprnCard,
-  type SxyprnClient,
-  type SxyprnDetail,
+  parseSxyprnDuration,
+  sxyprnSlug,
 } from "../src/tubes/sxyprn.ts";
-import { makeMatchScene, withDeadline } from "./helpers.ts";
-import { mapWithConcurrency } from "../src/core/concurrency.ts";
+import type { Fetcher } from "../src/sources/types.ts";
+import { makeMatchScene } from "./helpers.ts";
 
-const POST = "https://sxyprn.com/post/6ab1a9bec8445.html";
-const OTHER = "https://sxyprn.com/post/6ab1a9bec8446.html";
-const THIRD = "https://sxyprn.com/post/6ab1a9bec8447.html";
-
-/** A package stub whose two methods the tests drive. */
-function packageStub(
-  over: {
-    search?: () => Promise<{ videos?: Record<string, unknown>[] }>;
-    details?: (input?: { url?: string }) => Promise<Record<string, unknown>>;
-  } = {},
-) {
-  return {
-    videos: {
-      search: over.search ?? (async () => ({ videos: [] })),
-      details: over.details ?? (async () => ({})),
-    },
-  };
+/** A trimmed card block, in the shape sxyprn renders (single-quoted attrs). */
+function card(id: string, title: string, duration: string, views = "1,234"): string {
+  return (
+    `<div class="post_el_small">` +
+    `<a class="post_time" href='/post/${id}.html' ` +
+    `title='${title}'>thumb</a>` +
+    `<div class="post_dur">${duration}</div>` +
+    `<div class="post_views">${views} views</div>` +
+    `</div>`
+  );
 }
 
-test("details() forwards the two fields the gate cannot do without", async () => {
-  const client = createSxyprnClient(
-    packageStub({
-      details: async () => ({
-        url: POST,
-        title: "Scene",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-03-05T10:00:00+00:00",
-        views: "12,345",
-        sizeBytes: 4096,
-      }),
-    }),
-  );
-  const detail = await client.videos.details({ url: POST });
-  assert.equal(
-    detail.uploadDate,
-    "2026-03-05T10:00:00+00:00",
-    "the detail pass is the only pass with a date",
-  );
-  assert.equal(detail.views, "12,345");
-  assert.equal(detail.streamUrl, "https://sxyprn.com/stream.m3u8");
-  assert.equal(detail.durationSeconds, 1418);
-});
-
-test("the requests actually spent are counted, and split by pass", async () => {
-  // The run's cost in time is this count times the source's ten-second pacing
-  // floor, so the count has to mean REQUESTS, not calls. `attempted` and
-  // `errored` cover the whole ladder and cannot be attributed to this rung, which
-  // is why the number has to come from the one place a request is made.
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => ({ videos: [{ url: POST, title: "Scene", duration: "23:38" }] }),
-      details: async () => ({ url: POST, title: "Scene", duration: "23:38" }),
-    }),
-  );
-
-  await client.videos.search("one");
-  await client.videos.search("two");
-  await client.videos.details({ url: POST });
-  assert.deepEqual(
-    client.takeRequests(),
-    { search: 2, details: 1 },
-    "two scenes searched and one candidate post was verified",
-  );
-
-  // A drain, not a running total: the client outlives any one cycle, and a total
-  // would make every refresh inherit the cost of all the ones before it.
-  assert.deepEqual(
-    client.takeRequests(),
-    { search: 0, details: 0 },
-    "the count is spent once read, so each cycle is charged only for its own",
-  );
-});
-
-test("a call the break refuses costs no request, and an abandoned one still counts", async () => {
-  // Two halves of the same number. A refused call never reached the source, so
-  // counting it would overstate the run's cost by exactly the number of scenes
-  // the ladder skipped. A request the deadline later abandons was still handed
-  // over and the pacing floor still ran, so counting it as nothing would hide the
-  // cost the deadline is there to bound.
-  let calls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        calls += 1;
-        return new Promise<never>(() => {});
-      },
-    }),
-    { timeoutMs: 40, maxConsecutiveFailures: 1, cooldownMs: 60_000 },
-  );
-  // The deadline timer is unref'd, so a test with nothing else pending would see
-  // the loop drain before the timer fires. Keep it alive the way a server does.
-  const alive = setInterval(() => {}, 5);
-
-  await assert.rejects(client.videos.search("a"), /search timed out after 40ms/);
-  await assert.rejects(client.videos.search("b"), /circuit open/);
-  clearInterval(alive);
-
-  assert.equal(calls, 1, "the refused call never reached the package");
-  assert.deepEqual(
-    client.takeRequests(),
-    { search: 1, details: 0 },
-    "one hung request was spent, and the refused one was not",
-  );
-});
-
-test("a rendered HH:MM:SS duration is parsed rather than dropped", async () => {
-  // The package serves a duration string on some shapes and a number on
-  // others. Reading only the number means the card carries no duration, the
-  // duration half of the gate rejects it, and the rung reports "no match".
-  assert.equal(durationStringToSeconds("23:38"), 1418);
-  assert.equal(durationStringToSeconds("1:02:03"), 3723);
-  assert.equal(durationStringToSeconds("bad"), null);
-  assert.equal(durationStringToSeconds(""), null);
-  assert.equal(durationStringToSeconds(undefined), null);
-  assert.equal(durationStringToSeconds("23:xx"), null);
-
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => ({ videos: [{ url: POST, title: "Scene", duration: "23:38" }] }),
-      details: async () => ({ url: POST, title: "Scene", duration: "23:38" }),
-    }),
-  );
-  const page = await client.videos.search("scene");
-  assert.equal(page.videos?.[0]?.durationSeconds, 1418);
-  const detail = await client.videos.details({ url: POST });
-  assert.equal(detail.durationSeconds, 1418);
-});
-
-test("the circuit break reopens after a cooldown, and closes on the probe", async () => {
-  let fail = true;
-  let searchCalls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        searchCalls += 1;
-        if (fail) throw new Error("403 from Cloudflare");
-        return { videos: [] };
-      },
-    }),
-    { maxConsecutiveFailures: 1, cooldownMs: 50 },
-  );
-
-  await assert.rejects(client.videos.search("scene"), /403/);
-  assert.equal(searchCalls, 1);
-
-  // Still inside the cooldown: refused without a request, so a burst of scenes
-  // cannot become a burst of attempts.
-  await assert.rejects(client.videos.search("scene"), /circuit open/);
-  assert.equal(searchCalls, 1, "the break short-circuits before spending a request");
-
-  // A recovered source rejoins the ladder on its own.
-  fail = false;
-  await new Promise((resolve) => setTimeout(resolve, 60));
-  await client.videos.search("scene");
-  assert.equal(searchCalls, 2, "one half-open probe was admitted and it succeeded");
-  // And the break is closed, so a later failure starts counting from zero -
-  // here from one again, and re-trips immediately.
-  fail = true;
-  await assert.rejects(client.videos.search("scene"), /403/);
-  assert.equal(searchCalls, 3, "recovery reset the counter, so one failure re-breaks");
-  await assert.rejects(client.videos.search("scene"), /circuit open/);
-  assert.equal(searchCalls, 3, "and the re-opened break short-circuits again");
-});
-
-test("a refused call says the break is holding, and still names what opened it", async () => {
-  // The production log repeated one live timeout for every scene a down source
-  // was not being called for. A caller that is being refused has spent nothing,
-  // and the log has to be able to tell that apart from a call that paid the
-  // deadline - otherwise the cost bound is invisible exactly when it is working.
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        throw new Error("sxyprn search timed out after 15000ms");
-      },
-    }),
-    { maxConsecutiveFailures: 1, cooldownMs: 60_000 },
-  );
-  await assert.rejects(client.videos.search("scene"), /timed out after 15000ms/);
-  await assert.rejects(
-    client.videos.search("scene"),
-    /^Error: sxyprn circuit open \(\d+ of \d+ recent calls failed\); last: sxyprn search timed out after 15000ms$/,
-  );
-});
-
-test("a source failing every other call still opens the break", async () => {
-  // The shape production actually had: the ladder interleaves scenes, and each
-  // scene searches several queries in turn, so a source that times out on every
-  // second request never produces two failures IN A ROW. A counter that only
-  // advances on a failure and resets on any success therefore never reached its
-  // threshold, so the break stayed shut and every scene kept paying the full
-  // deadline - which is what the run log showed: 110 rung errors in one run.
-  let calls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        calls += 1;
-        if (calls % 2 === 1) throw new Error("sxyprn search timed out after 15000ms");
-        return { videos: [] };
-      },
-    }),
-    // Three in a row is never reached by this pattern, so only the failing
-    // share can open the break.
-    { maxConsecutiveFailures: 3, failureWindow: 4, failureRatio: 0.5, cooldownMs: 60_000 },
-  );
-
-  let held = false;
-  for (let attempt = 0; attempt < 40 && !held; attempt += 1) {
-    try {
-      await client.videos.search(`scene-${attempt}`);
-    } catch (error) {
-      held = /circuit open/.test((error as Error).message);
-    }
-  }
-  assert.ok(held, "the break opened while calls were still interleaved");
-  assert.ok(
-    calls <= 8,
-    `the break opened after ${calls} calls, not after 40 deadlines of one per scene`,
-  );
-});
-
-test("a source failing occasionally keeps being asked", async () => {
-  // The other direction, and the reason the window is a SHARE rather than a
-  // cumulative tally: a source that fails one call in six is healthy. A tally
-  // would have opened the break on its fourth failure and never closed it,
-  // because the only thing that cleared it was the half-open probe succeeding.
-  let calls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        calls += 1;
-        if (calls % 6 === 0) throw new Error("403 from Cloudflare");
-        return { videos: [] };
-      },
-    }),
-    { maxConsecutiveFailures: 3, failureWindow: 4, failureRatio: 0.5, cooldownMs: 60_000 },
-  );
-  let refusals = 0;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    // The client rethrows what the source threw; what matters is that the throw
-    // is the source's own error and never the break's.
-    await client.videos.search(`scene-${attempt}`).catch((error: Error) => {
-      if (/circuit open/.test(error.message)) refusals += 1;
-    });
-  }
-  assert.equal(refusals, 0, "a 1-in-6 failure rate never reaches the threshold");
-  assert.equal(calls, 60, "so every call was actually made rather than short-circuited");
-});
-
-test("a failed probe restarts the cooldown rather than retrying every call", async () => {
-  let calls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        calls += 1;
-        throw new Error("still blocked");
-      },
-    }),
-    { maxConsecutiveFailures: 1, cooldownMs: 50 },
-  );
-  await assert.rejects(client.videos.search("scene"));
-  await new Promise((resolve) => setTimeout(resolve, 60));
-  await assert.rejects(client.videos.search("scene"), /still blocked/);
-  assert.equal(calls, 2, "the probe was spent");
-  await assert.rejects(client.videos.search("scene"), /still blocked/);
-  assert.equal(calls, 2, "and the break is back, cooldown restarted from the probe");
-});
-
-/**
- * A package that paces itself the way `sxyprn@0.1.0` does: `reserveRequestSlot`
- * gives every request in the PROCESS a start time at least one interval after
- * the previous one, and the wait happens inside the call, before the request is
- * issued. The interval is scaled to milliseconds so a test can hold the same
- * shape the production run had.
- */
-function pacedPackageStub(intervalMs: number) {
-  let lastStart = 0;
-  const request = async <T>(work: () => T): Promise<T> => {
-    const start = Math.max(Date.now(), lastStart + intervalMs);
-    lastStart = start;
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, start - Date.now())));
-    return work();
-  };
+function fetcherFor(html: string): Fetcher {
   return {
-    videos: {
-      search: async () => request(() => ({ videos: [] })),
-      details: async () => request(() => ({})),
+    text: async (url: string) => {
+      if (!/^https:\/\/sxyprn\.com\/[a-z0-9-]+\.html$/.test(url))
+        throw new Error(`unexpected url ${url}`);
+      return html;
     },
-  };
+    json: async () => {
+      throw new Error("sxyprn search must not use the JSON path");
+    },
+  } as unknown as Fetcher;
 }
 
-test("the package's own pacing is not charged to the call's deadline", async () => {
-  // The production shape of #23: a source answering every request, still
-  // reported as `errored: 110` of `attempted: 229`. The package holds each
-  // request until its own slot 10s after the last, the ladder asks four scenes
-  // at once, and the deadline started counting while a call waited its turn -
-  // so every call past the first expired without a request ever being made.
-  const interval = 40;
-  const timeoutMs = Math.round(interval * 1.5);
-  const client = createSxyprnClient(pacedPackageStub(interval), {
-    timeoutMs,
-    cooldownMs: 60_000,
-  });
-
-  const started = Date.now();
-  const outcomes = await Promise.all(
-    ["a", "b", "c"].map((query) =>
-      client.videos.search(query).then(
-        () => "ok",
-        (error: Error) => error.message,
-      ),
-    ),
-  );
-  const elapsed = Date.now() - started;
-  assert.ok(
-    elapsed >= interval,
-    `the three calls were paced over ${elapsed}ms, so the queue was real`,
-  );
-  assert.deepEqual(
-    outcomes,
-    ["ok", "ok", "ok"],
-    "a call that reached its slot answered instead of expiring in the queue",
-  );
+test("parseSxyprnDuration reads MM:SS and HH:MM:SS, and nothing else", () => {
+  assert.equal(parseSxyprnDuration("39:53"), 2393);
+  assert.equal(parseSxyprnDuration("1:14:19"), 4459);
+  assert.equal(parseSxyprnDuration("0:00"), null);
+  assert.equal(parseSxyprnDuration("not a clock"), null);
+  assert.equal(parseSxyprnDuration(""), null);
 });
 
-test("a call that reaches the slot and then hangs is still bounded, and lets the next one through", async () => {
-  // The deadline must still bound the REQUEST. Moving it to the slot is what
-  // stops it measuring the queue; if it stopped bounding anything, a hung
-  // source would hold the one slot for ever and the rung would hang with it.
-  let calls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        calls += 1;
-        return new Promise<never>(() => {});
-      },
-    }),
-    { timeoutMs: 40, maxConsecutiveFailures: 1, cooldownMs: 60_000 },
-  );
-  // The deadline timer is unref'd so a pending call cannot hold the process open
-  // at shutdown, which means a test with nothing else pending would see the loop
-  // drain instead of the timer firing. A server always has the loop; keep it
-  // alive here the same way.
-  const alive = setInterval(() => {}, 5);
-
-  await assert.rejects(client.videos.search("a"), /search timed out after 40ms/);
-  // The first call handed the slot back on the way out: the second is refused by
-  // the break rather than waiting behind a call that never finished.
-  await assert.rejects(client.videos.search("b"), /circuit open/);
-  clearInterval(alive);
-  assert.equal(calls, 1, "the hung call was abandoned, not waited on");
+test("sxyprnSlug collapses to the site's slug convention", () => {
+  assert.equal(sxyprnSlug("Emma Rosie"), "emma-rosie");
+  assert.equal(sxyprnSlug("  Jules  Jordan! "), "jules-jordan");
 });
 
-test("a burst of scenes costs one request, not one per scene, when the source is down", async () => {
-  // The queue must not turn a dead source into a burst of paid deadlines: the
-  // first call opens the break, and the scenes behind it are refused on arrival
-  // instead of each reaching the package.
-  let calls = 0;
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => {
-        calls += 1;
-        throw new Error("403 from Cloudflare");
-      },
-    }),
-    { timeoutMs: 500, maxConsecutiveFailures: 1, cooldownMs: 60_000 },
-  );
+test("search returns candidates in the production candidate shape", async () => {
+  const html =
+    card("6ac8e52565fca", "JulesJordan Emma Rosie Is A Teen Cumslut", "39:53") +
+    card("6ac95cd88a347", "ExploitedCollegeGirls Emma aka Emma Rosie", "49:27", "8,901");
+  const search = createSxyprnSearch({ fetcher: fetcherFor(html) });
+  const results = await search("emma-rosie");
 
-  const outcomes = await Promise.all(
-    ["a", "b", "c", "d"].map((query) =>
-      client.videos.search(query).then(
-        () => "ok",
-        (error: Error) => error.message,
-      ),
-    ),
-  );
-  assert.equal(calls, 1, "one request paid for the burst");
-  assert.equal(
-    outcomes[0],
-    "403 from Cloudflare",
-    "the first call carries the source's own reason",
-  );
-  for (const outcome of outcomes.slice(1)) {
-    assert.match(outcome, /circuit open \(1 of 1 recent calls failed\); last: 403 from Cloudflare/);
-  }
+  assert.equal(results.length, 2);
+  assert.equal(results[0]!.url, "https://sxyprn.com/post/6ac8e52565fca.html");
+  assert.equal(results[0]!.title, "JulesJordan Emma Rosie Is A Teen Cumslut");
+  assert.equal(results[0]!.duration, 2393, "39:53 -> 2393 seconds");
+  assert.equal(results[0]!.views, 1234);
+  assert.equal(results[1]!.duration, 2967, "49:27 -> 2967 seconds");
+  assert.equal(results[1]!.views, 8901);
 });
 
-/** A client whose search returns cards and whose details return posts. */
-function stubClient(over: {
-  cards?: SxyprnCard[];
-  details?: (url: string) => Promise<SxyprnDetail>;
-}): SxyprnClient {
-  return {
-    videos: {
-      search: async () => ({ videos: over.cards ?? [] }),
-      details: async ({ url }) => {
-        const detail = await (over.details ?? (async (u: string) => ({ url: u })))(url);
-        return detail;
-      },
+test("a card with no readable duration is dropped, not guessed", async () => {
+  const html =
+    card("6ac8e52565fca", "Emma Rosie Something", "39:53") +
+    `<div class="post_el_small"><a class="post_time" href='/post/6ac9424ca2409.html' title='No Duration Here'></a></div>`;
+  const search = createSxyprnSearch({ fetcher: fetcherFor(html) });
+  const results = await search("emma-rosie");
+  assert.equal(results.length, 1);
+  assert.equal(results[0]!.url, "https://sxyprn.com/post/6ac8e52565fca.html");
+});
+
+test("the search URL is the slug form and the query is slugified", async () => {
+  const seen: string[] = [];
+  const fetcher = {
+    text: async (url: string) => {
+      seen.push(url);
+      return "";
     },
-    // These tests are about what the lookup does with the answers, so nothing
-    // here spends a request the real client would have paced.
-    takeRequests: () => ({ search: 0, details: 0 }),
-  };
-}
+  } as unknown as Fetcher;
+  const search = createSxyprnSearch({ fetcher });
+  await search("Emma Rosie");
+  assert.deepEqual(seen, ["https://sxyprn.com/emma-rosie.html"]);
+});
 
 const SCENE = makeMatchScene({
   id: "test:1",
-  title: "Marfe takes it deep",
-  performers: ["Marfe okkk"],
+  title: "Emma Rosie takes it deep",
+  performers: ["Emma Rosie"],
   releaseDate: "2026-03-04",
-  durationSec: 1418,
+  durationSec: 2393,
 });
 
-test("a source that throws synchronously cannot wedge the breaker", async () => {
-  // The call used to be started before the deadline wrapper was entered, so a
-  // synchronous throw escaped uncounted - and because `guard()` had already
-  // claimed the half-open probe, the breaker was left marked "probing" and
-  // refused every later call. Only a restart recovered it.
-  let hard = true;
-  let calls = 0;
-  const client = createSxyprnClient(
-    {
-      videos: {
-        search: () => {
-          calls += 1;
-          if (hard) throw new Error("client construction failed");
-          return Promise.resolve({ videos: [] });
-        },
-        details: async () => ({}),
-      },
-    },
-    { maxConsecutiveFailures: 1, cooldownMs: 20 },
-  );
-
-  await assert.rejects(client.videos.search("scene"), /client construction failed/);
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  await assert.rejects(client.videos.search("scene"), /client construction failed/);
-  assert.equal(calls, 2, "the second failure was the half-open probe");
-
-  hard = false;
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  await client.videos.search("scene");
-  assert.equal(calls, 3, "and the breaker is not stuck with a claimed probe");
-});
-
-test("a post that clears the gate is admitted, and its evidence is recorded", async () => {
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "Marfe takes it deep", durationSeconds: 1418 }],
-      details: async (url) => ({
-        url,
-        title: "Marfe takes it deep",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-03-05T10:00:00+00:00",
-        views: 1200,
-      }),
-    }),
-    dateWindowDays: 7,
+test("the lookup filters on duration and ranks on identity", async () => {
+  const html =
+    card("6ac8e52565fca", "Emma Rosie takes it deep", "39:53") +
+    card("6ac95cd88a347", "Some other studio scene", "39:54") +
+    card("6ac9424ca2409", "Another duration miss", "12:00");
+  const lookup = createSxyprnLookup(createSxyprnSearch({ fetcher: fetcherFor(html) }), {
+    durationToleranceSec: 1,
   });
   const matches = await lookup(SCENE);
-  assert.equal(matches.length, 1);
-  assert.equal(matches[0]?.url, POST);
-  assert.equal(matches[0]?.lagDays, 1);
+  assert.equal(matches.length, 2, "two duration survivors, the 12:00 card is filtered out");
+  assert.equal(matches[0]!.url, "https://sxyprn.com/post/6ac8e52565fca.html");
+  assert.equal(matches[0]!.identityTier, 3, "the scene title appears verbatim in the card title");
+  assert.equal(matches[1]!.identityTier, 0, "unnamed survivor is kept for the fallback");
+  assert.equal(matches[0]!.views, 1234, "views travel with the survivor for the fallback");
+  assert.equal(matches[0]!.title, "Emma Rosie takes it deep");
 });
 
-test("an unnamed date-and-duration survivor is returned with views for terminal fallback", async () => {
-  // This post cannot be a high-confidence match: it names no performer. It
-  // still clears the cheap filters and must remain available to the ladder's
-  // cross-tube fallback, where its views are compared with the pool's
-  // leftovers. Returning `[]` here would make sxyprn's useful near-miss
-  // invisible even though the source supplied every field the fallback needs.
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "viral unrelated video", durationSeconds: 1418 }],
-      details: async (url) => ({
-        url,
-        title: "viral unrelated video",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-03-05T10:00:00+00:00",
-        views: "12,345",
-      }),
-    }),
-    dateWindowDays: 7,
-  });
-  const candidates = await lookup(SCENE);
-  assert.equal(candidates.length, 1);
-  assert.equal(candidates[0]?.identityTier, 0);
-  assert.equal(candidates[0]?.views, "12,345");
-  assert.equal(candidates[0]?.url, POST);
-});
-
-test("a blank search-card title still reaches detail verification", async () => {
-  // The card pass is a duration shortlist, not an identity gate. Some cards do
-  // not carry a usable title even though the post detail does; dropping them
-  // before detail verification would lose both a possible named match and the
-  // fallback survivor.
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "", durationSeconds: 1418, views: 5000 }],
-      details: async (url) => ({
-        url,
-        title: "Marfe takes it deep",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-03-05T10:00:00+00:00",
-        views: 5000,
-      }),
-    }),
-    dateWindowDays: 7,
-  });
-  const candidates = await lookup(SCENE);
-  assert.equal(candidates.length, 1);
-  assert.equal(candidates[0]?.identityTier, 3);
-});
-
-test("a blank detail title can still be a low-confidence survivor", async () => {
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "", durationSeconds: 1418 }],
-      details: async (url) => ({
-        url,
-        title: "",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-03-05T10:00:00+00:00",
-        views: 77,
-      }),
-    }),
-    dateWindowDays: 7,
-  });
-  const candidates = await lookup(SCENE);
-  assert.equal(candidates.length, 1, "date and duration are enough for a fallback survivor");
-  assert.equal(candidates[0]?.identityTier, 0);
-  assert.equal(candidates[0]?.views, 77);
-});
-
-test("a post the gate rejects is a miss, NOT a source outage", async () => {
-  // The distinction the counter exists for: an answered post that failed the
-  // gate must not abort the ladder, or a mis-tuned window reads as "sxyprn is
-  // down" and every scene falls through to the rung below for the wrong reason.
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "Marfe takes it deep", durationSeconds: 1418 }],
-      details: async (url) => ({
-        url,
-        title: "Marfe takes it deep",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-08-01T10:00:00+00:00",
-      }),
-    }),
-    dateWindowDays: 7,
-  });
-  assert.deepEqual(await lookup(SCENE), []);
-});
-
-test("a post the source cannot answer at all IS a source outage", async () => {
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "Marfe takes it deep", durationSeconds: 1418 }],
-      details: async () => {
-        throw new Error("403");
-      },
-    }),
-    dateWindowDays: 7,
-  });
-  await assert.rejects(lookup(SCENE), /sxyprn post verification unavailable/);
-});
-
-test("the detail pass reports which failure it hit, not only that it failed", async () => {
-  // One opaque string per post failure made an upstream refusal, a network
-  // failure, a parser break and the deadline a single bucket. The deadline is
-  // the one kind the breaker can put a bound on, so it has to be separable from
-  // the other three - otherwise the run log cannot say the cost is now bounded.
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [{ url: POST, title: "Marfe takes it deep", durationSeconds: 1418 }],
-      details: async () => {
-        throw new Error("sxyprn details timed out after 15000ms");
-      },
-    }),
-    dateWindowDays: 7,
-  });
-  await assert.rejects(
-    lookup(SCENE),
-    /^Error: sxyprn post verification unavailable: sxyprn details timed out after 15000ms$/,
-  );
-});
-
-test("a non-finite failing share is refused rather than silently disarming the window", () => {
-  // A `NaN` share makes every `failures() >= minFailures` comparison false, so
-  // the break falls back to consecutive failures alone and the interleaved
-  // pattern the window was added for goes unbounded. Rejecting it loudly at
-  // construction is the only answer that cannot be mistaken for a setting.
-  assert.throws(() => createSxyprnClient(packageStub(), { failureRatio: Number.NaN }), RangeError);
-  assert.throws(
-    () => createSxyprnClient(packageStub(), { failureRatio: Number.POSITIVE_INFINITY }),
-    RangeError,
-  );
-  // Finite shares are untouched: clamping would raise one above 1 into "open on
-  // any failure".
-  assert.doesNotThrow(() => createSxyprnClient(packageStub(), { failureRatio: 1 }));
-});
-
-test("a non-finite failure window is refused rather than never trimming", () => {
-  // The window is normalized before anything compares against it, and both
-  // derived values inherit the problem: `Math.max(1, NaN)` is NaN, so `record()`
-  // never trims `outcomes` and never reaches `minFailures`. `Infinity` keeps the
-  // array growing for the same reason. Reject at construction instead.
-  assert.throws(() => createSxyprnClient(packageStub(), { failureWindow: Number.NaN }), RangeError);
-  assert.throws(
-    () => createSxyprnClient(packageStub(), { failureWindow: Number.POSITIVE_INFINITY }),
-    RangeError,
-  );
-  // Finite windows still normalize as before: a fraction floors, a value below 1
-  // floors up to 1.
-  assert.doesNotThrow(() => createSxyprnClient(packageStub(), { failureWindow: 0.5 }));
-});
-
-test("a detail failure that is not an Error still names a reason", async () => {
-  // The detail wrapper rethrows whatever it caught, so a truthy non-`Error` used
-  // to reach the joined diagnostic as `undefined`, and a falsey one left a blank
-  // field between two semicolons. Neither tells a reader anything about the run.
-  const failures = new Map<string, unknown>([
-    [POST, "502 from the edge"],
-    [OTHER, { status: 403 }],
-  ]);
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [POST, OTHER].map((url) => ({
-        url,
-        title: "Marfe takes it deep",
-        durationSeconds: 1418,
-      })),
-      details: async (url) => {
-        throw failures.get(url);
-      },
-    }),
-    dateWindowDays: 7,
-    maxMatches: 5,
-  });
-  const error = await lookup(SCENE).then(
-    () => null,
-    (thrown: Error) => thrown,
-  );
-  const message = error?.message ?? "";
-  const reasons = message.slice("sxyprn post verification unavailable: ".length).split("; ");
-  assert.ok(!/undefined/.test(message), `no reason is the string "undefined": ${message}`);
-  assert.ok(
-    reasons.every((reason) => reason.trim().length > 0),
-    `every reason is readable: ${JSON.stringify(reasons)}`,
-  );
-});
-
-test("the detail pass names at most three distinct reasons", async () => {
-  // Enough to diagnose, not enough to read. A whole failed run's worth of
-  // per-post strings is not a diagnosis, and the URLs must not leak into it.
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [POST, OTHER, THIRD].map((url) => ({
-        url,
-        title: "Marfe takes it deep",
-        durationSeconds: 1418,
-      })),
-      details: async (url) => {
-        throw new Error(`failed on ${url}`);
-      },
-    }),
-    dateWindowDays: 7,
-    maxMatches: 5,
-  });
-  const error = await lookup(SCENE).then(
-    () => null,
-    (thrown: Error) => thrown,
-  );
-  const message = error?.message ?? "";
-  assert.match(message, /^sxyprn post verification unavailable: /);
-  const reasons = message.slice("sxyprn post verification unavailable: ".length).split("; ");
-  assert.equal(reasons.length, 3, "three distinct reasons, capped");
-});
-
-test("a post refused by an open break is reported as the break, not a new failure", async () => {
-  // The production line, end to end. The search is served from the rung's own
-  // cache - the same studio slug really does recur across scenes - so this is a
-  // detail pass that pays nothing and is still refused. The reported reason has
-  // to say the break is holding, because that is what a run log reading it needs
-  // to know: the rung is bounded, not down.
-  const client = createSxyprnClient(
-    packageStub({
-      search: async () => ({
-        videos: [{ url: POST, title: "Marfe takes it deep", durationSeconds: 1418 }],
-      }),
-      details: async () => {
-        throw new Error("sxyprn details timed out after 15000ms");
-      },
-    }),
-    { maxConsecutiveFailures: 1, cooldownMs: 60_000 },
-  );
-  const lookup = createSxyprnLookup({ client, dateWindowDays: 7 });
-  await assert.rejects(lookup(SCENE), /post verification unavailable: sxyprn details timed out/);
-  await assert.rejects(lookup(SCENE), /post verification unavailable: sxyprn circuit open/);
-});
-
-test("the detail pass fetches concurrently but verifies in rank order", async () => {
-  let inFlight = 0;
-  let peak = 0;
-  const release: (() => void)[] = [];
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [
-        { url: POST, title: "Marfe takes it deep", durationSeconds: 1418 },
-        { url: OTHER, title: "Marfe takes it deep", durationSeconds: 1418 },
-      ],
-      details: async (url) => {
-        inFlight += 1;
-        peak = Math.max(peak, inFlight);
-        await new Promise<void>((resolve) => release.push(resolve));
-        inFlight -= 1;
-        return {
-          url,
-          title: "Marfe takes it deep",
-          durationSeconds: 1418,
-          streamUrl: "https://sxyprn.com/stream.m3u8",
-          uploadDate: "2026-03-05T10:00:00+00:00",
-        };
-      },
-    }),
-    dateWindowDays: 7,
-    maxMatches: 1,
-    detailConcurrency: 2,
-  });
-  const pending = lookup(SCENE);
-  // Both posts must be in flight at once: serial detail fetches multiplied the
-  // ladder's latency by the slice length for no reason.
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(peak, 2, "the slice is fetched concurrently");
-  for (const resolve of release) resolve();
-  const matches = await pending;
-  assert.equal(matches.length, 2, "the bounded detail survivors are all returned to the ladder");
-  assert.equal(matches[0]?.url, POST, "rank order decides the winner, not completion order");
-});
-
-test("the detail pass inside a scene resolve does not deadlock the shared fetch pool", async () => {
-  // Same hazard as the pool rung's hydration, and it is reached more often: the
-  // detail pass runs for every scene whose card pass matched, inside
-  // `resolveLinks`' own fan-out. With the outer pool saturated, an inner acquire
-  // on that same counter waits for a release only the inner pass can make.
-  // `detailConcurrency: 3` against a saturated outer limit of 3 makes that
-  // deterministic rather than a timing gamble.
-  const lookup = createSxyprnLookup({
-    client: stubClient({
-      cards: [
-        { url: POST, title: "Marfe takes it deep", durationSeconds: 1418 },
-        { url: OTHER, title: "Marfe takes it deep", durationSeconds: 1418 },
-        { url: THIRD, title: "Marfe takes it deep", durationSeconds: 1418 },
-      ],
-      details: async (url) => ({
-        url,
-        title: "Marfe takes it deep",
-        durationSeconds: 1418,
-        streamUrl: "https://sxyprn.com/stream.m3u8",
-        uploadDate: "2026-03-05T10:00:00+00:00",
-      }),
-    }),
-    dateWindowDays: 7,
-    maxMatches: 3,
-    detailConcurrency: 3,
-  });
-  const scenes = ["s1", "s2", "s3"].map((id) => makeMatchScene({ ...SCENE, id: `test:${id}` }));
-  const results = await withDeadline(
-    mapWithConcurrency(scenes, (scene) => lookup(scene), 3),
-    5_000,
-    "the sxyprn detail pass deadlocked the shared fetch pool",
-  );
-  assert.equal(results.length, 3);
-  for (const [index, matches] of results.entries()) {
-    assert.equal(matches.length, 3, `scene ${index} verified every post rather than deadlocking`);
-    assert.equal(matches[0]?.url, POST, "rank order still decides the winner");
-  }
+test("a search that cannot answer is an outage, not a no-match", async () => {
+  const fetcher = {
+    text: async () => {
+      throw new Error("403 from the edge");
+    },
+  } as unknown as Fetcher;
+  const lookup = createSxyprnLookup(createSxyprnSearch({ fetcher }), {});
+  await assert.rejects(lookup(SCENE), /sxyprn search unavailable: 403 from the edge/);
 });

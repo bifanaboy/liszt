@@ -1,114 +1,48 @@
 /**
- * The sxyprn matcher - rung 2 of the ladder.
+ * The Sxyprn rung. A DIRECT fetch of the search page, filtered by duration.
  *
- * sxyprn exposes no clean public API, so it is reached through the optional
- * `sxyprn` client (browser impersonation) when that package is installed. From
- * a datacenter IP sxyprn frequently answers 403 behind Cloudflare, so this rung
- * is the one most likely to be unavailable in production; the client is
- * therefore lazily loaded and circuit-broken in `sxyprn-client.ts`. A failure
- * is recorded, while any Eporner candidates remain available to the shared
- * cross-source ranking.
+ * MEASURED 2026-10-10 against the live site, and the design follows from these
+ * facts rather than from the old comment here:
  *
- * MEASURED, and the reason "most likely to be unavailable" is stated as a
- * concern rather than a fact. From a workstation IP the client answers fine: a
- * live `search("mambo-perv")` on 2026-09-30 returned 30 cards, each carrying
- * `durationSeconds`, `views`, `relativeDate` and `author`. The open question is
- * what a datacenter IP gets, and the ladder now logs the error a rung throws
- * instead of folding every rung's failures into one `errored` counter - a
- * blocked IP, a missing optional package and a genuine outage were
- * indistinguishable from outside, which is how this rung came to be described
- * as dead on the strength of an aggregate. Everything the gate needs is here:
- * the card carries the duration, the post carries a real `uploadDate` and a
- * `views` count, so this tube can raise the share of scenes that can be
- * identified at all.
+ *  - `https://sxyprn.com/<slug>.html` answers 200 to a plain server fetch with
+ *    a browser User-Agent. No browser impersonation and no optional package.
+ *  - The search genuinely filters: `emma-rosie` and `julesjordan` return
+ *    different post sets.
+ *  - A MULTI-TOKEN QUERY IS IGNORED past the first token - `emma-rosie`,
+ *    `emma-rosie-jules-jordan` and `serene-siren-emma-rosie` all return the
+ *    identical post set. So the query is ONE slug: the performer name. The
+ *    studio is not a search input.
+ *  - Every card carries a rendered `MM:SS` / `HH:MM:SS` duration.
+ *  - Every card carries NO structured date - no <time>, no datetime, no
+ *    JSON-LD, no uploadDate. Only a `(DD.MM.YYYY)` string inside some titles.
+ *    This rung therefore filters on duration and ranks on identity, and does
+ *    NOT apply the upload window. See `Risks` in the design plan.
+ *  - The title lives in the anchor's `title=` attribute, not the text body.
+ *  - Titles frequently embed the studio name as a prefix ("JulesJordan",
+ *    "PornWorld", "ExploitedCollegeGirls"), so the studio name is an IDENTITY
+ *    signal - it raises a candidate's tier - not a search term.
  *
- * THE TWO PASSES, AND WHY THERE ARE TWO. Search cards already carry
- * `durationSeconds`, so the duration half of the gate can run on the cards and
- * used to. They do NOT carry a real date: `relativeDate` is a rendered label
- * like `21 hours ago` or `Yesterday`, which is not a timestamp and is not
- * treated as one. So the date half cannot run on a card at all.
+ * WHY THE DATE GATE IS DROPPED HERE. The date exists only on the detail page,
+ * and fetching one detail page per candidate is exactly the slow path this
+ * redesign removes. The safety that the date window provided is now carried by
+ * duration tolerance (1s, measured) plus the identity gate: a survivor must
+ * name the scene by title, performer or studio to be linked at high confidence.
+ * An unnamed duration survivor is still returned for the terminal fallback,
+ * which marks it `low` - the same treatment every other rung gets.
  *
- *   card pass  - duration filter, then rank identity-named cards first and
- *                fill the bounded detail slice with other duration survivors.
- *                `dateWindowDays: null`, because the date is not testable here.
- *                This pass CANNOT admit anything and is not treated as an
- *                admission.
- *   detail pass - the POST's own title, duration, schema.org `uploadDate` and
- *                views. THIS is the authoritative date+duration survivor set.
- *                A title that names the scene is a high-confidence match; an
- *                unnamed survivor is returned to the ladder's terminal
- *                fallback, which can use its views only after every tube has
- *                failed to produce a named match.
- *
- * An unverified search card is never exposed as playback: every survivor is
- * fetched and checked against the post itself, because a card can advertise a
- * title, duration or date the post contradicts.
- *
- * The codex `sxyprn-overrides.js` hardcoded URL map is deliberately absent. It
- * was a workaround for opaque titles, and the rebuild dropped it: a link that
- * cannot clear the measured gate is not written.
+ * ponytail: the parser reads rendered HTML, which has no stability contract -
+ * a site change fails as a silent empty pool. Re-run the live check when
+ * matches drop.
  */
-import {
-  identityTier,
-  pickMatch,
-  parseTimestamp,
-  withinDateWindow,
-  type IdentityTier,
-  type TubeCandidate,
-} from "../core/matching.ts";
-import { mapIsolated } from "../core/concurrency.ts";
-import { createExpiringCache } from "../core/expiring-cache.ts";
-import { buildQueries, configuredSceneCode } from "./queries.ts";
+import { identityTier, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
+import type { Fetcher } from "../sources/types.ts";
 import type { MatchScene } from "./types.ts";
 
-export interface SxyprnCard {
-  url?: string;
-  title?: string;
-  durationSeconds?: number | string;
-  /** View count exposed by the card and verified again on the post detail. */
-  views?: number | string;
-  isExternal?: boolean;
-  author?: unknown;
-  /** A rendered relative label (`21 hours ago`). Not a timestamp; not parsed. */
-  relativeDate?: string;
-}
+const SEARCH_BASE = "https://sxyprn.com";
 
-export interface SxyprnDetail extends SxyprnCard {
-  streamUrl?: string;
-  /** Schema.org `uploadDate`, ISO 8601 with an offset. The date the gate uses. */
-  uploadDate?: string;
-  sizeBytes?: number;
-  /** View count. A string on the wire, so it is normalised at the boundary. */
-  views?: number | string;
-}
-
-/**
- * Requests the rung actually spent at the source, split by pass.
- *
- * The split is the point. Every request costs the package's politeness floor, so
- * the two together are the run's cost in time; and separately they answer the two
- * questions a budget decision needs - `search` is how many scenes reached this
- * rung at all, `details` how many candidate posts had to be verified.
- */
-export interface SxyprnRequestCount {
-  search: number;
-  details: number;
-}
-
-export interface SxyprnClient {
-  videos: {
-    search(query: string): Promise<{ videos?: SxyprnCard[] }>;
-    details(input: { url: string }): Promise<SxyprnDetail>;
-  };
-  /**
-   * Requests issued since the last call, and zero the counter.
-   *
-   * A drain, not a total: the client is process-wide and outlives any one cycle,
-   * so a cumulative figure would let a single refresh be charged for every
-   * refresh before it. One drain per cycle, once the resolve stage is over.
-   */
-  takeRequests(): SxyprnRequestCount;
-}
+const DEFAULT_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /** 13 hex chars, e.g. `/post/6ab1a9bec8445.html`. */
 export function validSxyprnUrl(value: unknown): boolean {
@@ -129,252 +63,120 @@ export function validSxyprnUrl(value: unknown): boolean {
   }
 }
 
-/** A search query reduced to sxyprn's slug convention. */
-export function searchSlug(value: string): string {
-  return String(value || "")
-    .replace(/[`~!@#$%^&*()_|+\-=?;:'",.<>{}[\]\\/]/g, " ")
-    .trim()
-    .replace(/\s+/g, "-");
-}
-
-/**
- * A rejected detail fetch reduced to one readable reason. A detail wrapper can
- * rethrow anything, and a truthy non-`Error` would otherwise land in the joined
- * diagnostic as `undefined` - or as an empty field when the reasons are joined.
- * Never returns an empty string, so a reason is never a blank gap in the list.
- */
-function detailFailureReason(error: unknown): string {
-  if (error instanceof Error) return error.message.trim() || "unknown detail error";
-  if (typeof error === "string" && error.trim()) return error.trim();
-  return "unknown detail error";
-}
-
-export interface SxyprnLookupOptions {
-  client: SxyprnClient;
-  maxMatches?: number;
-  /** The upload window, applied on the verified post. */
-  dateWindowDays: number;
-  durationToleranceSec?: number;
-  /** Detail fetches in flight at once, and the per-slice detail cache TTL. */
-  detailConcurrency?: number;
-  cacheTtlMs?: number;
-}
-
-/** One verified date-and-duration survivor, including identity and view evidence. */
-export interface SxyprnMatch {
+/** One parsed search card. */
+export interface SxyprnCandidate {
   url: string;
-  identityTier: IdentityTier;
-  lagDays: number | null;
   title: string;
+  /** Seconds. Always present: a card without a readable clock is dropped. */
   duration: number;
-  added: string;
-  views: number | string | null;
+  views: number | null;
+}
+
+export interface SxyprnSearchOptions {
+  fetcher: Fetcher;
+  /** Browser User-Agent. sxyprn answers 200 with this; it is the only header needed. */
+  userAgent?: string;
+}
+
+/** `39:53` -> 2393, `1:14:19` -> 4479. Null when the text is not a clock. */
+export function parseSxyprnDuration(value: string): number | null {
+  const parts = value.trim().split(":");
+  if (parts.length < 2 || parts.length > 3) return null;
+  const numbers = parts.map(Number);
+  if (numbers.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  const total = numbers.reduce((sum, n) => sum * 60 + n);
+  return total > 0 ? total : null;
+}
+
+/** The slug the site expects: lowercase, non-alphanumerics collapsed to `-`. */
+export function sxyprnSlug(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /**
- * Build the sxyprn lookup bound to one scene. Returns every date-and-duration
- * survivor from the bounded detail slice, with its identity tier and view count.
- * Throws only when the source itself could not answer, so the caller can tell
- * "the source is down" from "the source found nothing" and move down the ladder
- * without recording a false negative.
+ * Parse the rendered card blocks out of a search page.
+ *
+ * sxyprn renders anchors with SINGLE quotes, so the href pattern accepts both.
+ * A block is anchored on `class="post_time"`; the duration is the first
+ * `MM:SS`/`HH:MM:SS` after it, and the views the first `<n>,<n> views`.
  */
-export function createSxyprnLookup({
-  client,
-  maxMatches = 1,
-  dateWindowDays,
-  durationToleranceSec,
-  detailConcurrency = 3,
-  cacheTtlMs = 5 * 60_000,
-}: SxyprnLookupOptions) {
-  // Both caches are bounded AND expiring. A `Map` that only ever grows is a
-  // slow leak across a long-running server: one entry per slug and per post URL
-  // for the life of the process, holding a resolved detail forever.
-  const cachedSearch = createExpiringCache({ ttlMs: cacheTtlMs });
-  const cachedDetails = createExpiringCache({ ttlMs: cacheTtlMs });
-  const search = (query: string): Promise<{ videos?: SxyprnCard[] }> =>
-    cachedSearch(searchSlug(query), () => client.videos.search(searchSlug(query)));
-  const details = (url: string): Promise<SxyprnDetail> =>
-    cachedDetails(url, () => client.videos.details({ url }));
-
-  return async function lookup(scene: MatchScene): Promise<SxyprnMatch[]> {
-    const code = scene.sceneCode ?? configuredSceneCode(scene);
-    const queries = buildQueries(scene);
-    if (!queries.length || (!Number.isFinite(scene.durationSec) && !scene.durationRange)) return [];
-    const allCandidates = new Map<string, SxyprnCard>();
-    let successfulSearches = 0;
-    const searchErrors: string[] = [];
-    for (const query of queries) {
-      try {
-        const page = await search(query);
-        successfulSearches += 1;
-        for (const item of page.videos ?? []) {
-          if (!validSxyprnUrl(item.url)) continue;
-          allCandidates.set(item.url as string, item);
-        }
-      } catch (error) {
-        searchErrors.push((error as Error).message);
-        /* A second performer or the title may still find the scene. */
-      }
-    }
-    if (!successfulSearches) {
-      // Keep the source's actual reason. A generic message made an HTTP 403,
-      // a timeout, and a broken package indistinguishable, so the aggregate
-      // `errored` count was mistaken for proof that this whole tube was dead.
-      // The query text is not logged; it may contain scene metadata.
-      const reasons = [...new Set(searchErrors)].slice(0, 3).join("; ");
-      throw new Error(`sxyprn search unavailable${reasons ? `: ${reasons}` : ""}`);
-    }
-
-    // The card pass. `dateWindowDays: null` is the whole point: a card has no
-    // real date, so the date half is deferred rather than faked from
-    // `relativeDate`. This pass cannot gate identity: a card may omit the
-    // performer that its post detail supplies, and unnamed cards still need to
-    // reach the bounded leftover set for the terminal fallback.
-    const identity = { ...scene, sceneCode: code };
-    const mapped: (TubeCandidate & { isExternal: boolean })[] = [...allCandidates.values()].map(
-      (item) => ({
-        url: String(item.url ?? ""),
-        title: String(item.title ?? ""),
-        duration: Number(item.durationSeconds),
-        views: item.views ?? null,
-        isExternal: item.isExternal ?? false,
-        ...(item.author ? { author: item.author } : {}),
-      }),
+export function parseSxyprnCards(html: string): SxyprnCandidate[] {
+  const out: SxyprnCandidate[] = [];
+  const blocks = html.split(/(?=post_time'|post_time")/);
+  for (const block of blocks) {
+    const anchor = block.match(/href=['"]\/post\/([a-f0-9]{13})\.html['"]/);
+    if (!anchor) continue;
+    const id = anchor[1]!;
+    const titleMatch = block.match(/title='([^']*)'|title="([^"]*)"/);
+    const title = (titleMatch?.[1] ?? titleMatch?.[2] ?? "").trim();
+    const duration = parseSxyprnDuration(
+      (block.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/) ?? [])[0] ?? "",
     );
-    const picked = pickMatch(identity, mapped, { dateWindowDays: null, durationToleranceSec });
-    // Detail-verify every duration-surviving card in the bounded slice, not
-    // only the winner's title-stem siblings. Once the pool and the named sxyprn
-    // pass both decline, the terminal fallback compares leftovers across ALL
-    // tubes by views; omitting other card stems here would make that comparison
-    // a popularity contest over an arbitrary title group.
-    const durationSurvivors = mapped.filter((item) => {
-      const duration = Number(item.duration);
-      return (
-        Number.isFinite(duration) &&
-        (scene.durationRange
-          ? Math.max(
-              scene.durationRange.minSec - duration,
-              0,
-              duration - scene.durationRange.maxSec,
-            )
-          : Math.abs(duration - (scene.durationSec ?? 0))) <= (durationToleranceSec ?? 1)
-      );
+    if (duration === null) continue;
+    const viewsMatch = block.match(/([\d,]+)\s*views/i);
+    const views = viewsMatch ? Number(viewsMatch[1]!.replace(/,/g, "")) : null;
+    out.push({ url: `${SEARCH_BASE}/post/${id}.html`, title, duration, views });
+  }
+  return out;
+}
+
+/** Fetch one search page and parse its cards. Throws when the source cannot answer. */
+export function createSxyprnSearch(options: SxyprnSearchOptions) {
+  const userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
+  return async function search(query: string): Promise<SxyprnCandidate[]> {
+    const url = `${SEARCH_BASE}/${sxyprnSlug(query)}.html`;
+    const html = await options.fetcher.text(url, {
+      headers: { "user-agent": userAgent, accept: "text/html" },
     });
-    if (!durationSurvivors.length) return [];
-    const cardViews = (candidate: TubeCandidate): number => {
-      const raw = candidate.views;
-      if (typeof raw === "number") return Number.isFinite(raw) ? raw : -1;
-      if (typeof raw !== "string") return -1;
-      const value = Number(raw.replace(/[,\s]/g, ""));
-      return Number.isFinite(value) ? value : -1;
-    };
-    const ranked = [
-      ...(picked ? [picked.candidate as TubeCandidate & { isExternal: boolean }] : []),
-      ...durationSurvivors
-        .filter((item) => item.url !== picked?.candidate.url)
-        .sort(
-          (left, right) =>
-            Number(left.isExternal) - Number(right.isExternal) ||
-            cardViews(right) - cardViews(left) ||
-            String(left.url).localeCompare(String(right.url)),
-        ),
-    ];
-
-    // The detail pass. The posts are fetched concurrently (each pays a browser-
-    // impersonated request, so serial would multiply the ladder's latency by
-    // the slice length) but RE-VERIFIED sequentially in rank order, so the
-    // winner's ordering and the maxMatches cut are unchanged.
-    //
-    // `mapIsolated`, not the shared pool: this runs inside `resolveLinks`' own
-    // fan-out, so the caller already holds a slot and a second acquire on the
-    // shared (non-re-entrant) counter would deadlock at the limit rather than
-    // merely slow down.
-    const slice = ranked.slice(0, Math.max(3, maxMatches));
-    const fetched = await mapIsolated(
-      slice,
-      async (item) => {
-        try {
-          return { detail: await details(item.url as string) };
-        } catch (error) {
-          return { detail: null, error };
-        }
-      },
-      detailConcurrency,
-    );
-
-    // Two counters, deliberately: `verifiedPosts` counts posts the source could
-    // ANSWER, and is what distinguishes "sxyprn is down" from "sxyprn found
-    // nothing". `verified` counts posts that cleared the date+duration filter,
-    // including unnamed survivors reserved for fallback. Conflating the two
-    // would report a healthy source as dead whenever the filter rejected all.
-    let verifiedPosts = 0;
-    const detailErrors: string[] = [];
-    const verified: SxyprnMatch[] = [];
-    for (let index = 0; index < slice.length; index += 1) {
-      const item = slice[index] as TubeCandidate & { isExternal: boolean };
-      const outcome = fetched[index];
-      // A post we could not fetch is never exposed as playback, and is not
-      // counted against the source: the ladder moves down instead.
-      if (!outcome || outcome.detail === null) {
-        if (outcome) detailErrors.push(detailFailureReason(outcome.error));
-        continue;
-      }
-      const detail = outcome.detail;
-      verifiedPosts += 1;
-      // Verify the POST's own title, duration and date, not the search card's:
-      // a card can advertise any of the three wrongly. This is the authoritative
-      // survivor set for the terminal fallback. Identity decides which
-      // survivors are high confidence; it does not remove date+duration
-      // survivors from the low-confidence candidate pool.
-      const title = String(detail.title ?? "");
-      const duration = Number(detail.durationSeconds ?? item.duration);
-      const datePass =
-        withinDateWindow(scene.releaseDate, detail.uploadDate ?? null, dateWindowDays) === true;
-      const durationPass =
-        Number.isFinite(duration) &&
-        (Number.isFinite(scene.durationSec) || Boolean(scene.durationRange)) &&
-        (scene.durationRange
-          ? Math.max(
-              scene.durationRange.minSec - duration,
-              0,
-              duration - scene.durationRange.maxSec,
-            )
-          : Math.abs(duration - (scene.durationSec ?? 0))) <= (durationToleranceSec ?? 1);
-      if (
-        validSxyprnUrl(detail.url) &&
-        detail.url === item.url &&
-        detail.streamUrl &&
-        datePass &&
-        durationPass
-      ) {
-        verified.push({
-          url: detail.url as string,
-          identityTier: identityTier(identity, title),
-          lagDays: lagInDays(scene.releaseDate, detail.uploadDate),
-          title,
-          duration,
-          added: String(detail.uploadDate ?? ""),
-          views: detail.views ?? null,
-        });
-      }
-    }
-    // Keep WHY, the same way the search path does. A bare "unavailable" merged
-    // an upstream refusal, a network failure, a parser break and the deadline
-    // into one string, which is why this rung could not be diagnosed from the
-    // outside - and the deadline is the one worth separating, because it is the
-    // only kind the circuit breaker can put a bound on. Capped at three
-    // distinct reasons: the post URLs are never logged, and a runaway list is
-    // not a diagnosis anyone can read.
-    const reasons = [...new Set(detailErrors)].slice(0, 3).join("; ");
-    if (!verifiedPosts)
-      throw new Error(`sxyprn post verification unavailable${reasons ? `: ${reasons}` : ""}`);
-    return verified;
+    return parseSxyprnCards(html).filter((c) => validSxyprnUrl(c.url));
   };
 }
 
-function lagInDays(releaseDate: string, added: string | null | undefined): number | null {
-  const release = parseTimestamp(releaseDate);
-  const uploaded = parseTimestamp(added);
-  if (release === null || uploaded === null) return null;
-  return Math.round((uploaded - release) / 86_400_000);
+/** One duration survivor, including its identity tier for the shared ranking. */
+export interface SxyprnMatch extends TubeCandidate {
+  url: string;
+  title: string;
+  duration: number;
+  views: number | null;
+  identityTier: IdentityTier;
+}
+
+/**
+ * Build the sxyprn lookup bound to one scene. Returns every duration survivor,
+ * each carrying its identity tier. Throws only when the source itself could
+ * not answer, so the caller can tell "the source is down" from "the source
+ * found nothing" and move down the ladder without recording a false negative.
+ */
+export function createSxyprnLookup(
+  search: (query: string) => Promise<SxyprnCandidate[]>,
+  gate: { durationToleranceSec?: number },
+): (scene: MatchScene) => Promise<SxyprnMatch[]> {
+  const tolerance = gate.durationToleranceSec ?? 1;
+  return async (scene) => {
+    // The query is the FIRST performer only: a multi-token query is ignored by
+    // the site past its first token (measured), so anything else would silently
+    // widen the search rather than narrow it.
+    const performer = scene.performers[0];
+    if (!performer || !Number.isFinite(scene.durationSec)) return [];
+    let cards: SxyprnCandidate[];
+    try {
+      cards = await search(performer);
+    } catch (error) {
+      // A source that could not answer is not a source that found nothing.
+      throw new Error(`sxyprn search unavailable: ${(error as Error).message}`);
+    }
+    // Duration filter only. No date gate: cards carry no structured date.
+    return cards
+      .filter((c) => Math.abs(c.duration - (scene.durationSec ?? 0)) <= tolerance)
+      .map((c) => ({
+        url: c.url,
+        title: c.title,
+        duration: c.duration,
+        views: c.views,
+        identityTier: identityTier(scene, c.title),
+      }));
+  };
 }
