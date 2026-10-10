@@ -46,7 +46,9 @@ const RULE_SHAPE =
   "duration within tolerance AND upload date within release-1d..release+window; identity gates, then ranks";
 
 export const EPORNER_RULE = `eporner: ${RULE_SHAPE}`;
-export const SXYPRN_RULE = `sxyprn: ${RULE_SHAPE}; post details verified, not the search card`;
+export const SXYPRN_RULE =
+  "sxyprn: duration within tolerance on the search card, identity gates then ranks; " +
+  "no upload-window gate (cards carry no date)";
 export const LOW_CONFIDENCE_RULE =
   "terminal fallback: highest view count among all date-and-duration survivors; no tube named the scene";
 

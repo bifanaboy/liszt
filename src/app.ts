@@ -24,9 +24,8 @@ import { createSync } from "./pipeline/sync.ts";
 import { createProgressTracker } from "./pipeline/progress.ts";
 import { createScheduler, createSingleFlight } from "./pipeline/scheduler.ts";
 import { createEpornerOpenLookup, createEpornerOpenSearch } from "./tubes/eporner.ts";
-import { createSxyprnLookup } from "./tubes/sxyprn.ts";
+import { createSxyprnLookup, createSxyprnSearch } from "./tubes/sxyprn.ts";
 import { createFc2EpornerResolver } from "./tubes/fc2-eporner.ts";
-import { loadSxyprnClient } from "./tubes/sxyprn-client.ts";
 import { buildReadModel } from "./serving/read-model.ts";
 import { createHttpServer } from "./serving/http.ts";
 
@@ -63,21 +62,18 @@ async function main(): Promise<void> {
     studioLinks: config.studioLinks,
   });
 
-  // Sxyprn is optional. Eporner search remains available without its package.
-  const sxyprnClient = await loadSxyprnClient({ timeoutMs: config.sxyprnTimeoutMs });
-  if (!sxyprnClient) log.info("optional sxyprn client not installed; Sxyprn matching is disabled");
+  // Sxyprn is a direct fetch through the shared fetcher: the search page
+  // answers 200 with a browser User-Agent (measured 2026-10-10), so there is
+  // no package to load and nothing to gate on.
+  const sxyprnSearch = createSxyprnSearch({ fetcher });
 
   const epornerLookup = createEpornerOpenLookup(createEpornerOpenSearch({ fetcher }), {
     durationToleranceSec: config.matchDurationToleranceSec,
     dateWindowDays: config.matchDateWindowDays,
   });
-  const sxyprnLookup = sxyprnClient
-    ? createSxyprnLookup({
-        client: sxyprnClient,
-        dateWindowDays: config.matchDateWindowDays,
-        durationToleranceSec: config.matchDurationToleranceSec,
-      })
-    : null;
+  const sxyprnLookup = createSxyprnLookup(sxyprnSearch, {
+    durationToleranceSec: config.matchDurationToleranceSec,
+  });
   const fc2Lookup = createFc2EpornerResolver(fetcher);
 
   // One tracker for the whole cycle, shared by all three refresh triggers,
@@ -100,7 +96,6 @@ async function main(): Promise<void> {
       epornerLookup,
       sxyprnLookup,
       fc2Lookup,
-      ...(sxyprnClient ? { sxyprnRequests: () => sxyprnClient.takeRequests() } : {}),
     },
     progress,
     secrets: [config.authUsername ?? "", config.authPassword ?? "", config.tpdbApiKey ?? ""],

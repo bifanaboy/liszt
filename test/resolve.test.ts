@@ -86,19 +86,15 @@ const sxyprnHit = (
   over: Partial<{
     url: string;
     identityTier: 0 | 1 | 2 | 3;
-    lagDays: number | null;
     title: string;
     duration: number;
-    added: string;
-    views: number | string | null;
+    views: number | null;
   }> = {},
 ) => ({
   url: "https://sxyprn.com/post/6ab1a9bec8445.html",
   identityTier: 2 as const,
-  lagDays: 0 as number | null,
   title: "Marfe takes it deep",
   duration: 900,
-  added: "2026-03-05T00:00:00.000Z",
   views: 1200,
   ...over,
 });
@@ -183,7 +179,6 @@ test("without a named match, the highest-view survivor across both tubes is link
         identityTier: 0,
         title: "unrelated sxyprn clip",
         duration: 900,
-        added: "2026-03-05T10:00:00Z",
         views: 12_000,
         url: "https://sxyprn.com/post/6ab1a9bec8446.html",
       }),
@@ -222,7 +217,6 @@ test("an identity-backed Sxyprn result beats a more-viewed Eporner fallback", as
         identityTier: 1,
         title: "Marfe compilation",
         duration: 900,
-        added: "2026-03-05T10:00:00Z",
         views: 1,
       }),
     ],

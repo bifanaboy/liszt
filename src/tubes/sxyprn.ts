@@ -166,7 +166,7 @@ export function createSxyprnLookup(
       cards = await search(performer);
     } catch (error) {
       // A source that could not answer is not a source that found nothing.
-      throw new Error(`sxyprn search unavailable: ${(error as Error).message}`);
+      throw new Error(`sxyprn search unavailable: ${(error as Error).message}`, { cause: error });
     }
     // Duration filter only. No date gate: cards carry no structured date.
     return cards
