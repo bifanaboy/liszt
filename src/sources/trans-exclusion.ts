@@ -12,6 +12,13 @@ export const TRANS_EXCLUSION_TERMS: readonly string[] = Object.freeze([
   "drag queen",
   "crossdress",
   "transgender",
+  // Gay male content terms (Japanese)
+  "マッチョ",
+  "ゲイ",
+  "男男",
+  "ノンケ",
+  "雄交尾",
+  "雄穴",
 ]);
 
 const TRANS_EXCLUSION_WORD_TERMS: readonly string[] = Object.freeze(["ts", "trans"]);
