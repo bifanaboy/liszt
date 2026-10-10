@@ -137,6 +137,8 @@ export interface Fc2ListingRecord {
   notFound: boolean;
   tagId: number | null;
   thumbnailUrl: string;
+  /** The seller/uploader name from the listing. */
+  sellerName: string | null;
 }
 
 export interface Fc2Listing {
@@ -169,6 +171,13 @@ function parseListingRecord(value: unknown): Fc2ListingRecord | null {
     pivot && typeof pivot === "object"
       ? Number((pivot as Record<string, unknown>).tag_id ?? Number.NaN)
       : Number.NaN;
+  const writer = record.writer;
+  const sellerName =
+    writer &&
+    typeof writer === "object" &&
+    typeof (writer as Record<string, unknown>).name === "string"
+      ? String((writer as Record<string, unknown>).name)
+      : null;
   return {
     videoId,
     title,
@@ -178,6 +187,7 @@ function parseListingRecord(value: unknown): Fc2ListingRecord | null {
     notFound: truthyFlag(record.not_found),
     tagId: Number.isFinite(tagId) ? tagId : null,
     thumbnailUrl: typeof record.image_url === "string" ? record.image_url : "",
+    sellerName,
   };
 }
 
@@ -436,6 +446,8 @@ export function createFc2CmadbStudio(options: Fc2StudioOptions = {}): SourceAdap
           releaseUrl: fc2RecordUrl(record.videoId),
           tags: [],
           source: FC2CMADB_BASE,
+          studioId: `fc2cmadb-${record.videoId}`,
+          studio: record.sellerName ?? "FC2 (fc2cmadb)",
           provenance: {
             source: FC2CMADB_BASE,
             sourceUrl: FC2_LISTING_URL,
