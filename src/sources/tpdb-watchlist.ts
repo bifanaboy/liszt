@@ -6,16 +6,6 @@ const Meta = z.object({
   current_page: z.number().int().positive(),
   last_page: z.number().int().nonnegative(),
 });
-const SitePage = z.object({
-  data: z.array(
-    z.object({
-      id: z.number().int().positive(),
-      name: z.string().min(1),
-      short_name: z.string().optional(),
-    }),
-  ),
-  meta: Meta,
-});
 const ScenePage = z.object({
   data: z.array(
     z.object({
@@ -43,8 +33,6 @@ export interface TpdbStudio {
   aliases: readonly string[];
   siteIds?: readonly number[];
   tags?: readonly string[];
-  /** Use TPDB's current display name for issue-driven numeric site lists. */
-  useSiteName?: boolean;
 }
 
 export function cleanStudioName(value: string): string {
@@ -97,22 +85,6 @@ export function createTpdbWatchlistSource(options: {
   token?: string;
   studios: readonly TpdbStudio[];
 }): SourceAdapter {
-  const aliases = new Map<string, TpdbStudio | null>();
-  for (const studio of options.studios)
-    for (const alias of studio.aliases) {
-      const key = cleanStudioName(alias);
-      if (!key) continue;
-      const prior = aliases.get(key);
-      // When the prior entry is already null (ambiguity sentinel), keep it null
-      // so that later studios sharing the same cleaned alias also exclude themselves.
-      // Only set null when prior is a studio with a different studioId;
-      // if prior is null, do not overwrite it with a new studio.
-      if (!aliases.has(key)) {
-        aliases.set(key, studio);
-      } else if (prior && prior.studioId !== studio.studioId) {
-        aliases.set(key, null);
-      }
-    }
   return {
     id: "tpdb-watchlist",
     name: "TPDB watchlist",
@@ -121,29 +93,12 @@ export function createTpdbWatchlistSource(options: {
     async fetch(windowStart, ctx) {
       const token = options.token;
       if (!token) throw new Error("TPDB token missing; set TPDB_API_KEY in the server environment");
+      // Build the site map directly from configured studio site IDs. Walking
+      // the /sites directory only resolved names, and TPDB's /sites pagination
+      // rejects the walker's envelope shape.
       const sites = new Map<number, TpdbStudio>();
-      for await (const page of pages(ctx, "/sites", token, (raw) => SitePage.parse(raw), "sites")) {
-        for (const site of page.data) {
-          const configured = options.studios.find((studio) => studio.siteIds?.includes(site.id));
-          const studioByName = aliases.get(cleanStudioName(site.name));
-          if (!configured && studioByName === null) continue;
-          let studio: TpdbStudio | undefined = configured ?? (studioByName || undefined);
-          if (!studio && site.short_name) {
-            const studioByShort = aliases.get(cleanStudioName(site.short_name));
-            if (studioByShort === null) continue;
-            studio = studioByShort;
-          } else if (!configured && studio && site.short_name) {
-            const studioByShort = aliases.get(cleanStudioName(site.short_name));
-            if (
-              studioByShort === null ||
-              (studioByShort && studioByShort.studioId !== studio.studioId)
-            )
-              continue;
-          }
-          if (studio) {
-            sites.set(site.id, studio.useSiteName ? { ...studio, studio: site.name } : studio);
-          }
-        }
+      for (const studio of options.studios) {
+        for (const siteId of studio.siteIds ?? []) sites.set(siteId, studio);
       }
       const scenes: RawScene[] = [];
       const excludedRecords: { providerId: string; recordId: string }[] = [];
@@ -181,7 +136,7 @@ export function createTpdbWatchlistSource(options: {
               providerStudioId: `tpdb-site-${siteId}`,
               sourceSceneId: scene.id,
               studioId: studio.studioId,
-              studio: studio.studio,
+              studio: scene.site?.name ?? studio.studio,
               title: scene.title,
               releaseDate: scene.date,
               durationSec: scene.duration ?? null,
