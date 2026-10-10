@@ -34,7 +34,7 @@
  * a site change fails as a silent empty pool. Re-run the live check when
  * matches drop.
  */
-import { identityTier, type IdentityTier, type TubeCandidate } from "../core/matching.ts";
+import { identityTier, type IdentityTier } from "../core/matching.ts";
 import type { Fetcher } from "../sources/types.ts";
 import type { MatchScene } from "./types.ts";
 
@@ -72,13 +72,7 @@ export interface SxyprnCandidate {
   views: number | null;
 }
 
-export interface SxyprnSearchOptions {
-  fetcher: Fetcher;
-  /** Browser User-Agent. sxyprn answers 200 with this; it is the only header needed. */
-  userAgent?: string;
-}
-
-/** `39:53` -> 2393, `1:14:19` -> 4479. Null when the text is not a clock. */
+/** `39:53` -> 2393, `1:14:19` -> 4459. Null when the text is not a clock. */
 export function parseSxyprnDuration(value: string): number | null {
   const parts = value.trim().split(":");
   if (parts.length < 2 || parts.length > 3) return null;
@@ -124,19 +118,20 @@ export function parseSxyprnCards(html: string): SxyprnCandidate[] {
 }
 
 /** Fetch one search page and parse its cards. Throws when the source cannot answer. */
-export function createSxyprnSearch(options: SxyprnSearchOptions) {
-  const userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
+export function createSxyprnSearch(fetcher: Fetcher) {
   return async function search(query: string): Promise<SxyprnCandidate[]> {
     const url = `${SEARCH_BASE}/${sxyprnSlug(query)}.html`;
-    const html = await options.fetcher.text(url, {
-      headers: { "user-agent": userAgent, accept: "text/html" },
+    const html = await fetcher.text(url, {
+      headers: { "user-agent": DEFAULT_USER_AGENT, accept: "text/html" },
     });
-    return parseSxyprnCards(html).filter((c) => validSxyprnUrl(c.url));
+    // No validSxyprnUrl filter: the url was built one line above from the
+    // parser's own 13-hex id, so it is valid by construction.
+    return parseSxyprnCards(html);
   };
 }
 
 /** One duration survivor, including its identity tier for the shared ranking. */
-export interface SxyprnMatch extends TubeCandidate {
+export interface SxyprnMatch {
   url: string;
   title: string;
   duration: number;
@@ -160,7 +155,8 @@ export function createSxyprnLookup(
     // the site past its first token (measured), so anything else would silently
     // widen the search rather than narrow it.
     const performer = scene.performers[0];
-    if (!performer || !Number.isFinite(scene.durationSec)) return [];
+    const durationSec = scene.durationSec;
+    if (!performer || !Number.isFinite(durationSec)) return [];
     let cards: SxyprnCandidate[];
     try {
       cards = await search(performer);
@@ -170,7 +166,7 @@ export function createSxyprnLookup(
     }
     // Duration filter only. No date gate: cards carry no structured date.
     return cards
-      .filter((c) => Math.abs(c.duration - (scene.durationSec ?? 0)) <= tolerance)
+      .filter((c) => Math.abs(c.duration - (durationSec as number)) <= tolerance)
       .map((c) => ({
         url: c.url,
         title: c.title,

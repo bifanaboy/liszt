@@ -67,7 +67,7 @@ test("search returns candidates in the production candidate shape", async () => 
   const html =
     card("6ac8e52565fca", "JulesJordan Emma Rosie Is A Teen Cumslut", "39:53") +
     card("6ac95cd88a347", "ExploitedCollegeGirls Emma aka Emma Rosie", "49:27", "8,901");
-  const search = createSxyprnSearch({ fetcher: fetcherFor(html) });
+  const search = createSxyprnSearch(fetcherFor(html));
   const results = await search("emma-rosie");
 
   assert.equal(results.length, 2);
@@ -83,7 +83,7 @@ test("a card with no readable duration is dropped, not guessed", async () => {
   const html =
     card("6ac8e52565fca", "Emma Rosie Something", "39:53") +
     `<div class="post_el_small"><a class="post_time" href='/post/6ac9424ca2409.html' title='No Duration Here'></a></div>`;
-  const search = createSxyprnSearch({ fetcher: fetcherFor(html) });
+  const search = createSxyprnSearch(fetcherFor(html));
   const results = await search("emma-rosie");
   assert.equal(results.length, 1);
   assert.equal(results[0]!.url, "https://sxyprn.com/post/6ac8e52565fca.html");
@@ -97,7 +97,7 @@ test("the search URL is the slug form and the query is slugified", async () => {
       return "";
     },
   } as unknown as Fetcher;
-  const search = createSxyprnSearch({ fetcher });
+  const search = createSxyprnSearch(fetcher);
   await search("Emma Rosie");
   assert.deepEqual(seen, ["https://sxyprn.com/emma-rosie.html"]);
 });
@@ -115,7 +115,7 @@ test("the lookup filters on duration and ranks on identity", async () => {
     card("6ac8e52565fca", "Emma Rosie takes it deep", "39:53") +
     card("6ac95cd88a347", "Some other studio scene", "39:54") +
     card("6ac9424ca2409", "Another duration miss", "12:00");
-  const lookup = createSxyprnLookup(createSxyprnSearch({ fetcher: fetcherFor(html) }), {
+  const lookup = createSxyprnLookup(createSxyprnSearch(fetcherFor(html)), {
     durationToleranceSec: 1,
   });
   const matches = await lookup(SCENE);
@@ -133,6 +133,6 @@ test("a search that cannot answer is an outage, not a no-match", async () => {
       throw new Error("403 from the edge");
     },
   } as unknown as Fetcher;
-  const lookup = createSxyprnLookup(createSxyprnSearch({ fetcher }), {});
+  const lookup = createSxyprnLookup(createSxyprnSearch(fetcher), {});
   await assert.rejects(lookup(SCENE), /sxyprn search unavailable: 403 from the edge/);
 });

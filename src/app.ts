@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   // Sxyprn is a direct fetch through the shared fetcher: the search page
   // answers 200 with a browser User-Agent (measured 2026-10-10), so there is
   // no package to load and nothing to gate on.
-  const sxyprnSearch = createSxyprnSearch({ fetcher });
+  const sxyprnSearch = createSxyprnSearch(fetcher);
 
   const epornerLookup = createEpornerOpenLookup(createEpornerOpenSearch({ fetcher }), {
     durationToleranceSec: config.matchDurationToleranceSec,
