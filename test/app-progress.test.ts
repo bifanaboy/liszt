@@ -798,8 +798,6 @@ test("the last run says what the slow source cost, and what went wrong with it",
   // slow source. Without that number on screen, a refresh that took twenty
   // minutes reads exactly like one that took twenty seconds.
   for (const [resolverHealth, expected] of [
-    [{ sxyprnSearches: 4, sxyprnDetails: 11 }, "Catalogue up to date · 15 slow-source lookups"],
-    [{ sxyprnSearches: 0, sxyprnDetails: 0 }, "Catalogue up to date"],
     // Nothing was spent, so there is nothing to say, however bad the run was.
     [
       { errored: 2, incomplete: 1 },

@@ -45,7 +45,7 @@ import {
 } from "../tubes/resolve.ts";
 import { reverifyLinks, createLinkVerifier } from "../tubes/reverify.ts";
 import type { ProgressTracker } from "./progress.ts";
-import type { SxyprnMatch, SxyprnRequestCount } from "../tubes/sxyprn.ts";
+import type { SxyprnMatch } from "../tubes/sxyprn.ts";
 import type { EpornerOpenMatch } from "../tubes/eporner.ts";
 import { releaseIdentity } from "./release-identity.ts";
 import { mergeRelease } from "./release-merge.ts";
@@ -472,15 +472,6 @@ export interface SyncLookups {
   fc2Lookup?: ((code: string) => Promise<Fc2LookupResult>) | null;
   /** Optional cap on scenes resolved per cycle. */
   limit?: number;
-  /**
-   * Drain the sxyprn client's request counter, for the ledger. Optional, and
-   * absent when the optional package is not installed.
-   *
-   * A drain rather than a total, and called once per cycle, so a run is charged
-   * only for the requests it made itself - a total would make every refresh
-   * inherit the sum of all the ones before it (#71).
-   */
-  sxyprnRequests?: () => SxyprnRequestCount;
 }
 
 export interface SyncOptions {
@@ -1129,12 +1120,6 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
     const { matched, resolved, reverified, expired, windowScenes, winners } = counts;
     const ok = outcomes.every((outcome) => outcome.ok);
     const error = outcomes.find((outcome) => !outcome.ok)?.error ?? null;
-    // Drained here, once, with the resolve stage over: the client is process-wide
-    // and outlives the cycle, so this is the only place the count can still be
-    // this run's alone. Sibling keys rather than fields on `RungRejections`,
-    // whose counters describe the ladder as a whole and cannot be attributed to
-    // one rung (#71). Flat, because `resolver_health` is read back as numbers.
-    const sxyprnRequests = options.lookups.sxyprnRequests?.() ?? { search: 0, details: 0 };
     const split = winnerSplit(winners);
     store.recordRun({
       id: runId,
@@ -1146,8 +1131,6 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       error,
       resolverHealth: {
         ...rejections,
-        sxyprnSearches: sxyprnRequests.search,
-        sxyprnDetails: sxyprnRequests.details,
         ...split,
       },
     });
@@ -1163,9 +1146,6 @@ export function createSync(options: SyncOptions): (reason: string) => Promise<Sy
       expired,
       windowScenes: windowScenes.length,
       rejections,
-      // The rung's cost in requests. Times the source's pacing floor, this is
-      // how long the resolve stage had to take.
-      sxyprnRequests,
       // `matched` counts a named match and a guess alike, so this is the split
       // that says how much of the headline number was actually identified.
       winners: split,
