@@ -262,8 +262,6 @@ function refreshStatus(refreshing, run) {
   const parts = [];
   if (Number(resolver.errored || 0)) parts.push("resolver unavailable");
   if (Number(resolver.incomplete || 0)) parts.push("search truncated");
-  const lookups = Number(resolver.sxyprnSearches || 0) + Number(resolver.sxyprnDetails || 0);
-  if (lookups) parts.push(`${lookups} slow-source lookups`);
   const guesses = Number(resolver.winnerFallback || 0);
   if (guesses) parts.push(`${guesses} low-confidence ${guesses === 1 ? "guess" : "guesses"}`);
   const suffix = parts.length ? ` · ${parts.join(" · ")}` : "";

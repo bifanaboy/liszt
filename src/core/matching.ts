@@ -414,9 +414,9 @@ export interface PickOptions {
    *
    * `null` means the date half is NOT TESTABLE AT THIS STAGE and the result is
    * not an admission. Exactly one caller needs it: the sxyprn rung ranks search
-   * cards before it has fetched the posts, and a card carries only a relative
-   * label like `21 hours ago`, never a real date. The sxyprn rung re-gates with
-   * the real window on the verified post detail, which is the pass that admits.
+   * cards, and a card carries no real date at all. The rung's identity gate is
+   * the admission decision - a survivor is high-confidence only when its title
+   * names the scene, and an unnamed one goes to the terminal fallback as `low`.
    * The flag is reported back on the result as `dateWindowApplied` so a
    * deferred pass can never be mistaken for an admission.
    */
