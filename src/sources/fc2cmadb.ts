@@ -173,7 +173,9 @@ function parseListingRecord(value: unknown): Fc2ListingRecord | null {
       : Number.NaN;
   const writer = record.writer;
   const sellerName =
-    writer && typeof writer === "object" && typeof (writer as Record<string, unknown>).name === "string"
+    writer &&
+    typeof writer === "object" &&
+    typeof (writer as Record<string, unknown>).name === "string"
       ? String((writer as Record<string, unknown>).name)
       : null;
   return {
