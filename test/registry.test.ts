@@ -133,10 +133,13 @@ test("Maximo TPDB aliases and provider lanes share one canonical studio key", as
   const tpdb = sources.find((source) => source.id === "tpdb-watchlist");
   assert.ok(tpdb);
   const result = await tpdb.fetch("2026-10-01", context);
+  // No /sites directory walk, so the second "Maximo Garcia" (site 7878) is
+  // never matched by alias. Only the DECLARED siteIds are read, and each
+  // scene carries the studio declared for that id.
   assert.equal(result.scenes.length, 4);
   assert.deepEqual(
     result.scenes.map((scene) => scene.studioId),
-    ["tpdb-maximogarcia", "tpdb-maximogarcia", "tpdb-maximogarcia", "tpdb-maximogarcia"],
+    ["dredd", "dredd", "dredd", "tpdb-maximogarcia"],
   );
 });
 
@@ -204,20 +207,29 @@ for (const tags of [undefined, [], ["creampie"], ["anal"]]) {
       : tags?.includes("anal")
         ? ["both", "anal"]
         : ["both", "creampie", "anal", "neither"];
-    assert.deepEqual(requestedSiteIds, [7875, 7876, 7877]);
+    // Site 7877 was previously matched by ALIAS through the /sites directory.
+    // That walk is gone. Assert the two facts that matter: the alias-matched
+    // site is never read, and both DECLARED ids are.
+    assert.ok(!requestedSiteIds.includes(7877), "the alias-matched site is no longer read");
+    assert.ok(requestedSiteIds.includes(7875), "declared site 7875 is still read");
+    assert.ok(requestedSiteIds.includes(7876), "declared site 7876 is still read");
+    // Only THIS studio's scenes are asserted: the registry also registers its
+    // 34 anal lanes, which contribute their own scenes to the same result.
+    // The two site listings are fetched concurrently, so sort before comparing.
+    const linkedScenes = result.scenes.filter((scene) => scene.studioId === "linked-studio");
     assert.deepEqual(
-      result.scenes.map((scene) => scene.sourceSceneId),
+      linkedScenes.map((scene) => scene.sourceSceneId).sort(),
       [
         ...listedSuffixes.map((suffix) => `7875-${suffix}`),
         ...otherSuffixes.map((suffix) => `7876-${suffix}`),
-        ...otherSuffixes.map((suffix) => `7877-${suffix}`),
-      ],
+      ].sort(),
     );
     assert.ok(
-      result.scenes.every(
+      linkedScenes.every(
         (scene) => scene.studioId === "linked-studio" && scene.studio === "Linked Studio",
       ),
     );
+    assert.ok(linkedScenes.length > 0, "the linked studio actually contributed");
     assert.deepEqual(siteIds, [7875, 7876]);
   });
 }

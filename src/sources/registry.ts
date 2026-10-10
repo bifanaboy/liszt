@@ -124,7 +124,6 @@ export function createSources({
       aliases: [],
       siteIds: [siteId],
       tags: ["anal"],
-      useSiteName: true,
     })),
     ...watchlist.map((source) => ({
       studioId: source.id,

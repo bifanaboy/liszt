@@ -5,7 +5,7 @@ import { FetchError } from "../src/core/fetcher.ts";
 import type { SourceContext } from "../src/sources/types.ts";
 
 const studio = [
-  { studioId: "network-brazzers-anal", studio: "Brazzers", aliases: ["Brazzers"], siteIds: [] },
+  { studioId: "network-brazzers-anal", studio: "Brazzers", aliases: ["Brazzers"], siteIds: [7] },
 ];
 const scene = {
   id: "s1",
@@ -19,15 +19,20 @@ const scene = {
   tags: [{ name: "Anal" }],
   site: { name: "Brazzers" },
 };
-const site = { id: 7, name: "Brazzers", short_name: "brazzers" };
 const page = (data: unknown[], currentPage = 1, lastPage = 1) => ({
   data,
   meta: { current_page: currentPage, last_page: lastPage },
 });
 
-/** Routes a request by URL so a test states only what it cares about. */
+/**
+ * Routes a request by URL so a test states only what it cares about.
+ *
+ * The `/sites` directory walk is GONE from this lane (it threw
+ * "inconsistent pagination on page 1" against the live API), so no route
+ * serves `/sites` and a test that expects one is asserting the old design.
+ */
 function context(
-  routes: { site?: unknown; scenes?: unknown[]; lookupMisses?: string[]; scenePages?: unknown[][] },
+  routes: { scenes?: unknown[]; scenePages?: unknown[][] },
   opts: { now?: string; fail?: Error } = {},
 ) {
   const calls: Array<{ url: string; headers?: Record<string, string> }> = [];
@@ -39,9 +44,6 @@ function context(
         calls.push({ url, headers: options?.headers });
         if (opts.fail) throw opts.fail;
         const parsed = new URL(url);
-        if (parsed.pathname === "/sites") {
-          return page(routes.site ? [routes.site] : []);
-        }
         if (parsed.pathname === "/scenes") {
           if (!pages) throw new Error("unexpected scene request");
           // Paged listings are served by the requested page number, so a test can
@@ -63,52 +65,58 @@ function context(
 
 const sceneCalls = (calls: Array<{ url: string }>) =>
   calls.filter((call) => new URL(call.url).pathname === "/scenes");
-const siteCalls = (calls: Array<{ url: string }>) =>
-  calls.filter((call) => new URL(call.url).pathname === "/sites");
 
 test("cleans names without collapsing different words", () => {
   assert.equal(cleanStudioName("  Bräzzers & Co. "), "brazzers co");
   assert.notEqual(cleanStudioName("Anal Quest"), cleanStudioName("Analquest"));
 });
 
-test("a unique TPDB alias maps a site instead of marking its first claim ambiguous", async () => {
-  const requests: string[] = [];
-  const ctx = {
-    now: new Date("2026-10-04T00:00:00Z"),
-    fetcher: {
-      json: async (url: string) => {
-        requests.push(url);
-        if (new URL(url).pathname === "/sites") {
-          return {
-            data: [{ id: 50864, name: "DreddXXX", short_name: "dreddxxx" }],
-            meta: { current_page: 1, last_page: 1 },
-          };
-        }
-        if (new URL(url).pathname === "/scenes") {
-          return {
-            data: [scene],
-            meta: { current_page: 1, last_page: 1 },
-          };
-        }
-        throw new Error(`unexpected URL ${url}`);
-      },
-    },
-    log: () => {},
-    mapWithConcurrency: async (items: unknown[], fn: (item: unknown) => unknown) =>
-      Promise.all(items.map(fn)),
-    mapIsolated: async (items: unknown[], fn: (item: unknown) => unknown) =>
-      Promise.all(items.map(fn)),
-  } as unknown as SourceContext;
+test("the lane never reads the TPDB site directory", async () => {
+  // The `/sites` walk threw `inconsistent pagination on page 1` against the
+  // live API. The lane now builds its site map from configured siteIds alone,
+  // so a request to `/sites` is the regression this test exists to catch.
+  const { ctx, calls } = context({ scenes: [scene] });
   const result = await createTpdbWatchlistSource({
-    token: "token",
-    studios: [{ studioId: "dredd", studio: "Dredd", aliases: ["DreddXXX"] }],
+    token: "private-token",
+    studios: studio,
   }).fetch("2026-10-01", ctx);
-
-  assert.match(requests[1] ?? "", /site_id=50864/);
-  assert.equal(result.scenes[0]?.studioId, "dredd");
+  assert.equal(calls[0]?.headers?.Authorization, "Bearer private-token");
+  assert.deepEqual(
+    calls.map((call) => new URL(call.url).pathname),
+    ["/scenes"],
+    "no /sites directory request is ever made",
+  );
+  assert.match(sceneCalls(calls)[0]!.url, /site_id=7/);
+  assert.equal(result.scenes[0]?.studioId, "network-brazzers-anal");
 });
 
-test("configured TPDB site IDs merge under one studio and apply the declared tag", async () => {
+test("the studio name comes from TPDB's own site name on the scene, not the config label", async () => {
+  // No directory walk means a numeric-only anal lane has no resolved name in
+  // config. TPDB reports site.name on every scene row, and that is the current
+  // display name.
+  const { ctx, calls } = context({ scenes: [{ ...scene, site: { name: "Bangbros" } }] });
+  const result = await createTpdbWatchlistSource({
+    token: "token",
+    studios: [
+      { studioId: "tpdb-4820~anal", studio: "TPDB site 4820", aliases: [], siteIds: [4820] },
+    ],
+  }).fetch("2026-10-01", ctx);
+  assert.equal(sceneCalls(calls).length, 1);
+  assert.equal(result.scenes[0]?.studio, "Bangbros");
+  assert.equal(result.scenes[0]?.studioId, "tpdb-4820~anal");
+});
+
+test("a scene with no site object falls back to the configured studio name", async () => {
+  const { site: _site, ...noSite } = scene;
+  const { ctx } = context({ scenes: [noSite] });
+  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
+    "2026-10-01",
+    ctx,
+  );
+  assert.equal(result.scenes[0]?.studio, "Brazzers");
+});
+
+test("configured TPDB site IDs each get their own scene listing", async () => {
   const requested: string[] = [];
   const ids = [50864, 39697, 81939];
   const ctx = {
@@ -117,12 +125,7 @@ test("configured TPDB site IDs merge under one studio and apply the declared tag
       json: async (url: string) => {
         requested.push(url);
         const parsed = new URL(url);
-        if (parsed.pathname === "/sites") {
-          return {
-            data: ids.map((id) => ({ id, name: `Unlisted site ${id}` })),
-            meta: { current_page: 1, last_page: 1 },
-          };
-        }
+        if (parsed.pathname !== "/scenes") throw new Error(`unexpected request ${url}`);
         const id = parsed.searchParams.get("site_id");
         return {
           data: [
@@ -160,15 +163,13 @@ test("configured TPDB site IDs merge under one studio and apply the declared tag
   assert.equal(result.scenes.length, 3);
 });
 
-test("scans TPDB sites and emits scenes for the configured studio", async () => {
-  const { ctx, calls } = context({ site, scenes: [scene] });
+test("emits scenes for the configured studio with its record fields intact", async () => {
+  const { ctx, calls } = context({ scenes: [scene] });
   const result = await createTpdbWatchlistSource({
     token: "private-token",
     studios: studio,
   }).fetch("2026-10-01", ctx);
   assert.equal(calls[0]?.headers?.Authorization, "Bearer private-token");
-  assert.equal(new URL(calls[0]!.url).pathname, "/sites");
-  assert.equal(siteCalls(calls).length, 1, "the TPDB site catalogue is read once per poll");
   const listing = sceneCalls(calls)[0]!.url;
   assert.match(listing, /site_id=7/);
   assert.equal(result.scenes[0]?.studioId, "network-brazzers-anal");
@@ -176,35 +177,20 @@ test("scans TPDB sites and emits scenes for the configured studio", async () => 
   assert.equal(result.scenes[0]?.releaseUrl, scene.url);
 });
 
-test("a multi-word alias resolves the site TPDB spells with spaces", async () => {
-  const { ctx, calls } = context({
-    site: { id: 1052, name: "Elegant Angel", short_name: "elegantangel" },
-    scenes: [scene],
-  });
-  await createTpdbWatchlistSource({
+test("a studio with no configured site IDs contributes nothing and requests nothing", async () => {
+  // Replaces the old alias-resolution tests. Alias matching against the site
+  // directory is gone: a studio is only reachable through a declared siteId.
+  const { ctx, calls } = context({ scenes: [scene] });
+  const result = await createTpdbWatchlistSource({
     token: "token",
-    studios: [
-      { studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"], siteIds: [] },
-    ],
+    studios: [{ studioId: "lane-missing", studio: "Jules Jordan", aliases: ["Jules Jordan"] }],
   }).fetch("2026-10-01", ctx);
-  assert.equal(new URL(calls[0]!.url).pathname, "/sites");
-  assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
-});
-
-test("a differently-named site is not assigned to a configured studio", async () => {
-  const { ctx } = context({
-    site: { id: 999, name: "Someone Else Entirely", short_name: "someoneelse" },
-    scenes: [scene],
-  });
-  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
-    "2026-10-01",
-    ctx,
-  );
   assert.deepEqual(result, { scenes: [], verifiedEmpty: false });
+  assert.equal(sceneCalls(calls).length, 0);
 });
 
-test("a studio TPDB does not carry is reported unmatched, and the rest still run", async () => {
-  const { ctx, calls } = context({ site, scenes: [scene], lookupMisses: ["jules jordan"] });
+test("a studio with no site IDs does not stop the configured studio from contributing", async () => {
+  const { ctx, calls } = context({ scenes: [scene] });
   const result = await createTpdbWatchlistSource({
     token: "token",
     studios: [
@@ -213,8 +199,7 @@ test("a studio TPDB does not carry is reported unmatched, and the rest still run
     ],
   }).fetch("2026-10-01", ctx);
   assert.equal(result.scenes.length, 1, "the matched studio still contributes");
-  assert.equal(siteCalls(calls).length, 1, "all studios are compared against one site catalogue");
-  assert.equal(sceneCalls(calls).length, 1);
+  assert.equal(sceneCalls(calls).length, 1, "only the configured studio is read");
 });
 
 test("missing token and temporary failures throw without returning records", async () => {
@@ -224,7 +209,8 @@ test("missing token and temporary failures throw without returning records", asy
   await assert.rejects(
     source.fetch(
       "2026-10-01",
-      context({}, { fail: new FetchError("GET /sites/brazzers -> 503", "inconclusive", 503) }).ctx,
+      context({}, { fail: new FetchError("GET /scenes?site_id=7 -> 503", "inconclusive", 503) })
+        .ctx,
     ),
     /503/,
     "a failing lookup propagates; it must not read as an absent studio",
@@ -234,46 +220,21 @@ test("missing token and temporary failures throw without returning records", asy
 test("a matched studio with no in-window scenes reports a verified empty result", async () => {
   const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
     "2026-10-01",
-    context({ site, scenes: [] }).ctx,
+    context({ scenes: [] }).ctx,
   );
   assert.deepEqual(result, { scenes: [], verifiedEmpty: true });
 });
 
-test("no matching site name is an unverified empty result", async () => {
-  const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
-    "2026-10-01",
-    context({ scenes: [scene] }).ctx,
-  );
+test("a studio with no configured site IDs is an unverified empty result", async () => {
+  const { ctx, calls } = context({ scenes: [scene] });
+  const result = await createTpdbWatchlistSource({
+    token: "token",
+    studios: [
+      { studioId: "lane-missing", studio: "Jules Jordan", aliases: ["Jules Jordan"], siteIds: [] },
+    ],
+  }).fetch("2026-10-01", ctx);
   assert.deepEqual(result, { scenes: [], verifiedEmpty: false });
-});
-
-test("ambiguous TPDB studio names are excluded", async () => {
-  const { ctx, calls } = context({ site, scenes: [scene] });
-  const source = createTpdbWatchlistSource({
-    token: "token",
-    studios: [
-      { studioId: "lane-a", studio: "Shared Studio", aliases: ["Shared Studio"], siteIds: [] },
-      { studioId: "lane-b", studio: "Shared Studio", aliases: ["Shared Studio"], siteIds: [] },
-    ],
-  });
-  const result = await source.fetch("2026-10-01", ctx);
-  assert.equal(result.verifiedEmpty, false);
-  assert.equal(sceneCalls(calls).length, 0, "ambiguous matches fetch no scene listings");
-});
-
-test("three-way aliases stay ambiguous and an ambiguous full name cannot fall back to short name", async () => {
-  const { ctx, calls } = context({ site, scenes: [scene] });
-  const source = createTpdbWatchlistSource({
-    token: "token",
-    studios: [
-      { studioId: "lane-a", studio: "A", aliases: ["Shared Studio", "lane-a"], siteIds: [] },
-      { studioId: "lane-b", studio: "B", aliases: ["Shared Studio"], siteIds: [] },
-      { studioId: "lane-c", studio: "C", aliases: ["Shared Studio"], siteIds: [] },
-    ],
-  });
-  const result = await source.fetch("2026-10-01", ctx);
-  assert.equal(result.verifiedEmpty, false);
-  assert.equal(sceneCalls(calls).length, 0);
+  assert.equal(sceneCalls(calls).length, 0, "no site IDs means no scene listing is requested");
 });
 
 test("tagged lanes retain only TPDB scenes carrying every requested tag", async () => {
@@ -281,8 +242,8 @@ test("tagged lanes retain only TPDB scenes carrying every requested tag", async 
   const untaggedScene = { ...scene, id: "s2", tags: [{ name: "Anal" }] };
   const result = await createTpdbWatchlistSource({
     token: "token",
-    studios: [{ ...studio[0]!, tags: ["anal", "creampie"], siteIds: [] }],
-  }).fetch("2026-10-01", context({ site, scenes: [taggedScene, untaggedScene] }).ctx);
+    studios: [{ ...studio[0]!, tags: ["anal", "creampie"] }],
+  }).fetch("2026-10-01", context({ scenes: [taggedScene, untaggedScene] }).ctx);
   assert.deepEqual(
     result.scenes.map((entry) => entry.sourceSceneId),
     ["s1"],
@@ -294,7 +255,7 @@ test("a multi-page listing is walked to last_page and then stops", async () => {
   // last_page 2, so the walker must request page two and must not ask for a
   // third - an off-by-one here would either drop half the window or spin.
   const second = { ...scene, id: "s2", title: "Second page scene" };
-  const { ctx, calls } = context({ site, scenePages: [[scene], [second]] });
+  const { ctx, calls } = context({ scenePages: [[scene], [second]] });
   const result = await createTpdbWatchlistSource({ token: "token", studios: studio }).fetch(
     "2026-10-01",
     ctx,
@@ -306,65 +267,10 @@ test("a multi-page listing is walked to last_page and then stops", async () => {
   );
 });
 
-test("an unrecognised short name is an abbreviation, not a collision", async () => {
-  // TPDB short names are frequently an abbreviation of the display name
-  // ("elegantangel" for "Elegant Angel"). Treating an unknown short name as a
-  // disagreement would reject real studios; only a name owned by a DIFFERENT
-  // configured studio is a collision.
-  const { ctx, calls } = context({
-    site: { id: 1052, name: "Elegant Angel", short_name: "elegantangel" },
-    scenes: [scene],
-  });
-  const result = await createTpdbWatchlistSource({
-    token: "token",
-    studios: [
-      { studioId: "lane", studio: "Elegant Angel", aliases: ["Elegant Angel"], siteIds: [] },
-    ],
-  }).fetch("2026-10-01", ctx);
-  assert.equal(result.scenes.length, 1);
-  assert.match(sceneCalls(calls)[0]!.url, /site_id=1052/);
-});
-
-test("a site whose short name belongs to another studio is rejected, not accepted", async () => {
-  // The name and the short name are separate evidence. If they disagree about
-  // which studio this is, that is a collision - accepting on the strength of
-  // one name would file another studio's releases under this lane.
-  const { ctx, calls } = context({
-    site: { id: 555, name: "Brazzers", short_name: "someotherstudio" },
-    scenes: [scene],
-  });
-  const result = await createTpdbWatchlistSource({
-    token: "token",
-    studios: [
-      ...studio,
-      {
-        studioId: "lane-other",
-        studio: "Someotherstudio",
-        aliases: ["Someotherstudio"],
-        siteIds: [],
-      },
-    ],
-  }).fetch("2026-10-01", ctx);
-  assert.equal(result.verifiedEmpty, false);
-  assert.equal(sceneCalls(calls).length, 0, "no scene listing is fetched for a rejected site");
-});
-
-test("a failed site catalogue fetch propagates so sync can retain last-good records", async () => {
-  const source = createTpdbWatchlistSource({ token: "token", studios: studio });
-  await assert.rejects(
-    source.fetch(
-      "2026-10-01",
-      context({}, { fail: new FetchError("GET /sites -> 503", "inconclusive", 503) }).ctx,
-    ),
-    /503/,
-  );
-});
-
-test("refreshes the matched site map on every poll", async () => {
-  const { ctx, calls } = context({ site, scenes: [] });
+test("scene listings are re-read on every poll", async () => {
+  const { ctx, calls } = context({ scenes: [] });
   const source = createTpdbWatchlistSource({ token: "token", studios: studio });
   await source.fetch("2026-10-01", ctx);
   await source.fetch("2026-10-01", ctx);
-  assert.equal(siteCalls(calls).length, 2, "stale studio names are not reused between polls");
   assert.equal(sceneCalls(calls).length, 2, "scene listings are still re-read on each refresh");
 });
