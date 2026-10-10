@@ -212,13 +212,10 @@ async function tryEporner(
  *
  * One shared counter meant a rung that fails on every scene it touched and a
  * rung that fails on one were indistinguishable in the run log: `seenSoFar` ran
- * past 100 with no way to say which tube it belonged to. That is how the sxyprn
- * rung came to be described as "returns nothing in production" on the strength
- * of an aggregate - a blocked datacenter IP, an uninstalled optional package
- * and a genuine outage all looked identical from the outside. Throttled per
- * rung to its first failure and then every tenth, so a rung that is down for a
- * whole cycle cannot flood the log while the other rung's failures stay
- * countable on their own.
+ * past 100 with no way to say which tube it belonged to. Throttled per rung to
+ * its first failure and then every tenth, so a rung that is down for a whole
+ * cycle cannot flood the log while the other rung's failures stay countable on
+ * their own.
  */
 const rungFailuresLogged = new Map<string, number>();
 
