@@ -29,6 +29,8 @@ export const TRAXXX_WATCHLIST: readonly string[] = Object.freeze([
   "https://traxxx.me/network/firstanalquest/scenes/latest/1",
   "https://traxxx.me/channel/wakeupnfuck/scenes/latest/1",
   "https://traxxx.me/channel/darkkotv/scenes/latest/1?tags=anal",
+  "https://traxxx.me/channel/lancelotstyles/scenes/latest/1",
+  "https://traxxx.me/channel/mamboperv/scenes/latest/1",
 ]);
 
 export function parseTraxxxListingUrl(raw: string): TraxxxLaneSpec {

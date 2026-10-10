@@ -65,6 +65,8 @@ test("the default watchlist creates the intended lanes and stable lane ids", () 
     "https://traxxx.me/network/firstanalquest/scenes/latest/1",
     "https://traxxx.me/channel/wakeupnfuck/scenes/latest/1",
     "https://traxxx.me/channel/darkkotv/scenes/latest/1?tags=anal",
+    "https://traxxx.me/channel/lancelotstyles/scenes/latest/1",
+    "https://traxxx.me/channel/mamboperv/scenes/latest/1",
   ]);
   const expectedIds = [
     "channel-elegantangel-anal",
@@ -85,6 +87,8 @@ test("the default watchlist creates the intended lanes and stable lane ids", () 
     "network-firstanalquest",
     "channel-wakeupnfuck",
     "channel-darkkotv-anal",
+    "channel-lancelotstyles",
+    "channel-mamboperv",
   ];
   assert.deepEqual(createTraxxxLaneIds(TRAXXX_WATCHLIST), expectedIds);
   assert.deepEqual(
